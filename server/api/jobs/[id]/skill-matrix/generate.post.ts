@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   })
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
   if (!jobRecord.description) {
-    throw createError({ statusCode: 422, statusMessage: 'Job description is required. Add or paste the JD in Job Settings first.' })
+    throw createError({ statusCode: 422, statusMessage: 'Active JD is required. Paste, write or generate it on the JD & Skill Matrix page, then save it first.' })
   }
 
   const config = await db.query.aiConfig.findFirst({ where: eq(aiConfig.organizationId, orgId) })
