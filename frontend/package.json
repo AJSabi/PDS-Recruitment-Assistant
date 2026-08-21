@@ -1,0 +1,9 @@
+{
+  "name": "reqcore-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Supervisor entrypoint that runs the Nuxt app (lives at /app) in dev mode on port 3000 for hot-reload.",
+  "scripts": {
+    "start": "cd /app && exec node_modules/.bin/nuxt dev --port 3000 --host 0.0.0.0"
+  }
+}
