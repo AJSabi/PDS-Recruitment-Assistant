@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Briefcase, UserRound } from 'lucide-vue-next'
+import { ArrowLeft, Briefcase, ClipboardList, FileSearch, UserRound } from 'lucide-vue-next'
 
 definePageMeta({
   layout: 'dashboard',
@@ -32,10 +32,31 @@ useSeoMeta({
 
 <template>
   <div class="mx-auto max-w-5xl">
-    <NuxtLink :to="localePath(`/dashboard/applications/${applicationId}`)" class="mb-4 inline-flex items-center gap-1 text-sm font-medium text-surface-500 hover:text-brand-600">
-      <ArrowLeft class="size-4" />
-      Back to Application
-    </NuxtLink>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <NuxtLink
+        :to="localePath(`/dashboard/applications/${applicationId}`)"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"
+      >
+        <ArrowLeft class="size-4" />
+        Standard Application
+      </NuxtLink>
+      <NuxtLink
+        v-if="application?.job.id"
+        :to="localePath(`/dashboard/jobs/${application.job.id}/pds-ranking`)"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"
+      >
+        <ClipboardList class="size-4" />
+        Candidate Ranking
+      </NuxtLink>
+      <NuxtLink
+        v-if="application?.job.id"
+        :to="localePath(`/dashboard/jobs/${application.job.id}/ai-analysis`)"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"
+      >
+        <FileSearch class="size-4" />
+        JD & Skill Matrix
+      </NuxtLink>
+    </div>
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading application…</div>
     <div v-else-if="error" class="rounded-lg border border-danger-200 bg-danger-50 p-4 text-danger-700">Failed to load application.</div>
