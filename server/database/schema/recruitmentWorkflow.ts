@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { organization } from './auth'
-import { application, job } from './app'
+import { application, document, job } from './app'
 
 export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_validation' | 'significant_gap' | 'not_yet_assessed'
 export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
@@ -30,6 +30,7 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
+  selectedResumeDocumentId: text('selected_resume_document_id').references(() => document.id, { onDelete: 'set null' }),
   currentFit: text('current_fit').$type<CurrentFit>().notNull().default('not_yet_assessed'),
   lastStatus: text('last_status').$type<RecruitmentStage>().notNull().default('candidate_added'),
   statusDate: timestamp('status_date').notNull().defaultNow(),
@@ -52,6 +53,7 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   index('recruitment_application_profile_org_idx').on(t.organizationId),
   index('recruitment_application_profile_fit_idx').on(t.organizationId, t.currentFit),
   index('recruitment_application_profile_status_idx').on(t.organizationId, t.lastStatus),
+  index('recruitment_application_profile_resume_idx').on(t.selectedResumeDocumentId),
 ]))
 
 export const resumeAssessment = pgTable('resume_assessment', {
