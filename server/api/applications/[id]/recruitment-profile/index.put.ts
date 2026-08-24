@@ -21,19 +21,11 @@ export default defineEventHandler(async (event) => {
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
 
-  if (existing?.assessmentLocked && body.currentFit && body.currentFit !== existing.currentFit) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'Current Fit is assessment-locked. Change it only through new screening/interview evidence or the explicit reassessment workflow.',
-    })
-  }
-
   const now = new Date()
   const values = {
     ...body,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
-    ...(body.lastStatus ? { statusDate: now } : {}),
   }
 
   let profile
@@ -47,8 +39,8 @@ export default defineEventHandler(async (event) => {
       .values({
         organizationId: orgId,
         applicationId,
-        currentFit: body.currentFit ?? 'not_yet_assessed',
-        lastStatus: body.lastStatus ?? 'resume_received',
+        currentFit: 'not_yet_assessed',
+        lastStatus: 'candidate_added',
         ...values,
       })
       .returning()
