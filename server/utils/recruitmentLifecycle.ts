@@ -11,6 +11,38 @@ export async function ensureRequirementState(organizationId: string, jobId: stri
   return created
 }
 
+export async function refreshRequirementReassessmentFlag(organizationId: string, jobId: string) {
+  const state = await ensureRequirementState(organizationId, jobId)
+  const apps = await db.query.application.findMany({
+    where: and(eq(application.organizationId, organizationId), eq(application.jobId, jobId)),
+    columns: { id: true },
+  })
+
+  let staleAssessmentExists = false
+  for (const app of apps) {
+    const profile = await db.query.recruitmentApplicationProfile.findFirst({
+      where: and(
+        eq(recruitmentApplicationProfile.organizationId, organizationId),
+        eq(recruitmentApplicationProfile.applicationId, app.id),
+      ),
+      columns: { requirementVersionAssessed: true },
+    })
+    if (profile && profile.requirementVersionAssessed > 0 && profile.requirementVersionAssessed < state.revision) {
+      staleAssessmentExists = true
+      break
+    }
+  }
+
+  if (state.reassessmentRequired !== staleAssessmentExists) {
+    const [updated] = await db.update(recruitmentRequirementState)
+      .set({ reassessmentRequired: staleAssessmentExists, updatedAt: new Date() })
+      .where(eq(recruitmentRequirementState.id, state.id))
+      .returning()
+    return updated ?? state
+  }
+  return state
+}
+
 export async function flagRequirementChange(input: {
   organizationId: string
   jobId: string
