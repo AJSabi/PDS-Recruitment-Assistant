@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile, recruitmentEvidence, resumeAssessment } from '../../../../../database/schema'
 import { saveResumeAssessmentSchema } from '../../../../../utils/schemas/resumeAssessment'
+import { calculateProvisionalFit } from '../../../../../utils/recruitmentScoring'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -22,6 +23,19 @@ export default defineEventHandler(async (event) => {
     columns: { id: true },
   })
 
+  const hasComponentScores = [body.mandatoryScore, body.preferredScore, body.experienceScore, body.optionalScore]
+    .some(value => value != null)
+  const calculated = hasComponentScores
+    ? calculateProvisionalFit({
+        mandatoryScore: body.mandatoryScore,
+        preferredScore: body.preferredScore,
+        experienceScore: body.experienceScore,
+        optionalScore: body.optionalScore,
+      })
+    : null
+  const provisionalFitScore = calculated?.score ?? body.provisionalFitScore ?? null
+  const priority = calculated?.priority ?? body.priority ?? null
+
   const values = {
     organizationId: orgId,
     applicationId,
@@ -34,11 +48,11 @@ export default defineEventHandler(async (event) => {
     preferredScore: body.preferredScore ?? null,
     experienceScore: body.experienceScore ?? null,
     optionalScore: body.optionalScore ?? null,
-    provisionalFitScore: body.provisionalFitScore ?? null,
+    provisionalFitScore,
     mandatoryMatch: body.mandatoryMatch ?? null,
     keyStrength: body.keyStrength ?? null,
     mainGap: body.mainGap ?? null,
-    priority: body.priority ?? null,
+    priority,
     requirementVersion: body.requirementVersion,
     source: body.source,
     assessedBy: session.user.id,
@@ -60,8 +74,8 @@ export default defineEventHandler(async (event) => {
       lastStatus: 'resume_reviewed',
       statusDate: new Date(),
       resumeBrief: body.candidateSnapshot ?? undefined,
-      provisionalFitScore: body.provisionalFitScore ?? undefined,
-      priority: body.priority ?? undefined,
+      provisionalFitScore: provisionalFitScore ?? undefined,
+      priority: priority ?? undefined,
       mandatoryMatch: body.mandatoryMatch ?? undefined,
       keyStrength: body.keyStrength ?? undefined,
       mainGap: body.mainGap ?? undefined,
@@ -78,8 +92,8 @@ export default defineEventHandler(async (event) => {
     type: 'resume',
     summary: body.candidateSnapshot ?? 'Resume assessment updated',
     payload: {
-      provisionalFitScore: body.provisionalFitScore ?? null,
-      priority: body.priority ?? null,
+      provisionalFitScore,
+      priority,
       mandatoryMatch: body.mandatoryMatch ?? null,
       requirementVersion: body.requirementVersion,
       source: body.source,
@@ -87,5 +101,5 @@ export default defineEventHandler(async (event) => {
     createdBy: session.user.id,
   })
 
-  return { assessment }
+  return { assessment, ranking: { provisionalFitScore, priority } }
 })
