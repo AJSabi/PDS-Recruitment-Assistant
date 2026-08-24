@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../../database/schema'
-import { completeScreeningSchema } from '../../../../../utils/schemas/recruitmentWorkflow'
+import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { completeScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -25,6 +25,14 @@ export default defineEventHandler(async (event) => {
     columns: { id: true },
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
+
+  const profile = await db.query.recruitmentApplicationProfile.findFirst({
+    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
+  })
+  if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (profile.lastStatus !== 'recruiter_screening_pending') {
+    throw createError({ statusCode: 422, statusMessage: 'Candidate is not currently in Recruiter Screening Pending status.' })
+  }
 
   const screening = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
@@ -55,12 +63,12 @@ export default defineEventHandler(async (event) => {
     lastStatus: 'recruiter_screening_completed',
     statusDate: now,
     lastContactAt: now,
-    conversationBrief: body.conversationBrief ?? undefined,
+    conversationBrief: body.conversationBrief ?? profile.conversationBrief,
     nextAction: nextActionLabels[body.recommendedNextStep] ?? body.recommendedNextStep,
     assessmentLocked: true,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
-  }).where(and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)))
+  }).where(eq(recruitmentApplicationProfile.id, profile.id))
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
