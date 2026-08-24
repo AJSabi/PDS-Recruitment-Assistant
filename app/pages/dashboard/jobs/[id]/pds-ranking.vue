@@ -29,7 +29,7 @@ function label(value?: string | null) {
         <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
           <tr v-for="row in data?.ranking ?? []" :key="row.applicationId" class="hover:bg-surface-50 dark:hover:bg-surface-800/30">
             <td class="px-4 py-3 font-semibold">{{ row.rank }}</td>
-            <td class="px-4 py-3"><NuxtLink :to="localePath(`/dashboard/applications/${row.applicationId}/recruitment`)" class="font-semibold text-brand-600 hover:underline">{{ row.candidate }}</NuxtLink><div class="text-xs text-surface-400">{{ row.email }}</div><div v-if="row.needsReassessment" class="mt-1 text-xs font-medium text-warning-600">Reassessment required</div></td>
+            <td class="px-4 py-3"><NuxtLink :to="localePath(`/dashboard/recruitment/${row.applicationId}`)" class="font-semibold text-brand-600 hover:underline">{{ row.candidate }}</NuxtLink><div class="text-xs text-surface-400">{{ row.email }}</div><div v-if="row.needsReassessment" class="mt-1 text-xs font-medium text-warning-600">Reassessment required</div></td>
             <td class="px-4 py-3 font-semibold">{{ row.priority ?? '—' }}</td>
             <td class="px-4 py-3">{{ row.provisionalFitScore ?? '—' }}</td>
             <td class="px-4 py-3">{{ row.mandatoryMatch ?? '—' }}</td>
