@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentEvidence } from '../../../../database/schema'
+import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
 import { createEvidenceSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { z } from 'zod'
 
@@ -25,6 +25,21 @@ export default defineEventHandler(async (event) => {
     payload: body.payload ?? null,
     createdBy: session.user.id,
   }).returning()
+
+  if (body.type === 'resume') {
+    await db.update(recruitmentApplicationProfile)
+      .set({
+        lastStatus: 'resume_received',
+        statusDate: new Date(),
+        nextAction: 'Complete resume assessment against the approved requirement baseline.',
+        lastUpdatedBy: session.user.id,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(recruitmentApplicationProfile.applicationId, applicationId),
+        eq(recruitmentApplicationProfile.organizationId, orgId),
+      ))
+  }
 
   return { evidence }
 })
