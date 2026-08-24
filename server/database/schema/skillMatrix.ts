@@ -21,12 +21,13 @@ export interface SkillMatrixPayload {
   classifications: SkillMatrixClassification[]
 }
 
-/** One editable, approval-controlled skill matrix per job. */
+/** One working matrix per job plus the last approved baseline for change detection. */
 export const jobSkillMatrix = pgTable('job_skill_matrix', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   jobId: text('job_id').notNull().references(() => job.id, { onDelete: 'cascade' }),
   matrix: jsonb('matrix').$type<SkillMatrixPayload>().notNull(),
+  approvedMatrix: jsonb('approved_matrix').$type<SkillMatrixPayload>(),
   approvedAt: timestamp('approved_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
