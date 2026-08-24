@@ -1,17 +1,18 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
-import { organization } from './auth'
+import { organization, user } from './auth'
 import { application, document, job } from './app'
 
 export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_validation' | 'significant_gap' | 'not_yet_assessed'
 export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
 export type CandidatePriority = 'P1' | 'P2' | 'P3' | 'P4'
-export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change'
+export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change' | 'assignment_change'
 export type SkillEvidenceLevel = 'strong_evidence' | 'partial_evidence' | 'no_evidence_found' | 'requires_verification'
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   jobId: text('job_id').notNull().references(() => job.id, { onDelete: 'cascade' }),
+  ownerUserId: text('owner_user_id').references(() => user.id, { onDelete: 'set null' }),
   revision: integer('revision').notNull().default(1),
   jdVersion: integer('jd_version').notNull().default(1),
   skillMatrixVersion: integer('skill_matrix_version').notNull().default(0),
@@ -24,6 +25,7 @@ export const recruitmentRequirementState = pgTable('recruitment_requirement_stat
 }, (t) => ([
   uniqueIndex('recruitment_requirement_state_job_idx').on(t.jobId),
   index('recruitment_requirement_state_org_idx').on(t.organizationId),
+  index('recruitment_requirement_state_owner_idx').on(t.organizationId, t.ownerUserId),
 ]))
 
 export const recruitmentApplicationProfile = pgTable('recruitment_application_profile', {
@@ -31,6 +33,7 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
   selectedResumeDocumentId: text('selected_resume_document_id').references(() => document.id, { onDelete: 'set null' }),
+  assignedRecruiterId: text('assigned_recruiter_id').references(() => user.id, { onDelete: 'set null' }),
   currentFit: text('current_fit').$type<CurrentFit>().notNull().default('not_yet_assessed'),
   lastStatus: text('last_status').$type<RecruitmentStage>().notNull().default('candidate_added'),
   statusDate: timestamp('status_date').notNull().defaultNow(),
@@ -54,6 +57,7 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   index('recruitment_application_profile_fit_idx').on(t.organizationId, t.currentFit),
   index('recruitment_application_profile_status_idx').on(t.organizationId, t.lastStatus),
   index('recruitment_application_profile_resume_idx').on(t.selectedResumeDocumentId),
+  index('recruitment_application_profile_recruiter_idx').on(t.organizationId, t.assignedRecruiterId),
 ]))
 
 export const resumeAssessment = pgTable('resume_assessment', {
