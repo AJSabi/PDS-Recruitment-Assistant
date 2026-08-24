@@ -1,12 +1,13 @@
 import { and, eq } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../database/schema'
-import { currentFitSchema } from '../../../utils/schemas/recruitmentWorkflow'
+import { finalScreeningFitSchema } from '../../../utils/schemas/recruitmentWorkflow'
+import { CONFIRMED_STAGE_TRANSITIONS } from '../../../utils/schemas/recruitmentStage'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 const bodySchema = z.object({
   summary: z.string().trim().min(1).max(3000),
-  currentFit: currentFitSchema.optional(),
+  currentFit: finalScreeningFitSchema.optional(),
   conversationBrief: z.string().trim().max(3000).nullish(),
   nextAction: z.string().trim().max(1000).nullish(),
   payload: z.record(z.string(), z.unknown()).nullish(),
@@ -29,10 +30,17 @@ export default defineEventHandler(async (event) => {
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
 
+  if (profile.lastStatus !== 'reassess') {
+    const allowed = CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus] ?? []
+    if (!allowed.includes('reassess')) {
+      throw createError({ statusCode: 422, statusMessage: `Reassessment cannot start while candidate status is ${profile.lastStatus}.` })
+    }
+  }
+
   const requirementState = await db.query.recruitmentRequirementState.findFirst({
     where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
   })
-  const requirementVersion = Math.max(requirementState?.jdVersion ?? 1, requirementState?.skillMatrixVersion ?? 0)
+  const requirementRevision = requirementState?.revision ?? 1
   const now = new Date()
 
   const [updatedProfile] = await db.update(recruitmentApplicationProfile)
@@ -42,8 +50,8 @@ export default defineEventHandler(async (event) => {
       statusDate: now,
       conversationBrief: body.conversationBrief ?? profile.conversationBrief,
       nextAction: body.nextAction ?? profile.nextAction,
-      assessmentLocked: Boolean(body.currentFit),
-      requirementVersionAssessed: requirementVersion,
+      assessmentLocked: body.currentFit ? true : profile.assessmentLocked,
+      requirementVersionAssessed: body.currentFit ? requirementRevision : profile.requirementVersionAssessed,
       lastUpdatedBy: session.user.id,
       updatedAt: now,
     })
@@ -59,10 +67,11 @@ export default defineEventHandler(async (event) => {
       ...body.payload,
       previousFit: profile.currentFit,
       newFit: body.currentFit ?? profile.currentFit,
-      requirementVersion,
+      requirementRevision,
+      fitChanged: Boolean(body.currentFit && body.currentFit !== profile.currentFit),
     },
     createdBy: session.user.id,
   }).returning()
 
-  return { profile: updatedProfile, evidence }
+  return { profile: updatedProfile, evidence, requirementRevision }
 })
