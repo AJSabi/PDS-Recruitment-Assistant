@@ -6,6 +6,7 @@ export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_v
 export type RecruitmentStage = 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
 export type CandidatePriority = 'P1' | 'P2' | 'P3' | 'P4'
 export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change'
+export type SkillEvidenceLevel = 'strong_evidence' | 'partial_evidence' | 'no_evidence_found' | 'requires_verification'
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -50,6 +51,42 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   index('recruitment_application_profile_org_idx').on(t.organizationId),
   index('recruitment_application_profile_fit_idx').on(t.organizationId, t.currentFit),
   index('recruitment_application_profile_status_idx').on(t.organizationId, t.lastStatus),
+]))
+
+export const resumeAssessment = pgTable('resume_assessment', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
+  candidateSnapshot: text('candidate_snapshot'),
+  jdAlignment: text('jd_alignment'),
+  skillAssessment: jsonb('skill_assessment').$type<Array<{
+    classification?: string
+    skill: string
+    priority: 'mandatory' | 'preferred' | 'optional'
+    evidenceLevel: SkillEvidenceLevel
+    evidence?: string
+  }>>().notNull().default([]),
+  keyGaps: jsonb('key_gaps').$type<string[]>().notNull().default([]),
+  verificationAreas: jsonb('verification_areas').$type<string[]>().notNull().default([]),
+  mandatoryScore: integer('mandatory_score'),
+  preferredScore: integer('preferred_score'),
+  experienceScore: integer('experience_score'),
+  optionalScore: integer('optional_score'),
+  provisionalFitScore: integer('provisional_fit_score'),
+  mandatoryMatch: text('mandatory_match'),
+  keyStrength: text('key_strength'),
+  mainGap: text('main_gap'),
+  priority: text('priority').$type<CandidatePriority>(),
+  requirementVersion: integer('requirement_version').notNull().default(0),
+  source: text('source').$type<'manual' | 'ai'>().notNull().default('manual'),
+  assessedBy: text('assessed_by'),
+  assessedAt: timestamp('assessed_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => ([
+  uniqueIndex('resume_assessment_app_idx').on(t.applicationId),
+  index('resume_assessment_org_idx').on(t.organizationId),
+  index('resume_assessment_priority_idx').on(t.organizationId, t.priority),
 ]))
 
 export const recruitmentEvidence = pgTable('recruitment_evidence', {
