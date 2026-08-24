@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Save, CheckCircle2, Plus, Trash2, FileText, ShieldCheck, WandSparkles } from 'lucide-vue-next'
+import { Save, CheckCircle2, Plus, Trash2, FileText, ShieldCheck, WandSparkles, Loader2, Sparkles } from 'lucide-vue-next'
 
 const route = useRoute()
 const jobId = route.params.id as string
@@ -22,6 +22,7 @@ const matrix = ref<Matrix>({ classifications: [] })
 const approved = ref(false)
 const isSavingJd = ref(false)
 const isSaving = ref(false)
+const isGenerating = ref(false)
 const dirty = ref(false)
 
 watch(job, (value: any) => {
@@ -62,6 +63,21 @@ async function saveActiveJd() {
   } finally { isSavingJd.value = false }
 }
 
+async function generateAiMatrix() {
+  if (jdDirty.value || !savedJd.value.trim()) return toast.warning('Save Active JD first', 'AI must analyse the saved Active JD.')
+  if (matrix.value.classifications.length && !confirm('Replace the current Skill Matrix draft with a new AI proposal?')) return
+  isGenerating.value = true
+  try {
+    const result: any = await $fetch(`/api/jobs/${jobId}/skill-matrix/generate`, { method: 'POST' })
+    matrix.value = result.matrix
+    approved.value = false
+    dirty.value = true
+    toast.success('AI Skill Matrix generated', { message: 'Review and edit the proposal before approval.' })
+  } catch (err: any) {
+    toast.error('AI Skill Matrix could not be generated', { message: err?.data?.statusMessage ?? err?.message })
+  } finally { isGenerating.value = false }
+}
+
 function createManualMatrix() {
   if (!savedJd.value.trim()) return toast.warning('Save Active JD first', 'Save the JD before creating the Skill Matrix.')
   if (matrix.value.classifications.length && !confirm('Replace the current Skill Matrix with a new manual draft?')) return
@@ -96,24 +112,18 @@ function normalizeIds() {
 }
 
 function validate(approve: boolean): string | null {
-  // Drafts are deliberately allowed to be incomplete. Full business validation
-  // applies only when the recruiter explicitly approves the Skill Matrix.
   if (!approve) return null
-
   const count = matrix.value.classifications.length
   if (count < 4 || count > 5) return 'An approved Skill Matrix must contain 4–5 classifications.'
-
   let mandatory = 0
   for (const c of matrix.value.classifications) {
     if (!c.name.trim()) return 'Every classification needs a name.'
     if (!c.skills.length) return `${c.name} needs at least one skill.`
     if (c.skills.some(s => !s.skill.trim())) return `A skill under ${c.name} is blank.`
-
     const m = c.skills.filter(s => s.priority === 'mandatory').length
     if (m < 2 || m > 3) return `${c.name} must contain 2–3 Mandatory skills before approval.`
     mandatory += m
   }
-
   if (mandatory < 8 || mandatory > 12) return 'Use 8–12 Mandatory skills overall before approval.'
   return null
 }
@@ -146,7 +156,7 @@ async function persist(approve: boolean) {
           <h1 class="text-2xl font-bold text-surface-900 dark:text-surface-50">JD & Skill Matrix</h1>
           <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-1 text-xs font-medium text-success-700 ring-1 ring-success-200"><ShieldCheck class="size-3.5" /> Approved</span>
         </div>
-        <p class="mt-1 text-sm text-surface-500">Complete the Active JD and Skill Matrix first. AI assistance can be connected later without blocking recruitment.</p>
+        <p class="mt-1 text-sm text-surface-500">AI can propose the Skill Matrix from the Active JD. Recruiter review and explicit approval remain mandatory before candidate analysis.</p>
       </div>
 
       <section class="mb-6 rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
@@ -161,13 +171,16 @@ async function persist(approve: boolean) {
           <div class="mt-3 flex justify-end"><button type="button" :disabled="isSavingJd || !jdDraft.trim() || !jdDirty" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" @click="saveActiveJd"><Save class="size-4" /> Save Active JD</button></div>
         </div>
 
-        <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p class="text-xs text-surface-500">AI generation is deferred. Create the matrix manually now; Copilot integration can be added later.</p>
-          <button type="button" :disabled="jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" @click="createManualMatrix"><WandSparkles class="size-4" /> {{ matrix.classifications.length ? 'Start New Manual Matrix' : 'Create Skill Matrix' }}</button>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p class="text-xs text-surface-500">Generate with AI for the first draft, then edit classifications, priorities and rationale before approval.</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" @click="generateAiMatrix"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
+            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-40 dark:border-surface-700" @click="createManualMatrix"><WandSparkles class="size-4" />Manual Matrix</button>
+          </div>
         </div>
       </section>
 
-      <div v-if="!matrix.classifications.length" class="rounded-xl border-2 border-dashed border-surface-200 p-10 text-center dark:border-surface-800"><h2 class="font-semibold">No Skill Matrix yet</h2><p class="mt-1 text-sm text-surface-500">Create a manual matrix from the saved JD, then add 4–5 role-relevant classifications and 2–3 critical Mandatory skills per classification.</p></div>
+      <div v-if="!matrix.classifications.length" class="rounded-xl border-2 border-dashed border-surface-200 p-10 text-center dark:border-surface-800"><h2 class="font-semibold">No Skill Matrix yet</h2><p class="mt-1 text-sm text-surface-500">Generate an AI proposal from the saved Active JD or create the matrix manually.</p></div>
 
       <div v-else class="space-y-4">
         <section v-for="(classification, ci) in matrix.classifications" :key="classification.id" class="rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
@@ -184,7 +197,7 @@ async function persist(approve: boolean) {
         </section>
 
         <button v-if="matrix.classifications.length < 5" type="button" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-surface-300 px-4 py-2 text-sm font-medium" @click="addClassification"><Plus class="size-4" /> Add classification</button>
-        <div class="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-surface-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-surface-800 dark:bg-surface-900/95"><p class="text-xs text-surface-500"><span v-if="dirty">Unsaved changes. </span>Drafts may be incomplete. Approval requires 4–5 classifications, 2–3 Mandatory skills per classification, and 8–12 Mandatory skills overall.</p><div class="flex gap-2"><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-50" @click="persist(false)"><Save class="size-4" /> Save Draft</button><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" @click="persist(true)"><CheckCircle2 class="size-4" /> Approve Skill Matrix</button></div></div>
+        <div class="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-surface-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-surface-800 dark:bg-surface-900/95"><p class="text-xs text-surface-500"><span v-if="dirty">Unsaved changes. </span>AI output is a proposal only. Approval requires 4–5 classifications, 2–3 Mandatory skills per classification, and 8–12 Mandatory skills overall.</p><div class="flex gap-2"><button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-50" @click="persist(false)"><Save class="size-4" /> Save Draft</button><button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" @click="persist(true)"><CheckCircle2 class="size-4" /> Approve Skill Matrix</button></div></div>
       </div>
     </template>
   </div>
