@@ -70,6 +70,18 @@ useSeoMeta({
           @changed="refreshWorkflow"
         />
 
+        <PdsInterviewEvidence
+          :application-id="applicationId"
+          :status="profile?.lastStatus"
+          @changed="refreshWorkflow"
+        />
+
+        <PdsRecruitmentLifecycle
+          :application-id="applicationId"
+          :profile="profile"
+          @changed="refreshWorkflow"
+        />
+
         <PdsCandidateHistory :application-id="applicationId" />
       </div>
     </template>
