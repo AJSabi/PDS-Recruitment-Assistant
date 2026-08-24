@@ -1,10 +1,11 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence, resumeAssessment } from '../../../../../database/schema'
-import { saveResumeAssessmentSchema } from '../../../../../utils/schemas/resumeAssessment'
-import { calculateProvisionalFit } from '../../../../../utils/recruitmentScoring'
+import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
+import { saveResumeAssessmentSchema } from '../../../../utils/schemas/resumeAssessment'
+import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
+const allowedStatuses = new Set(['resume_received', 'resume_reviewed', 'reassess'])
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
@@ -14,17 +15,32 @@ export default defineEventHandler(async (event) => {
 
   const app = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true },
+    columns: { id: true, jobId: true },
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
+
+  const profile = await db.query.recruitmentApplicationProfile.findFirst({
+    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
+  })
+  if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (!allowedStatuses.has(profile.lastStatus)) {
+    throw createError({ statusCode: 422, statusMessage: `Resume assessment is not allowed while candidate status is ${profile.lastStatus}.` })
+  }
+
+  const requirementState = await db.query.recruitmentRequirementState.findFirst({
+    where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
+  })
+  if (!requirementState?.skillMatrixApproved) {
+    throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before assessing candidates.' })
+  }
+  const requirementRevision = requirementState.revision
 
   const existing = await db.query.resumeAssessment.findFirst({
     where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)),
     columns: { id: true },
   })
 
-  const hasComponentScores = [body.mandatoryScore, body.preferredScore, body.experienceScore, body.optionalScore]
-    .some(value => value != null)
+  const hasComponentScores = body.mandatoryScore != null
   const calculated = hasComponentScores
     ? calculateProvisionalFit({
         mandatoryScore: body.mandatoryScore,
@@ -33,8 +49,9 @@ export default defineEventHandler(async (event) => {
         optionalScore: body.optionalScore,
       })
     : null
-  const provisionalFitScore = calculated?.score ?? body.provisionalFitScore ?? null
-  const priority = calculated?.priority ?? body.priority ?? null
+  const provisionalFitScore = calculated?.score ?? null
+  const priority = calculated?.priority ?? null
+  const now = new Date()
 
   const values = {
     organizationId: orgId,
@@ -53,38 +70,31 @@ export default defineEventHandler(async (event) => {
     keyStrength: body.keyStrength ?? null,
     mainGap: body.mainGap ?? null,
     priority,
-    requirementVersion: body.requirementVersion,
+    requirementVersion: requirementRevision,
     source: body.source,
     assessedBy: session.user.id,
-    assessedAt: new Date(),
-    updatedAt: new Date(),
+    assessedAt: now,
+    updatedAt: now,
   }
 
   const [assessment] = existing
     ? await db.update(resumeAssessment).set(values).where(eq(resumeAssessment.id, existing.id)).returning()
     : await db.insert(resumeAssessment).values(values).returning()
 
-  const profile = await db.query.recruitmentApplicationProfile.findFirst({
-    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
-    columns: { id: true, assessmentLocked: true },
-  })
-
-  if (profile) {
-    await db.update(recruitmentApplicationProfile).set({
-      lastStatus: 'resume_reviewed',
-      statusDate: new Date(),
-      resumeBrief: body.candidateSnapshot ?? undefined,
-      provisionalFitScore: provisionalFitScore ?? undefined,
-      priority: priority ?? undefined,
-      mandatoryMatch: body.mandatoryMatch ?? undefined,
-      keyStrength: body.keyStrength ?? undefined,
-      mainGap: body.mainGap ?? undefined,
-      requirementVersionAssessed: body.requirementVersion,
-      nextAction: 'Recruiter screening / comparison',
-      lastUpdatedBy: session.user.id,
-      updatedAt: new Date(),
-    }).where(eq(recruitmentApplicationProfile.id, profile.id))
-  }
+  await db.update(recruitmentApplicationProfile).set({
+    lastStatus: 'resume_reviewed',
+    statusDate: now,
+    resumeBrief: body.candidateSnapshot ?? profile.resumeBrief,
+    provisionalFitScore,
+    priority,
+    mandatoryMatch: body.mandatoryMatch ?? null,
+    keyStrength: body.keyStrength ?? null,
+    mainGap: body.mainGap ?? null,
+    requirementVersionAssessed: requirementRevision,
+    nextAction: 'Recruiter screening / comparison',
+    lastUpdatedBy: session.user.id,
+    updatedAt: now,
+  }).where(eq(recruitmentApplicationProfile.id, profile.id))
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -92,14 +102,15 @@ export default defineEventHandler(async (event) => {
     type: 'resume',
     summary: body.candidateSnapshot ?? 'Resume assessment updated',
     payload: {
+      event: 'resume_assessed',
       provisionalFitScore,
       priority,
       mandatoryMatch: body.mandatoryMatch ?? null,
-      requirementVersion: body.requirementVersion,
+      requirementRevision,
       source: body.source,
     },
     createdBy: session.user.id,
   })
 
-  return { assessment, ranking: { provisionalFitScore, priority } }
+  return { assessment, ranking: { provisionalFitScore, priority }, requirementRevision }
 })
