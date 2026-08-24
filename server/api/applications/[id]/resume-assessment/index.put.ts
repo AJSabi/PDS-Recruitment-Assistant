@@ -24,6 +24,9 @@ export default defineEventHandler(async (event) => {
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (!profile.selectedResumeDocumentId) {
+    throw createError({ statusCode: 422, statusMessage: 'Select the resume for this application before assessment.' })
+  }
   if (!allowedStatuses.has(profile.lastStatus)) {
     throw createError({ statusCode: 422, statusMessage: `Resume assessment is not allowed while candidate status is ${profile.lastStatus}.` })
   }
@@ -104,6 +107,7 @@ export default defineEventHandler(async (event) => {
     summary: body.candidateSnapshot ?? 'Resume assessment updated',
     payload: {
       event: 'resume_assessed',
+      selectedResumeDocumentId: profile.selectedResumeDocumentId,
       provisionalFitScore,
       priority,
       mandatoryMatch: body.mandatoryMatch ?? null,
