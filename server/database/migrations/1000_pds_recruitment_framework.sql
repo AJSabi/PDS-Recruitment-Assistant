@@ -73,3 +73,46 @@ CREATE TABLE IF NOT EXISTS "recruiter_screening_session" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "recruiter_screening_session_app_idx" ON "recruiter_screening_session" USING btree ("application_id");
 CREATE INDEX IF NOT EXISTS "recruiter_screening_session_org_idx" ON "recruiter_screening_session" USING btree ("organization_id");
+
+-- Existing Reqcore applications need a PDS profile so the governed workflow can be used immediately.
+-- Current Fit remains Not Yet Assessed because legacy coarse stages are not evidence of fit.
+INSERT INTO "recruitment_application_profile" (
+  "id", "organization_id", "application_id", "current_fit", "last_status", "status_date", "next_action", "assessment_locked"
+)
+SELECT
+  'pds-profile-' || a."id",
+  a."organization_id",
+  a."id",
+  'not_yet_assessed',
+  CASE
+    WHEN a."status" = 'screening' THEN 'recruiter_screening_pending'
+    WHEN a."status" = 'interview' THEN 'hod_round_pending'
+    WHEN a."status" = 'offer' THEN 'offer_stage'
+    WHEN a."status" = 'hired' THEN 'joined'
+    WHEN a."status" = 'rejected' THEN 'not_proceeding'
+    WHEN EXISTS (
+      SELECT 1 FROM "document" d
+      WHERE d."organization_id" = a."organization_id"
+        AND d."candidate_id" = a."candidate_id"
+        AND d."type" = 'resume'
+    ) THEN 'resume_received'
+    ELSE 'candidate_added'
+  END,
+  COALESCE(a."updated_at", a."created_at", now()),
+  CASE
+    WHEN a."status" = 'screening' THEN 'Continue recruiter screening or confirm the appropriate PDS stage.'
+    WHEN a."status" = 'interview' THEN 'Record HOD/interview evidence or confirm the appropriate PDS stage.'
+    WHEN a."status" = 'offer' THEN 'Continue offer-stage actions.'
+    WHEN a."status" = 'hired' THEN 'Confirm closure when appropriate.'
+    WHEN a."status" = 'rejected' THEN 'Review only if reassessment is required.'
+    WHEN EXISTS (
+      SELECT 1 FROM "document" d
+      WHERE d."organization_id" = a."organization_id"
+        AND d."candidate_id" = a."candidate_id"
+        AND d."type" = 'resume'
+    ) THEN 'Complete resume assessment against the approved requirement baseline.'
+    ELSE 'Upload or verify the latest resume.'
+  END,
+  false
+FROM "application" a
+ON CONFLICT ("application_id") DO NOTHING;
