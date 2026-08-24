@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
 import { saveResumeAssessmentSchema } from '../../../../utils/schemas/resumeAssessment'
 import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
+import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -111,6 +112,8 @@ export default defineEventHandler(async (event) => {
     },
     createdBy: session.user.id,
   })
+
+  await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
   return { assessment, ranking: { provisionalFitScore, priority }, requirementRevision }
 })
