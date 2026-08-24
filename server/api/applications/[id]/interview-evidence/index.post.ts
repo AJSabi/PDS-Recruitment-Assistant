@@ -1,9 +1,17 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../../database/schema'
-import { interviewEvidenceSchema } from '../../../../../utils/schemas/recruitmentStage'
+import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { interviewEvidenceSchema } from '../../../../utils/schemas/recruitmentStage'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
+const allowedInterviewStatuses = new Set(['hod_round_pending', 'hod_round_completed', 'reassess'])
+const recommendationLabels: Record<string, string> = {
+  proceed: 'Proceed',
+  hold: 'Hold for Comparison',
+  reassess: 'Reassess',
+  not_proceeding: 'Recruiter Decision Required',
+  offer: 'Consider Offer Stage',
+}
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
@@ -21,6 +29,9 @@ export default defineEventHandler(async (event) => {
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (!allowedInterviewStatuses.has(profile.lastStatus)) {
+    throw createError({ statusCode: 422, statusMessage: `Interview evidence cannot be recorded while candidate status is ${profile.lastStatus}.` })
+  }
 
   const [evidence] = await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -42,12 +53,11 @@ export default defineEventHandler(async (event) => {
   const updates: Record<string, unknown> = {
     conversationBrief: body.summary,
     lastContactAt: now,
-    nextAction: body.recommendation ?? profile.nextAction,
+    nextAction: body.recommendation ? recommendationLabels[body.recommendation] : profile.nextAction,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }
 
-  // Interview evidence may change Current Fit only when explicitly requested.
   if (body.updateCurrentFit && body.fit) {
     updates.currentFit = body.fit
     updates.assessmentLocked = true
