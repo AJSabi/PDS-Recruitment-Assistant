@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { application, candidate, job, recruitmentApplicationProfile } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { z } from 'zod'
@@ -7,7 +7,7 @@ const paramsSchema = z.object({ id: z.string().min(1) })
 
 /**
  * POST /api/jobs/:id/candidate-intake
- * Creates or links a candidate to the active job and initializes the PDS recruitment profile.
+ * Creates or links an active candidate to the job and initializes the PDS recruitment profile.
  * Resume upload remains handled by the existing candidate document endpoint.
  */
 export default defineEventHandler(async (event) => {
@@ -27,18 +27,29 @@ export default defineEventHandler(async (event) => {
 
   if (candidateId) {
     candidateRecord = await db.query.candidate.findFirst({
-      where: and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)),
+      where: and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt)),
       columns: { id: true, firstName: true, lastName: true, email: true },
     })
-    if (!candidateRecord) throw createError({ statusCode: 404, statusMessage: 'Candidate not found' })
+    if (!candidateRecord) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
   } else {
     const email = body.email!
-    candidateRecord = await db.query.candidate.findFirst({
+    const matchedCandidate = await db.query.candidate.findFirst({
       where: and(eq(candidate.organizationId, orgId), eq(candidate.email, email)),
-      columns: { id: true, firstName: true, lastName: true, email: true },
+      columns: { id: true, firstName: true, lastName: true, email: true, quarantinedAt: true },
     })
 
-    if (!candidateRecord) {
+    if (matchedCandidate?.quarantinedAt) {
+      throw createError({ statusCode: 409, statusMessage: 'A matching candidate is in retention quarantine and cannot be linked through recruiter intake.' })
+    }
+
+    if (matchedCandidate) {
+      candidateRecord = {
+        id: matchedCandidate.id,
+        firstName: matchedCandidate.firstName,
+        lastName: matchedCandidate.lastName,
+        email: matchedCandidate.email,
+      }
+    } else {
       const [createdCandidate] = await db.insert(candidate).values({
         organizationId: orgId,
         firstName: body.firstName!,
