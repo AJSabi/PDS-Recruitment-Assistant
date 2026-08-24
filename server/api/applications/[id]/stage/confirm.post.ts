@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../../database/schema'
-import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../../utils/schemas/recruitmentStage'
+import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
     applicationId,
-    type: body.stage === 'hod_round_completed' ? 'hod_interview' : 'interview',
+    type: 'stage_change',
     summary: body.note ?? `Confirmed recruitment stage: ${body.stage}`,
     payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage },
     createdBy: session.user.id,
