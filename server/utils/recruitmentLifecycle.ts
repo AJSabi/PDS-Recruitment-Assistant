@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../database/schema'
+import { application, jobSkillMatrix, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../database/schema'
 
 export async function ensureRequirementState(organizationId: string, jobId: string) {
   const existing = await db.query.recruitmentRequirementState.findFirst({
@@ -97,12 +97,22 @@ export async function flagRequirementChange(input: {
       revision: state.revision + 1,
       jdVersion: changeType === 'jd' ? state.jdVersion + 1 : state.jdVersion,
       skillMatrixVersion: changeType === 'skill_matrix' ? state.skillMatrixVersion + 1 : state.skillMatrixVersion,
+      skillMatrixApproved: changeType === 'jd' ? false : state.skillMatrixApproved,
+      skillMatrixApprovedAt: changeType === 'jd' ? null : state.skillMatrixApprovedAt,
       lastMaterialChangeAt: now,
       reassessmentRequired: affected.length > 0,
       updatedAt: now,
     })
     .where(eq(recruitmentRequirementState.id, state.id))
     .returning()
+
+  // A material JD change invalidates only the current approval. The last approved
+  // matrix snapshot is preserved so the recruiter can review/reapprove it.
+  if (changeType === 'jd') {
+    await db.update(jobSkillMatrix)
+      .set({ approvedAt: null, updatedAt: now })
+      .where(and(eq(jobSkillMatrix.organizationId, organizationId), eq(jobSkillMatrix.jobId, jobId)))
+  }
 
   for (const item of affected) {
     await db.update(recruitmentApplicationProfile)
