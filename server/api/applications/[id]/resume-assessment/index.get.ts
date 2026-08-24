@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { application, resumeAssessment } from '../../../../../database/schema'
+import { application, resumeAssessment } from '../../../../database/schema'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
