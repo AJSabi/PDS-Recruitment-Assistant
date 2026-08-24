@@ -3,15 +3,16 @@ import { organization } from './auth'
 import { application, job } from './app'
 
 export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_validation' | 'significant_gap' | 'not_yet_assessed'
-export type RecruitmentStage = 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
+export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
 export type CandidatePriority = 'P1' | 'P2' | 'P3' | 'P4'
-export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change'
+export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change'
 export type SkillEvidenceLevel = 'strong_evidence' | 'partial_evidence' | 'no_evidence_found' | 'requires_verification'
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   jobId: text('job_id').notNull().references(() => job.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull().default(1),
   jdVersion: integer('jd_version').notNull().default(1),
   skillMatrixVersion: integer('skill_matrix_version').notNull().default(0),
   skillMatrixApproved: boolean('skill_matrix_approved').notNull().default(false),
@@ -30,7 +31,7 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
   currentFit: text('current_fit').$type<CurrentFit>().notNull().default('not_yet_assessed'),
-  lastStatus: text('last_status').$type<RecruitmentStage>().notNull().default('resume_received'),
+  lastStatus: text('last_status').$type<RecruitmentStage>().notNull().default('candidate_added'),
   statusDate: timestamp('status_date').notNull().defaultNow(),
   lastContactAt: timestamp('last_contact_at'),
   resumeBrief: text('resume_brief'),
