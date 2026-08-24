@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { application, recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
 import { startScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
+import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -66,6 +67,8 @@ export default defineEventHandler(async (event) => {
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
+
+  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'recruiter_screening_pending')
 
   return {
     screening,
