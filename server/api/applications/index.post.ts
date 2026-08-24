@@ -56,14 +56,13 @@ export default defineEventHandler(async (event) => {
 
   if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
 
-  // PDS workflow source of truth: every new job-candidate link starts with a
-  // recruitment profile immediately. Resume upload/evaluation can follow later.
   await db.insert(recruitmentApplicationProfile).values({
     organizationId: orgId,
     applicationId: created.id,
     currentFit: 'not_yet_assessed',
-    lastStatus: 'resume_received',
+    lastStatus: 'candidate_added',
     assessmentLocked: false,
+    nextAction: 'Upload or verify the latest resume.',
     lastUpdatedBy: session.user.id,
   })
 
