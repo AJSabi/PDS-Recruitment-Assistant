@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession } from '../../../../../database/schema'
-import { answerScreeningQuestionSchema } from '../../../../../utils/schemas/recruitmentWorkflow'
+import { application, recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
+import { answerScreeningQuestionSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -18,6 +18,15 @@ export default defineEventHandler(async (event) => {
     columns: { id: true },
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
+
+  const profile = await db.query.recruitmentApplicationProfile.findFirst({
+    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
+    columns: { lastStatus: true },
+  })
+  if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (profile.lastStatus !== 'recruiter_screening_pending') {
+    throw createError({ statusCode: 422, statusMessage: 'Candidate is not currently in Recruiter Screening Pending status.' })
+  }
 
   const screening = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
