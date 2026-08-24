@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
 import { completeScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const app = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true },
+    columns: { id: true, jobId: true },
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
@@ -49,7 +50,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 422, statusMessage: `Complete all screening questions before final assessment. ${unanswered.length} unanswered.` })
   }
 
+  const requirementState = await db.query.recruitmentRequirementState.findFirst({
+    where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
+  })
+  const requirementRevision = requirementState?.revision ?? profile.requirementVersionAssessed
   const now = new Date()
+
   const [updatedScreening] = await db.update(recruiterScreeningSession).set({
     status: 'completed',
     finalFit: body.finalFit,
@@ -67,6 +73,7 @@ export default defineEventHandler(async (event) => {
     conversationBrief: body.conversationBrief ?? profile.conversationBrief,
     nextAction: nextActionLabels[body.recommendedNextStep] ?? body.recommendedNextStep,
     assessmentLocked: true,
+    requirementVersionAssessed: requirementRevision,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
@@ -83,9 +90,12 @@ export default defineEventHandler(async (event) => {
       recommendedNextStep: body.recommendedNextStep,
       validationFocus: body.validationFocus,
       responses,
+      requirementRevision,
     },
     createdBy: session.user.id,
   })
+
+  await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
   return {
     screening: updatedScreening,
@@ -94,6 +104,7 @@ export default defineEventHandler(async (event) => {
       lastStatus: 'recruiter_screening_completed',
       recommendedNextStep: body.recommendedNextStep,
       validationFocus: body.validationFocus,
+      requirementRevision,
     },
   }
 })
