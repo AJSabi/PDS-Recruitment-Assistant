@@ -2,9 +2,9 @@ import { z } from 'zod'
 
 export const currentFitSchema = z.enum(['strong_fit', 'potential_fit', 'borderline_requires_validation', 'significant_gap', 'not_yet_assessed'])
 export const finalScreeningFitSchema = z.enum(['strong_fit', 'potential_fit', 'borderline_requires_validation', 'significant_gap'])
-export const recruitmentStageSchema = z.enum(['resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'recruiter_screening_completed', 'hod_round_pending', 'hod_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined', 'closed'])
+export const recruitmentStageSchema = z.enum(['candidate_added', 'resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'recruiter_screening_completed', 'hod_round_pending', 'hod_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined', 'closed'])
 export const candidatePrioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
-export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hod_interview', 'interview', 'manual_reassessment', 'requirement_change'])
+export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hod_interview', 'interview', 'manual_reassessment', 'requirement_change', 'stage_change'])
 export const screeningNextStepSchema = z.enum(['proceed_to_hod_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required'])
 
 export const updateRecruitmentProfileSchema = z.object({
@@ -61,14 +61,4 @@ export const completeScreeningSchema = z.object({
   recommendedNextStep: screeningNextStepSchema,
   conversationBrief: z.string().trim().max(3000).nullish(),
   validationFocus: z.array(z.string().trim().min(1).max(500)).max(5).default([]),
-}).strict()
-
-/** Low-level upsert retained for internal/admin use. Recruiter flow should use start/answer/complete endpoints. */
-export const upsertScreeningSchema = z.object({
-  status: z.enum(['not_started', 'in_progress', 'completed']).optional(),
-  questions: z.array(screeningQuestionSchema).max(10).optional(),
-  responses: z.array(screeningResponseSchema).max(10).optional(),
-  finalFit: currentFitSchema.nullish(),
-  recommendedNextStep: z.string().trim().max(1000).nullish(),
-  validationFocus: z.array(z.string().max(500)).max(10).optional(),
 }).strict()
