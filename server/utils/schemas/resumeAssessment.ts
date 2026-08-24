@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export const evidenceLevelSchema = z.enum(['strong_evidence', 'partial_evidence', 'no_evidence_found', 'requires_verification'])
-export const candidatePrioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
 
 export const resumeSkillAssessmentSchema = z.object({
   classification: z.string().max(120).optional(),
@@ -21,15 +20,18 @@ export const saveResumeAssessmentSchema = z.object({
   preferredScore: z.number().int().min(0).max(100).nullish(),
   experienceScore: z.number().int().min(0).max(100).nullish(),
   optionalScore: z.number().int().min(0).max(100).nullish(),
-  provisionalFitScore: z.number().int().min(0).max(100).nullish(),
   mandatoryMatch: z.string().max(500).nullish(),
   keyStrength: z.string().max(1000).nullish(),
   mainGap: z.string().max(1000).nullish(),
-  priority: candidatePrioritySchema.nullish(),
-  requirementVersion: z.number().int().min(0).default(0),
   source: z.enum(['manual', 'ai']).default('manual'),
-})
-
-export const batchRankingQuerySchema = z.object({
-  jobId: z.string().min(1),
+}).strict().superRefine((data, ctx) => {
+  const scores = [data.mandatoryScore, data.preferredScore, data.experienceScore, data.optionalScore]
+  const supplied = scores.filter(value => value != null).length
+  if (supplied !== 0 && supplied !== 4) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Provide all four component scores or leave all four blank.',
+      path: ['mandatoryScore'],
+    })
+  }
 })
