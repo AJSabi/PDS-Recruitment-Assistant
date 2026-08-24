@@ -96,21 +96,25 @@ function normalizeIds() {
 }
 
 function validate(approve: boolean): string | null {
+  // Drafts are deliberately allowed to be incomplete. Full business validation
+  // applies only when the recruiter explicitly approves the Skill Matrix.
+  if (!approve) return null
+
   const count = matrix.value.classifications.length
-  if (count < 1 || count > 5) return 'Use between 1 and 5 classifications.'
-  if (approve && (count < 4 || count > 5)) return 'An approved Skill Matrix must contain 4–5 classifications.'
+  if (count < 4 || count > 5) return 'An approved Skill Matrix must contain 4–5 classifications.'
+
   let mandatory = 0
   for (const c of matrix.value.classifications) {
     if (!c.name.trim()) return 'Every classification needs a name.'
     if (!c.skills.length) return `${c.name} needs at least one skill.`
-    const m = c.skills.filter(s => s.priority === 'mandatory').length
-    if (m > 3) return `${c.name} has more than 3 Mandatory skills.`
-    if (approve && (m < 2 || m > 3)) return `${c.name} must contain 2–3 Mandatory skills before approval.`
-    mandatory += m
     if (c.skills.some(s => !s.skill.trim())) return `A skill under ${c.name} is blank.`
+
+    const m = c.skills.filter(s => s.priority === 'mandatory').length
+    if (m < 2 || m > 3) return `${c.name} must contain 2–3 Mandatory skills before approval.`
+    mandatory += m
   }
-  if (mandatory > 12) return 'Use no more than 12 Mandatory skills overall.'
-  if (approve && (mandatory < 8 || mandatory > 12)) return 'Use 8–12 Mandatory skills overall before approval.'
+
+  if (mandatory < 8 || mandatory > 12) return 'Use 8–12 Mandatory skills overall before approval.'
   return null
 }
 
@@ -180,7 +184,7 @@ async function persist(approve: boolean) {
         </section>
 
         <button v-if="matrix.classifications.length < 5" type="button" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-surface-300 px-4 py-2 text-sm font-medium" @click="addClassification"><Plus class="size-4" /> Add classification</button>
-        <div class="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-surface-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-surface-800 dark:bg-surface-900/95"><p class="text-xs text-surface-500"><span v-if="dirty">Unsaved changes. </span>Approval requires 4–5 classifications, 2–3 Mandatory skills per classification, and 8–12 Mandatory skills overall.</p><div class="flex gap-2"><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-50" @click="persist(false)"><Save class="size-4" /> Save Draft</button><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" @click="persist(true)"><CheckCircle2 class="size-4" /> Approve Skill Matrix</button></div></div>
+        <div class="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-surface-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-surface-800 dark:bg-surface-900/95"><p class="text-xs text-surface-500"><span v-if="dirty">Unsaved changes. </span>Drafts may be incomplete. Approval requires 4–5 classifications, 2–3 Mandatory skills per classification, and 8–12 Mandatory skills overall.</p><div class="flex gap-2"><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-50" @click="persist(false)"><Save class="size-4" /> Save Draft</button><button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" @click="persist(true)"><CheckCircle2 class="size-4" /> Approve Skill Matrix</button></div></div>
       </div>
     </template>
   </div>
