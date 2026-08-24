@@ -7,20 +7,12 @@ export const candidatePrioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
 export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hod_interview', 'interview', 'manual_reassessment', 'requirement_change', 'stage_change'])
 export const screeningNextStepSchema = z.enum(['proceed_to_hod_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required'])
 
+/** Safe recruiter-editable profile metadata. Fit, stage, locks and ranking are changed only by governed workflow endpoints. */
 export const updateRecruitmentProfileSchema = z.object({
-  currentFit: currentFitSchema.optional(),
-  lastStatus: recruitmentStageSchema.optional(),
   lastContactAt: z.coerce.date().nullish(),
   resumeBrief: z.string().trim().max(2000).nullish(),
   conversationBrief: z.string().trim().max(3000).nullish(),
   nextAction: z.string().trim().max(1000).nullish(),
-  assessmentLocked: z.boolean().optional(),
-  provisionalFitScore: z.number().int().min(0).max(100).nullish(),
-  priority: candidatePrioritySchema.nullish(),
-  mandatoryMatch: z.string().trim().max(1000).nullish(),
-  keyStrength: z.string().trim().max(1000).nullish(),
-  mainGap: z.string().trim().max(1000).nullish(),
-  requirementVersionAssessed: z.number().int().min(0).optional(),
 }).strict()
 
 export const createEvidenceSchema = z.object({
