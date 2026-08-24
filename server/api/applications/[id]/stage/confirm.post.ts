@@ -1,5 +1,11 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import {
+  application,
+  recruitmentApplicationProfile,
+  recruitmentEvidence,
+  recruiterScreeningSession,
+  resumeAssessment,
+} from '../../../../database/schema'
 import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { z } from 'zod'
@@ -19,7 +25,10 @@ export default defineEventHandler(async (event) => {
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const profile = await db.query.recruitmentApplicationProfile.findFirst({
-    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
+    where: and(
+      eq(recruitmentApplicationProfile.applicationId, applicationId),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+    ),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
 
@@ -31,6 +40,66 @@ export default defineEventHandler(async (event) => {
       statusCode: 422,
       statusMessage: `Cannot confirm stage change from ${profile.lastStatus} to ${body.stage}.`,
     })
+  }
+
+  // Evidence-producing stages must not be manually confirmed without their underlying action.
+  if (body.stage === 'resume_received' && !profile.selectedResumeDocumentId) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'Select the resume for this application first. Resume Received is set automatically when a resume is selected.',
+    })
+  }
+
+  if (body.stage === 'resume_reviewed') {
+    const assessment = await db.query.resumeAssessment.findFirst({
+      where: and(
+        eq(resumeAssessment.applicationId, applicationId),
+        eq(resumeAssessment.organizationId, orgId),
+      ),
+      columns: { id: true },
+    })
+    if (!assessment) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'Complete and save the Resume Assessment first. Resume Reviewed is set automatically by that action.',
+      })
+    }
+  }
+
+  if (body.stage === 'recruiter_screening_pending' || body.stage === 'recruiter_screening_completed') {
+    const screening = await db.query.recruiterScreeningSession.findFirst({
+      where: and(
+        eq(recruiterScreeningSession.applicationId, applicationId),
+        eq(recruiterScreeningSession.organizationId, orgId),
+      ),
+      columns: { status: true },
+    })
+    const requiredStatus = body.stage === 'recruiter_screening_pending' ? 'in_progress' : 'completed'
+    if (!screening || screening.status !== requiredStatus) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: body.stage === 'recruiter_screening_pending'
+          ? 'Start Recruiter Screening first. Screening Pending is set automatically when screening starts.'
+          : 'Complete Recruiter Screening first. Screening Completed is set automatically after the final screening assessment.',
+      })
+    }
+  }
+
+  if (body.stage === 'hod_round_completed') {
+    const hodEvidence = await db.query.recruitmentEvidence.findFirst({
+      where: and(
+        eq(recruitmentEvidence.applicationId, applicationId),
+        eq(recruitmentEvidence.organizationId, orgId),
+        eq(recruitmentEvidence.type, 'hod_interview'),
+      ),
+      columns: { id: true },
+    })
+    if (!hodEvidence) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: 'Save HOD Round evidence before confirming HOD Completed.',
+      })
+    }
   }
 
   const now = new Date()
