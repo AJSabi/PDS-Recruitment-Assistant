@@ -17,6 +17,7 @@ const { data: profileData, refresh: refreshProfile } = useFetch(() => `/api/appl
 })
 
 const profile = computed<any>(() => profileData.value?.profile ?? null)
+const screeningEnabled = computed(() => ['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.value?.lastStatus ?? ''))
 
 async function refreshWorkflow() {
   await Promise.all([refreshApplication(), refreshProfile()])
@@ -49,18 +50,28 @@ useSeoMeta({
         </div>
       </header>
 
-      <PdsApplicationRecruitmentPanel
-        :application-id="applicationId"
-        :documents="application.candidate.documents ?? []"
-        @changed="refreshWorkflow"
-      />
+      <div class="space-y-6">
+        <PdsApplicationRecruitmentPanel
+          :application-id="applicationId"
+          :documents="application.candidate.documents ?? []"
+          @changed="refreshWorkflow"
+        />
 
-      <PdsResumeAssessmentPanel
-        :application-id="applicationId"
-        :selected-resume-document-id="profile?.selectedResumeDocumentId"
-        :recruitment-status="profile?.lastStatus"
-        @saved="refreshWorkflow"
-      />
+        <PdsResumeAssessmentPanel
+          :application-id="applicationId"
+          :selected-resume-document-id="profile?.selectedResumeDocumentId"
+          :recruitment-status="profile?.lastStatus"
+          @saved="refreshWorkflow"
+        />
+
+        <PdsRecruiterScreening
+          :application-id="applicationId"
+          :enabled="screeningEnabled"
+          @changed="refreshWorkflow"
+        />
+
+        <PdsCandidateHistory :application-id="applicationId" />
+      </div>
     </template>
   </div>
 </template>
