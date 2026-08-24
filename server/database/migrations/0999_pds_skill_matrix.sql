@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS "job_skill_matrix" (
   "organization_id" text NOT NULL,
   "job_id" text NOT NULL,
   "matrix" jsonb NOT NULL,
+  "approved_matrix" jsonb,
   "approved_at" timestamp,
   "created_at" timestamp DEFAULT now() NOT NULL,
   "updated_at" timestamp DEFAULT now() NOT NULL,
