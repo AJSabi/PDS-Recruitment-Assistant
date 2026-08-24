@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardCheck, Loader2, Save } from 'lucide-vue-next'
+import { ClipboardCheck, Loader2, Save, Sparkles } from 'lucide-vue-next'
 
 const props = defineProps<{
   applicationId: string
@@ -10,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ saved: [] }>()
 const toast = useToast()
 const isSaving = ref(false)
+const isAnalyzing = ref(false)
 
 const { data, refresh } = useFetch(() => `/api/applications/${props.applicationId}/resume-assessment`, {
   key: computed(() => `pds-resume-assessment-${props.applicationId}`),
@@ -27,6 +28,10 @@ const optionalScore = ref<number | null>(null)
 const mandatoryMatch = ref('')
 const keyStrength = ref('')
 const mainGap = ref('')
+const skillAssessment = ref<any[]>([])
+const assessmentSource = ref<string | null>(null)
+const provisionalFitScore = ref<number | null>(null)
+const priority = ref<string | null>(null)
 
 watch(data, (value: any) => {
   const a = value?.assessment
@@ -42,25 +47,45 @@ watch(data, (value: any) => {
   mandatoryMatch.value = a.mandatoryMatch ?? ''
   keyStrength.value = a.keyStrength ?? ''
   mainGap.value = a.mainGap ?? ''
+  skillAssessment.value = a.skillAssessment ?? []
+  assessmentSource.value = a.source ?? null
+  provisionalFitScore.value = a.provisionalFitScore ?? null
+  priority.value = a.priority ?? null
 }, { immediate: true })
 
 function lines(value: string) {
   return value.split('\n').map(v => v.trim()).filter(Boolean)
 }
 
-async function saveAssessment() {
-  if (!props.selectedResumeDocumentId) {
-    return toast.warning('Select a resume first', 'Choose the resume for this application before assessment.')
-  }
+function evidenceLabel(value?: string) {
+  return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+async function runAiAnalysis() {
+  if (!props.selectedResumeDocumentId) return toast.warning('Select a resume first', 'Choose the resume for this application before AI analysis.')
   if (!['resume_received', 'resume_reviewed', 'reassess'].includes(props.recruitmentStatus ?? '')) {
-    return toast.warning('Assessment not available', 'The current recruitment status does not allow resume assessment.')
+    return toast.warning('AI analysis not available', 'The current recruitment status does not allow resume assessment.')
   }
+  isAnalyzing.value = true
+  try {
+    const result: any = await $fetch(`/api/applications/${props.applicationId}/resume-assessment/generate`, { method: 'POST' })
+    await refresh()
+    emit('saved')
+    toast.success('AI resume analysis completed', { message: `${result?.ranking?.priority ?? ''}${result?.ranking?.provisionalFitScore != null ? ` · Score ${result.ranking.provisionalFitScore}` : ''}`.trim() })
+  } catch (err: any) {
+    toast.error('AI analysis could not be completed', { message: err?.data?.statusMessage ?? err?.message })
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+async function saveAssessment() {
+  if (!props.selectedResumeDocumentId) return toast.warning('Select a resume first', 'Choose the resume for this application before assessment.')
+  if (!['resume_received', 'resume_reviewed', 'reassess'].includes(props.recruitmentStatus ?? '')) return toast.warning('Assessment not available', 'The current recruitment status does not allow resume assessment.')
 
   const scores = [mandatoryScore.value, preferredScore.value, experienceScore.value, optionalScore.value]
   const supplied = scores.filter(v => v !== null && v !== undefined).length
-  if (supplied !== 0 && supplied !== 4) {
-    return toast.warning('Complete all scores', 'Enter all four component scores or leave all four blank.')
-  }
+  if (supplied !== 0 && supplied !== 4) return toast.warning('Complete all scores', 'Enter all four component scores or leave all four blank.')
 
   isSaving.value = true
   try {
@@ -69,7 +94,7 @@ async function saveAssessment() {
       body: {
         candidateSnapshot: candidateSnapshot.value.trim() || null,
         jdAlignment: jdAlignment.value.trim() || null,
-        skillAssessment: [],
+        skillAssessment: skillAssessment.value,
         keyGaps: lines(keyGapsText.value),
         verificationAreas: lines(verificationAreasText.value),
         mandatoryScore: mandatoryScore.value,
@@ -87,47 +112,38 @@ async function saveAssessment() {
     toast.success('Resume assessment saved')
   } catch (err: any) {
     toast.error('Could not save assessment', { message: err?.data?.statusMessage ?? err?.message })
-  } finally {
-    isSaving.value = false
-  }
+  } finally { isSaving.value = false }
 }
 </script>
 
 <template>
   <section class="rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
-    <div class="mb-4 flex items-start gap-2">
-      <ClipboardCheck class="mt-0.5 size-4 text-brand-600" />
-      <div>
-        <h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Resume Assessment</h2>
-        <p class="mt-1 text-xs text-surface-500">Manual framework for now. Copilot can later populate the same fields and evidence structure.</p>
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div class="flex items-start gap-2">
+        <ClipboardCheck class="mt-0.5 size-4 text-brand-600" />
+        <div>
+          <div class="flex flex-wrap items-center gap-2"><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Resume Assessment</h2><span v-if="assessmentSource" class="rounded-full bg-surface-100 px-2 py-0.5 text-xs text-surface-600 dark:bg-surface-800">{{ assessmentSource === 'ai' ? 'AI generated' : 'Manual' }}</span><span v-if="priority" class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{{ priority }}</span><span v-if="provisionalFitScore != null" class="text-xs text-surface-500">Score {{ provisionalFitScore }}/100</span></div>
+          <p class="mt-1 text-xs text-surface-500">AI assesses the selected resume against the approved Skill Matrix. Resume analysis is provisional and does not change Current Fit.</p>
+        </div>
       </div>
+      <button v-if="selectedResumeDocumentId" type="button" :disabled="isAnalyzing || isSaving" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="runAiAnalysis"><Loader2 v-if="isAnalyzing" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isAnalyzing ? 'Analyzing…' : (assessmentSource ? 'Run AI Analysis Again' : 'Analyze Resume with AI') }}</button>
     </div>
 
-    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">
-      Select a resume for this application before assessment.
-    </div>
+    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">Select a resume for this application before assessment.</div>
 
     <div v-else class="space-y-4">
       <div class="grid gap-4 md:grid-cols-2">
-        <label class="block">
-          <span class="text-xs font-medium text-surface-600 dark:text-surface-300">Candidate Snapshot</span>
-          <textarea v-model="candidateSnapshot" rows="4" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="Brief resume-based candidate summary" />
-        </label>
-        <label class="block">
-          <span class="text-xs font-medium text-surface-600 dark:text-surface-300">JD Alignment</span>
-          <textarea v-model="jdAlignment" rows="4" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="How the resume aligns with the active JD" />
-        </label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Candidate Snapshot</span><textarea v-model="candidateSnapshot" rows="4" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">JD Alignment</span><textarea v-model="jdAlignment" rows="4" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
+      </div>
+
+      <div v-if="skillAssessment.length" class="overflow-x-auto rounded-lg border border-surface-200 dark:border-surface-800">
+        <table class="min-w-full text-sm"><thead class="bg-surface-50 text-left text-xs uppercase text-surface-500 dark:bg-surface-800/60"><tr><th class="px-3 py-2">Classification</th><th class="px-3 py-2">Skill</th><th class="px-3 py-2">Priority</th><th class="px-3 py-2">Evidence</th><th class="px-3 py-2">Resume Evidence</th></tr></thead><tbody class="divide-y divide-surface-100 dark:divide-surface-800"><tr v-for="(row, index) in skillAssessment" :key="`${row.skill}-${index}`"><td class="px-3 py-2">{{ row.classification || '—' }}</td><td class="px-3 py-2 font-medium">{{ row.skill }}</td><td class="px-3 py-2">{{ evidenceLabel(row.priority) }}</td><td class="px-3 py-2 whitespace-nowrap">{{ evidenceLabel(row.evidenceLevel) }}</td><td class="px-3 py-2 min-w-[280px] text-surface-600 dark:text-surface-300">{{ row.evidence || '—' }}</td></tr></tbody></table>
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <label class="block">
-          <span class="text-xs font-medium text-surface-600 dark:text-surface-300">Key Gaps</span>
-          <textarea v-model="keyGapsText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One gap per line" />
-        </label>
-        <label class="block">
-          <span class="text-xs font-medium text-surface-600 dark:text-surface-300">Verification Areas</span>
-          <textarea v-model="verificationAreasText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One verification area per line" />
-        </label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Key Gaps</span><textarea v-model="keyGapsText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One gap per line" /></label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Verification Areas</span><textarea v-model="verificationAreasText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One verification area per line" /></label>
       </div>
 
       <div class="grid gap-3 sm:grid-cols-4">
@@ -143,13 +159,7 @@ async function saveAssessment() {
         <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Main Gap</span><input v-model="mainGap" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
       </div>
 
-      <div class="flex justify-end">
-        <button type="button" :disabled="isSaving" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50" @click="saveAssessment">
-          <Loader2 v-if="isSaving" class="size-4 animate-spin" />
-          <Save v-else class="size-4" />
-          {{ isSaving ? 'Saving…' : 'Save Resume Assessment' }}
-        </button>
-      </div>
+      <div class="flex justify-end"><button type="button" :disabled="isSaving || isAnalyzing" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-50" @click="saveAssessment"><Loader2 v-if="isSaving" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isSaving ? 'Saving…' : 'Save / Adjust Assessment' }}</button></div>
     </div>
   </section>
 </template>
