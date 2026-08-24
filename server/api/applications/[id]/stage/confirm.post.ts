@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
 import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
+import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -41,6 +42,8 @@ export default defineEventHandler(async (event) => {
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
+
+  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, body.stage)
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
