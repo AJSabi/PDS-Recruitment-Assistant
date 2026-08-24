@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   const apps = await db.select({
     applicationId: application.id,
     jobId: application.jobId,
+    recruiterId: recruitmentApplicationProfile.assignedRecruiterId,
     currentFit: recruitmentApplicationProfile.currentFit,
     lastStatus: recruitmentApplicationProfile.lastStatus,
     nextAction: recruitmentApplicationProfile.nextAction,
@@ -43,8 +44,11 @@ export default defineEventHandler(async (event) => {
     const active = rows.filter(row => !['closed', 'joined', 'not_proceeding'].includes(row.lastStatus))
     return {
       ...requirement,
+      ownerUserId: state?.ownerUserId ?? null,
       totalCandidates: rows.length,
       activeCandidates: active.length,
+      assignedCandidates: rows.filter(row => Boolean(row.recruiterId)).length,
+      unassignedCandidates: active.filter(row => !row.recruiterId).length,
       assessed: rows.filter(row => row.currentFit !== 'not_yet_assessed').length,
       notYetAssessed: rows.filter(row => row.currentFit === 'not_yet_assessed').length,
       screening: rows.filter(row => ['recruiter_screening_pending', 'recruiter_screening_completed'].includes(row.lastStatus)).length,
@@ -69,8 +73,10 @@ export default defineEventHandler(async (event) => {
   return {
     summary: {
       activeRequirements: requirements.length,
+      unownedRequirements: requirements.filter(row => !row.ownerUserId).length,
       totalCandidates: requirements.reduce((sum, row) => sum + row.totalCandidates, 0),
       activeCandidates: requirements.reduce((sum, row) => sum + row.activeCandidates, 0),
+      unassignedCandidates: requirements.reduce((sum, row) => sum + row.unassignedCandidates, 0),
       notYetAssessed: requirements.reduce((sum, row) => sum + row.notYetAssessed, 0),
       reassessmentRequirements: requirements.filter(row => row.reassessmentRequired).length,
       offers: requirements.reduce((sum, row) => sum + row.offer, 0),
