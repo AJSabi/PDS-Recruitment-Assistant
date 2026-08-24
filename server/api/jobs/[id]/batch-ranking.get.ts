@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { application, candidate, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
+import { application, candidate, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../database/schema'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -60,7 +60,6 @@ export default defineEventHandler(async (event) => {
       needsReassessment,
     }
   }).sort((a, b) => {
-    // Current-baseline assessments rank before stale assessments; stale results are retained for history/comparison.
     if (a.needsReassessment !== b.needsReassessment) return a.needsReassessment ? 1 : -1
     const pa = a.priority ? priorityOrder[a.priority] ?? 99 : 99
     const pb = b.priority ? priorityOrder[b.priority] ?? 99 : 99
