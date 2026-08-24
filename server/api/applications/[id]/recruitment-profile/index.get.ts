@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
     profile: profile ?? {
       applicationId,
       currentFit: 'not_yet_assessed',
-      lastStatus: 'resume_received',
+      lastStatus: 'candidate_added',
+      nextAction: 'Upload or verify the latest resume.',
+      selectedResumeDocumentId: null,
       assessmentLocked: false,
       requirementVersionAssessed: 0,
     },
