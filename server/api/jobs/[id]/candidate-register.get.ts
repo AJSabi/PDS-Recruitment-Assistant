@@ -25,6 +25,7 @@ export default defineEventHandler(async (event) => {
     lastName: candidate.lastName,
     email: candidate.email,
     phone: candidate.phone,
+    assignedRecruiterId: recruitmentApplicationProfile.assignedRecruiterId,
     lastContactAt: recruitmentApplicationProfile.lastContactAt,
     resumeBrief: recruitmentApplicationProfile.resumeBrief,
     conversationBrief: recruitmentApplicationProfile.conversationBrief,
@@ -65,6 +66,8 @@ export default defineEventHandler(async (event) => {
 
   const summary = {
     totalCandidates: register.length,
+    assigned: register.filter(r => Boolean(r.assignedRecruiterId)).length,
+    unassigned: register.filter(r => !r.assignedRecruiterId && !['closed', 'joined', 'not_proceeding'].includes(r.lastStatus)).length,
     assessed: register.filter(r => r.currentFit !== 'not_yet_assessed').length,
     notYetAssessed: register.filter(r => r.currentFit === 'not_yet_assessed').length,
     actionPending: register.filter(r => !['closed', 'joined', 'not_proceeding'].includes(r.lastStatus)).length,
