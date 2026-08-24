@@ -13,6 +13,9 @@ export const recruitmentRequirementState = pgTable('recruitment_requirement_stat
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   jobId: text('job_id').notNull().references(() => job.id, { onDelete: 'cascade' }),
   ownerUserId: text('owner_user_id').references(() => user.id, { onDelete: 'set null' }),
+  assignmentDate: timestamp('assignment_date'),
+  targetClosureDate: timestamp('target_closure_date'),
+  closedAt: timestamp('closed_at'),
   revision: integer('revision').notNull().default(1),
   jdVersion: integer('jd_version').notNull().default(1),
   skillMatrixVersion: integer('skill_matrix_version').notNull().default(0),
@@ -26,6 +29,7 @@ export const recruitmentRequirementState = pgTable('recruitment_requirement_stat
   uniqueIndex('recruitment_requirement_state_job_idx').on(t.jobId),
   index('recruitment_requirement_state_org_idx').on(t.organizationId),
   index('recruitment_requirement_state_owner_idx').on(t.organizationId, t.ownerUserId),
+  index('recruitment_requirement_state_target_idx').on(t.organizationId, t.targetClosureDate),
 ]))
 
 export const recruitmentApplicationProfile = pgTable('recruitment_application_profile', {
