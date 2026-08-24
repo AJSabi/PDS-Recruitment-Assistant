@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm'
-import { application, job } from '../../database/schema'
+import { application, job, recruitmentApplicationProfile } from '../../database/schema'
 import { createApplicationSchema } from '../../utils/schemas/application'
 import { findActiveCandidate } from '../../utils/candidate-retention'
 
@@ -14,24 +14,17 @@ export default defineEventHandler(async (event) => {
 
   const body = await readValidatedBody(event, createApplicationSchema.parse)
 
-  // Verify candidate belongs to this org
   const existingCandidate = await findActiveCandidate(orgId, body.candidateId)
-
   if (!existingCandidate) {
     throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
   }
 
-  // Verify job belongs to this org
   const existingJob = await db.query.job.findFirst({
     where: and(eq(job.id, body.jobId), eq(job.organizationId, orgId)),
     columns: { id: true },
   })
+  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
 
-  if (!existingJob) {
-    throw createError({ statusCode: 404, statusMessage: 'Job not found' })
-  }
-
-  // Check for duplicate application
   const existing = await db.query.application.findFirst({
     where: and(
       eq(application.organizationId, orgId),
@@ -40,12 +33,8 @@ export default defineEventHandler(async (event) => {
     ),
     columns: { id: true },
   })
-
   if (existing) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'This candidate has already been applied to this job',
-    })
+    throw createError({ statusCode: 409, statusMessage: 'This candidate has already been applied to this job' })
   }
 
   const [created] = await db.insert(application).values({
@@ -65,9 +54,18 @@ export default defineEventHandler(async (event) => {
     updatedAt: application.updatedAt,
   })
 
-  if (!created) {
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
-  }
+  if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
+
+  // PDS workflow source of truth: every new job-candidate link starts with a
+  // recruitment profile immediately. Resume upload/evaluation can follow later.
+  await db.insert(recruitmentApplicationProfile).values({
+    organizationId: orgId,
+    applicationId: created.id,
+    currentFit: 'not_yet_assessed',
+    lastStatus: 'resume_received',
+    assessmentLocked: false,
+    lastUpdatedBy: session.user.id,
+  })
 
   recordActivity({
     organizationId: orgId,
