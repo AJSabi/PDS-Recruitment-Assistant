@@ -3,6 +3,7 @@ import { application, recruitmentApplicationProfile, recruitmentEvidence, recrui
 import { finalScreeningFitSchema } from '../../../utils/schemas/recruitmentWorkflow'
 import { CONFIRMED_STAGE_TRANSITIONS } from '../../../utils/schemas/recruitmentStage'
 import { refreshRequirementReassessmentFlag } from '../../../utils/recruitmentLifecycle'
+import { syncApplicationStatusForRecruitmentStage } from '../../../utils/recruitmentApplicationStatus'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -58,6 +59,8 @@ export default defineEventHandler(async (event) => {
     })
     .where(eq(recruitmentApplicationProfile.id, profile.id))
     .returning()
+
+  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'reassess')
 
   const [evidence] = await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
