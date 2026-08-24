@@ -69,6 +69,13 @@ useSeoMeta({
           <span class="inline-flex items-center gap-1.5"><Briefcase class="size-4" />{{ application.job.title }}</span>
           <span class="inline-flex items-center gap-1.5"><UserRound class="size-4" />{{ application.candidate.email }}</span>
         </div>
+        <div class="mt-4">
+          <PdsRecruiterAssignment
+            :application-id="applicationId"
+            :assigned-recruiter-id="profile?.assignedRecruiterId"
+            @changed="refreshWorkflow"
+          />
+        </div>
       </header>
 
       <div class="space-y-6">
