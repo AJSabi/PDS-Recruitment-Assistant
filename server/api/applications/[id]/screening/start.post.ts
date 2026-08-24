@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../../database/schema'
-import { startScreeningSchema } from '../../../../../utils/schemas/recruitmentWorkflow'
+import { application, recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
+import { startScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
+const allowedStartStatuses = new Set(['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'])
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
@@ -17,11 +18,19 @@ export default defineEventHandler(async (event) => {
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
+  const profile = await db.query.recruitmentApplicationProfile.findFirst({
+    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
+  })
+  if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
+  if (!allowedStartStatuses.has(profile.lastStatus)) {
+    throw createError({ statusCode: 422, statusMessage: `Recruiter screening cannot start while candidate status is ${profile.lastStatus}.` })
+  }
+
   const existing = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
   })
-  if (existing?.status === 'completed') {
-    throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Use reassessment to run a new evaluation.' })
+  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') {
+    throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before starting another screening.' })
   }
 
   const now = new Date()
@@ -34,7 +43,7 @@ export default defineEventHandler(async (event) => {
       finalFit: null,
       recommendedNextStep: null,
       validationFocus: [],
-      startedAt: existing.startedAt ?? now,
+      startedAt: now,
       completedAt: null,
       updatedAt: now,
     }).where(eq(recruiterScreeningSession.id, existing.id)).returning()
@@ -56,7 +65,7 @@ export default defineEventHandler(async (event) => {
     nextAction: 'Complete recruiter screening',
     lastUpdatedBy: session.user.id,
     updatedAt: now,
-  }).where(and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)))
+  }).where(eq(recruitmentApplicationProfile.id, profile.id))
 
   return {
     screening,
