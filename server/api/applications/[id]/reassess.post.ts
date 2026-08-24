@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../database/schema'
 import { finalScreeningFitSchema } from '../../../utils/schemas/recruitmentWorkflow'
 import { CONFIRMED_STAGE_TRANSITIONS } from '../../../utils/schemas/recruitmentStage'
+import { refreshRequirementReassessmentFlag } from '../../../utils/recruitmentLifecycle'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -72,6 +73,8 @@ export default defineEventHandler(async (event) => {
     },
     createdBy: session.user.id,
   }).returning()
+
+  if (body.currentFit) await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
   return { profile: updatedProfile, evidence, requirementRevision }
 })
