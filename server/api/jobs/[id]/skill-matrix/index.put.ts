@@ -26,13 +26,6 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const approvedAt = body.approved ? now : null
   const approvedMatrix = body.approved ? body.matrix : null
-  const updateValues: Record<string, unknown> = {
-    matrix: body.matrix,
-    approvedAt,
-    updatedAt: now,
-  }
-  // Saving an unapproved draft must never erase the last approved baseline.
-  if (body.approved) updateValues.approvedMatrix = body.matrix
 
   const [saved] = await db.insert(jobSkillMatrix).values({
     organizationId: orgId,
@@ -43,7 +36,12 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
   }).onConflictDoUpdate({
     target: jobSkillMatrix.jobId,
-    set: updateValues,
+    set: {
+      matrix: body.matrix,
+      approvedAt,
+      updatedAt: now,
+      ...(body.approved ? { approvedMatrix: body.matrix } : {}),
+    },
   }).returning()
 
   const state = await ensureRequirementState(orgId, jobId)
