@@ -24,6 +24,7 @@ export async function flagRequirementChange(input: {
 
   const [updatedState] = await db.update(recruitmentRequirementState)
     .set({
+      revision: state.revision + 1,
       jdVersion: changeType === 'jd' ? state.jdVersion + 1 : state.jdVersion,
       skillMatrixVersion: changeType === 'skill_matrix' ? state.skillMatrixVersion + 1 : state.skillMatrixVersion,
       lastMaterialChangeAt: now,
@@ -64,6 +65,7 @@ export async function flagRequirementChange(input: {
       summary,
       payload: {
         changeType,
+        requirementRevision: updatedState?.revision ?? state.revision + 1,
         jdVersion: updatedState?.jdVersion ?? state.jdVersion,
         skillMatrixVersion: updatedState?.skillMatrixVersion ?? state.skillMatrixVersion,
         currentFitPreserved: profile?.currentFit ?? null,
