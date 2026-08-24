@@ -40,15 +40,24 @@ export default defineEventHandler(async (event) => {
   const state = await ensureRequirementState(orgId, jobId)
   const matrixChanged = JSON.stringify(previous?.matrix ?? null) !== JSON.stringify(body.matrix)
   const newlyApproved = body.approved && !previous?.approvedAt
+  const changedAfterApproval = body.approved && matrixChanged && Boolean(previous?.approvedAt)
 
-  if (body.approved && matrixChanged && previous) {
-    await flagRequirementChange({
+  if (changedAfterApproval) {
+    const result = await flagRequirementChange({
       organizationId: orgId,
       jobId,
       actorId: session.user.id,
       changeType: 'skill_matrix',
       summary: 'Approved Skill Matrix changed. Existing candidate assessments were preserved and flagged for reassessment.',
     })
+
+    await db.update(recruitmentRequirementState)
+      .set({
+        skillMatrixApproved: true,
+        skillMatrixApprovedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(recruitmentRequirementState.id, result.state.id))
   } else {
     await db.update(recruitmentRequirementState)
       .set({
