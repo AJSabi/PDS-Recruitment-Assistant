@@ -20,29 +20,39 @@ export default defineEventHandler(async (event) => {
 
   const previous = await db.query.jobSkillMatrix.findFirst({
     where: and(eq(jobSkillMatrix.jobId, jobId), eq(jobSkillMatrix.organizationId, orgId)),
-    columns: { matrix: true, approvedAt: true },
+    columns: { matrix: true, approvedMatrix: true, approvedAt: true },
   })
 
   const now = new Date()
   const approvedAt = body.approved ? now : null
+  const approvedMatrix = body.approved ? body.matrix : null
+  const updateValues: Record<string, unknown> = {
+    matrix: body.matrix,
+    approvedAt,
+    updatedAt: now,
+  }
+  // Saving an unapproved draft must never erase the last approved baseline.
+  if (body.approved) updateValues.approvedMatrix = body.matrix
 
   const [saved] = await db.insert(jobSkillMatrix).values({
     organizationId: orgId,
     jobId,
     matrix: body.matrix,
+    approvedMatrix,
     approvedAt,
     updatedAt: now,
   }).onConflictDoUpdate({
     target: jobSkillMatrix.jobId,
-    set: { matrix: body.matrix, approvedAt, updatedAt: now },
+    set: updateValues,
   }).returning()
 
   const state = await ensureRequirementState(orgId, jobId)
-  const matrixChanged = JSON.stringify(previous?.matrix ?? null) !== JSON.stringify(body.matrix)
-  const newlyApproved = body.approved && !previous?.approvedAt
-  const changedAfterApproval = body.approved && matrixChanged && Boolean(previous?.approvedAt)
+  const approvedBaselineChanged = body.approved
+    && previous?.approvedMatrix != null
+    && JSON.stringify(previous.approvedMatrix) !== JSON.stringify(body.matrix)
+  const firstApproval = body.approved && previous?.approvedMatrix == null
 
-  if (changedAfterApproval) {
+  if (approvedBaselineChanged) {
     const result = await flagRequirementChange({
       organizationId: orgId,
       jobId,
@@ -63,7 +73,7 @@ export default defineEventHandler(async (event) => {
       .set({
         skillMatrixApproved: body.approved,
         skillMatrixApprovedAt: body.approved ? now : null,
-        skillMatrixVersion: newlyApproved && state.skillMatrixVersion === 0 ? 1 : state.skillMatrixVersion,
+        skillMatrixVersion: firstApproval && state.skillMatrixVersion === 0 ? 1 : state.skillMatrixVersion,
         updatedAt: now,
       })
       .where(eq(recruitmentRequirementState.id, state.id))
