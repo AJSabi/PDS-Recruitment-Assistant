@@ -63,14 +63,17 @@ export default defineEventHandler(async (event) => {
 
   if (duplicate) {
     const profile = await db.query.recruitmentApplicationProfile.findFirst({
-      where: eq(recruitmentApplicationProfile.applicationId, duplicate.id),
+      where: and(
+        eq(recruitmentApplicationProfile.applicationId, duplicate.id),
+        eq(recruitmentApplicationProfile.organizationId, orgId),
+      ),
     })
     return {
       created: false,
       candidate: candidateRecord,
       applicationId: duplicate.id,
       recruitmentProfileId: profile?.id ?? null,
-      nextStep: 'upload_resume',
+      nextStep: profile?.lastStatus === 'candidate_added' ? 'upload_resume' : 'continue_workflow',
     }
   }
 
@@ -87,9 +90,9 @@ export default defineEventHandler(async (event) => {
     organizationId: orgId,
     applicationId: createdApplication.id,
     currentFit: 'not_yet_assessed',
-    lastStatus: 'resume_received',
+    lastStatus: 'candidate_added',
     statusDate: new Date(),
-    nextAction: 'Upload or verify the latest resume, then complete resume assessment.',
+    nextAction: 'Upload or verify the latest resume.',
     lastUpdatedBy: session.user.id,
   }).returning({ id: recruitmentApplicationProfile.id })
 
