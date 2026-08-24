@@ -11,6 +11,7 @@ const props = defineProps<{
   }>
 }>()
 
+const emit = defineEmits<{ changed: [] }>()
 const toast = useToast()
 const isSelecting = ref<string | null>(null)
 
@@ -56,6 +57,7 @@ async function selectResume(documentId: string) {
       body: { documentId },
     })
     await refresh()
+    emit('changed')
     toast.success('Resume selected for this application')
   } catch (err: any) {
     toast.error('Could not select resume', { message: err?.data?.statusMessage ?? err?.message })
