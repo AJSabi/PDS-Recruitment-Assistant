@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
 import { interviewEvidenceSchema } from '../../../../utils/schemas/recruitmentStage'
+import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   const app = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true },
+    columns: { id: true, jobId: true },
   })
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
@@ -32,6 +33,11 @@ export default defineEventHandler(async (event) => {
   if (!allowedInterviewStatuses.has(profile.lastStatus)) {
     throw createError({ statusCode: 422, statusMessage: `Interview evidence cannot be recorded while candidate status is ${profile.lastStatus}.` })
   }
+
+  const requirementState = await db.query.recruitmentRequirementState.findFirst({
+    where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
+  })
+  const requirementRevision = requirementState?.revision ?? profile.requirementVersionAssessed
 
   const [evidence] = await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -45,6 +51,7 @@ export default defineEventHandler(async (event) => {
       recommendation: body.recommendation ?? null,
       fit: body.fit ?? null,
       updateCurrentFit: body.updateCurrentFit,
+      requirementRevision,
     },
     createdBy: session.user.id,
   }).returning()
@@ -61,6 +68,7 @@ export default defineEventHandler(async (event) => {
   if (body.updateCurrentFit && body.fit) {
     updates.currentFit = body.fit
     updates.assessmentLocked = true
+    updates.requirementVersionAssessed = requirementRevision
   }
 
   const [updatedProfile] = await db.update(recruitmentApplicationProfile)
@@ -68,10 +76,13 @@ export default defineEventHandler(async (event) => {
     .where(eq(recruitmentApplicationProfile.id, profile.id))
     .returning()
 
+  if (body.updateCurrentFit && body.fit) await refreshRequirementReassessmentFlag(orgId, app.jobId)
+
   return {
     evidence,
     profile: updatedProfile,
     recommendation: body.recommendation ?? null,
     statusChanged: false,
+    requirementRevision,
   }
 })
