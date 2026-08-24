@@ -22,22 +22,18 @@ export async function flagRequirementChange(input: {
   const state = await ensureRequirementState(organizationId, jobId)
   const now = new Date()
 
-  const [updatedState] = await db.update(recruitmentRequirementState)
-    .set({
-      revision: state.revision + 1,
-      jdVersion: changeType === 'jd' ? state.jdVersion + 1 : state.jdVersion,
-      skillMatrixVersion: changeType === 'skill_matrix' ? state.skillMatrixVersion + 1 : state.skillMatrixVersion,
-      lastMaterialChangeAt: now,
-      reassessmentRequired: true,
-      updatedAt: now,
-    })
-    .where(eq(recruitmentRequirementState.id, state.id))
-    .returning()
-
   const apps = await db.query.application.findMany({
     where: and(eq(application.organizationId, organizationId), eq(application.jobId, jobId)),
     columns: { id: true },
   })
+
+  const affected: Array<{
+    applicationId: string
+    profileId: string
+    currentFit: string
+    lastStatus: string
+    requirementVersionAssessed: number
+  }> = []
 
   for (const app of apps) {
     const profile = await db.query.recruitmentApplicationProfile.findFirst({
@@ -45,22 +41,49 @@ export async function flagRequirementChange(input: {
         eq(recruitmentApplicationProfile.organizationId, organizationId),
         eq(recruitmentApplicationProfile.applicationId, app.id),
       ),
-      columns: { id: true, currentFit: true, lastStatus: true },
+      columns: {
+        id: true,
+        currentFit: true,
+        lastStatus: true,
+        requirementVersionAssessed: true,
+      },
     })
 
-    if (profile) {
-      await db.update(recruitmentApplicationProfile)
-        .set({
-          nextAction: 'Reassessment recommended due to material requirement change',
-          lastUpdatedBy: actorId ?? null,
-          updatedAt: now,
-        })
-        .where(eq(recruitmentApplicationProfile.id, profile.id))
+    if (profile && profile.requirementVersionAssessed > 0) {
+      affected.push({
+        applicationId: app.id,
+        profileId: profile.id,
+        currentFit: profile.currentFit,
+        lastStatus: profile.lastStatus,
+        requirementVersionAssessed: profile.requirementVersionAssessed,
+      })
     }
+  }
+
+  const [updatedState] = await db.update(recruitmentRequirementState)
+    .set({
+      revision: state.revision + 1,
+      jdVersion: changeType === 'jd' ? state.jdVersion + 1 : state.jdVersion,
+      skillMatrixVersion: changeType === 'skill_matrix' ? state.skillMatrixVersion + 1 : state.skillMatrixVersion,
+      lastMaterialChangeAt: now,
+      reassessmentRequired: affected.length > 0,
+      updatedAt: now,
+    })
+    .where(eq(recruitmentRequirementState.id, state.id))
+    .returning()
+
+  for (const item of affected) {
+    await db.update(recruitmentApplicationProfile)
+      .set({
+        nextAction: 'Reassessment recommended due to material requirement change',
+        lastUpdatedBy: actorId ?? null,
+        updatedAt: now,
+      })
+      .where(eq(recruitmentApplicationProfile.id, item.profileId))
 
     await db.insert(recruitmentEvidence).values({
       organizationId,
-      applicationId: app.id,
+      applicationId: item.applicationId,
       type: 'requirement_change',
       summary,
       payload: {
@@ -68,12 +91,13 @@ export async function flagRequirementChange(input: {
         requirementRevision: updatedState?.revision ?? state.revision + 1,
         jdVersion: updatedState?.jdVersion ?? state.jdVersion,
         skillMatrixVersion: updatedState?.skillMatrixVersion ?? state.skillMatrixVersion,
-        currentFitPreserved: profile?.currentFit ?? null,
-        lastStatusPreserved: profile?.lastStatus ?? null,
+        previouslyAssessedRevision: item.requirementVersionAssessed,
+        currentFitPreserved: item.currentFit,
+        lastStatusPreserved: item.lastStatus,
       },
       createdBy: actorId ?? null,
     })
   }
 
-  return { state: updatedState ?? state, affectedApplications: apps.length }
+  return { state: updatedState ?? state, affectedApplications: affected.length }
 }
