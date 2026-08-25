@@ -63,35 +63,6 @@ export default defineEventHandler(async (event) => {
     return { applicationId: existingApplication.id, alreadyPromoted: true }
   }
 
-  const config = await loadAiConfig(orgId, { purpose: 'analysis' })
-  const questions = await generatePdsScreeningQuestions({
-    provider: config.provider as SupportedProvider,
-    model: config.model,
-    apiKeyEncrypted: config.apiKeyEncrypted,
-    baseUrl: config.baseUrl,
-    maxTokens: config.maxTokens,
-  }, {
-    jobTitle: jobRecord.title,
-    jobDescription: jobRecord.description,
-    approvedMatrix: matrixRecord.approvedMatrix,
-    resumeAssessment: {
-      candidateSnapshot: match.candidateSnapshot,
-      jdAlignment: match.jdAlignment,
-      skillAssessment: match.skillAssessment,
-      keyGaps: match.keyGaps,
-      verificationAreas: match.verificationAreas,
-      mandatoryScore: match.mandatoryScore,
-      preferredScore: match.preferredScore,
-      experienceScore: match.experienceScore,
-      optionalScore: match.optionalScore,
-      provisionalFitScore: match.score,
-      mandatoryMatch: match.mandatoryMatch,
-      keyStrength: match.keyStrength,
-      mainGap: match.mainGap,
-      priority: match.priority,
-    },
-  })
-
   const now = new Date()
   const [created] = await db.insert(application).values({
     organizationId: orgId,
@@ -112,7 +83,7 @@ export default defineEventHandler(async (event) => {
     lastStatus: 'resume_reviewed',
     statusDate: now,
     resumeBrief: match.candidateSnapshot,
-    nextAction: 'Start Recruiter Screening',
+    nextAction: 'Prepare Recruiter Screening',
     assessmentLocked: false,
     provisionalFitScore: match.score,
     priority: match.priority,
@@ -148,6 +119,41 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
   })
 
+  let questions: Awaited<ReturnType<typeof generatePdsScreeningQuestions>> = []
+  let questionGenerationError: string | null = null
+  try {
+    const config = await loadAiConfig(orgId, { purpose: 'analysis' })
+    questions = await generatePdsScreeningQuestions({
+      provider: config.provider as SupportedProvider,
+      model: config.model,
+      apiKeyEncrypted: config.apiKeyEncrypted,
+      baseUrl: config.baseUrl,
+      maxTokens: config.maxTokens,
+    }, {
+      jobTitle: jobRecord.title,
+      jobDescription: jobRecord.description,
+      approvedMatrix: matrixRecord.approvedMatrix,
+      resumeAssessment: {
+        candidateSnapshot: match.candidateSnapshot,
+        jdAlignment: match.jdAlignment,
+        skillAssessment: match.skillAssessment,
+        keyGaps: match.keyGaps,
+        verificationAreas: match.verificationAreas,
+        mandatoryScore: match.mandatoryScore,
+        preferredScore: match.preferredScore,
+        experienceScore: match.experienceScore,
+        optionalScore: match.optionalScore,
+        provisionalFitScore: match.score,
+        mandatoryMatch: match.mandatoryMatch,
+        keyStrength: match.keyStrength,
+        mainGap: match.mainGap,
+        priority: match.priority,
+      },
+    })
+  } catch (error: any) {
+    questionGenerationError = error?.data?.statusMessage ?? error?.message ?? 'Screening questions could not be generated.'
+  }
+
   await db.insert(recruiterScreeningSession).values({
     organizationId: orgId,
     applicationId: created.id,
@@ -156,6 +162,11 @@ export default defineEventHandler(async (event) => {
     responses: [],
     validationFocus: [],
   })
+
+  await db.update(recruitmentApplicationProfile).set({
+    nextAction: questions.length ? 'Start Recruiter Screening' : 'Generate Recruiter Screening Questions',
+    updatedAt: new Date(),
+  }).where(eq(recruitmentApplicationProfile.applicationId, created.id))
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -170,6 +181,7 @@ export default defineEventHandler(async (event) => {
       priority: match.priority,
       source: match.source,
       screeningQuestionsGenerated: questions.length,
+      screeningQuestionGenerationPending: Boolean(questionGenerationError),
     },
     createdBy: session.user.id,
   })
@@ -177,5 +189,10 @@ export default defineEventHandler(async (event) => {
   await syncApplicationStatusForRecruitmentStage(orgId, created.id, 'resume_reviewed')
   await db.update(talentPoolMatch).set({ promotedApplicationId: created.id, updatedAt: now }).where(eq(talentPoolMatch.id, match.id))
 
-  return { applicationId: created.id, alreadyPromoted: false, screeningQuestions: questions.length }
+  return {
+    applicationId: created.id,
+    alreadyPromoted: false,
+    screeningQuestions: questions.length,
+    screeningQuestionsPending: Boolean(questionGenerationError),
+  }
 })
