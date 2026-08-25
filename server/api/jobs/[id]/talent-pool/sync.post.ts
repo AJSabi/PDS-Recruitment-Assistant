@@ -19,6 +19,7 @@ const paramsSchema = z.object({ id: z.string().min(1) })
 const limiter = createRateLimiter({ windowMs: 60_000, maxRequests: 4, message: 'Talent pool sync is already running too frequently. Please wait before retrying.' })
 const FINAL_POOL_THRESHOLD = 50
 const LIGHTWEIGHT_PREFILTER_THRESHOLD = 25
+const MAX_FULL_AI_ANALYSES_PER_SYNC = 30
 
 type MatrixSkill = { skill?: string; priority?: 'mandatory' | 'preferred' | 'optional' }
 type MatrixClassification = { skills?: MatrixSkill[] }
@@ -109,6 +110,8 @@ export default defineEventHandler(async (event) => {
   let considered = 0
   let skippedCurrent = 0
   let skippedPrefilter = 0
+  let deferredForAiBudget = 0
+  let aiAttempts = 0
   let analyzed = 0
   let visibleMatches = 0
   let belowThreshold = 0
@@ -140,6 +143,12 @@ export default defineEventHandler(async (event) => {
       continue
     }
 
+    if (aiAttempts >= MAX_FULL_AI_ANALYSES_PER_SYNC) {
+      deferredForAiBudget++
+      continue
+    }
+
+    aiAttempts++
     try {
       const generated = await generatePdsResumeAssessment(providerConfig, {
         jobTitle: jobRecord.title,
@@ -200,12 +209,16 @@ export default defineEventHandler(async (event) => {
   return {
     jobId,
     threshold: FINAL_POOL_THRESHOLD,
+    prefilterThreshold: LIGHTWEIGHT_PREFILTER_THRESHOLD,
+    maxFullAiAnalysesPerSync: MAX_FULL_AI_ANALYSES_PER_SYNC,
     considered,
     analyzed,
+    aiAttempts,
     visibleMatches,
     belowThreshold,
     skippedCurrent,
     skippedPrefilter,
+    deferredForAiBudget,
     failures,
   }
 })
