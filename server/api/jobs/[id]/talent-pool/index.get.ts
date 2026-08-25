@@ -1,5 +1,5 @@
 import { and, desc, eq, gte } from 'drizzle-orm'
-import { candidate, talentPoolMatch } from '../../../../database/schema'
+import { candidate, recruitmentRequirementState, talentPoolMatch } from '../../../../database/schema'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -9,6 +9,25 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+
+  const requirementState = await db.query.recruitmentRequirementState.findFirst({
+    where: and(
+      eq(recruitmentRequirementState.organizationId, orgId),
+      eq(recruitmentRequirementState.jobId, jobId),
+    ),
+    columns: { revision: true, skillMatrixApproved: true },
+  })
+
+  if (!requirementState?.skillMatrixApproved) {
+    return {
+      jobId,
+      threshold: FINAL_POOL_THRESHOLD,
+      total: 0,
+      ranking: [],
+      available: false,
+      reason: 'Approve the current Skill Matrix to generate the AI Candidate Pool.',
+    }
+  }
 
   const rows = await db.select({
     matchId: talentPoolMatch.id,
@@ -34,6 +53,7 @@ export default defineEventHandler(async (event) => {
     .where(and(
       eq(talentPoolMatch.organizationId, orgId),
       eq(talentPoolMatch.jobId, jobId),
+      eq(talentPoolMatch.requirementVersion, requirementState.revision),
       gte(talentPoolMatch.score, FINAL_POOL_THRESHOLD),
     ))
     .orderBy(desc(talentPoolMatch.score), desc(talentPoolMatch.assessedAt))
@@ -43,5 +63,6 @@ export default defineEventHandler(async (event) => {
     threshold: FINAL_POOL_THRESHOLD,
     total: rows.length,
     ranking: rows.map((row, index) => ({ rank: index + 1, ...row })),
+    available: true,
   }
 })
