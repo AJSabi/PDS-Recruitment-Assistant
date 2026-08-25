@@ -3,9 +3,9 @@ import { organization, user } from './auth'
 import { application, document, job } from './app'
 
 export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_validation' | 'significant_gap' | 'not_yet_assessed'
-export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
+export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hiring_manager_round_pending' | 'hiring_manager_round_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hr_round_pending' | 'hr_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
 export type CandidatePriority = 'P1' | 'P2' | 'P3' | 'P4'
-export type EvidenceType = 'resume' | 'recruiter_screening' | 'hod_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change' | 'assignment_change'
+export type EvidenceType = 'resume' | 'recruiter_screening' | 'hiring_manager_interview' | 'hod_interview' | 'hr_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change' | 'assignment_change'
 export type SkillEvidenceLevel = 'strong_evidence' | 'partial_evidence' | 'no_evidence_found' | 'requires_verification'
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
@@ -120,10 +120,11 @@ export const recruiterScreeningSession = pgTable('recruiter_screening_session', 
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
   status: text('status').$type<'not_started' | 'in_progress' | 'completed'>().notNull().default('not_started'),
-  questions: jsonb('questions').$type<Array<Record<string, unknown>>>().notNull().default([]),
-  responses: jsonb('responses').$type<Array<Record<string, unknown>>>().notNull().default([]),
-  finalFit: text('final_fit').$type<CurrentFit>(),
-  recommendedNextStep: text('recommended_next_step'),
+  questions: jsonb('questions').$type<Array<{ id: string; question: string; options?: string[]; verificationArea?: string }>>().notNull().default([]),
+  responses: jsonb('responses').$type<Array<{ questionId: string; answer: string; answeredAt?: string }>>().notNull().default([]),
+  finalFit: text('final_fit').$type<Exclude<CurrentFit, 'not_yet_assessed'>>(),
+  recommendedNextStep: text('recommended_next_step').$type<'proceed_to_hiring_manager_round' | 'hold_for_comparison' | 'reassess' | 'recruiter_decision_required'>(),
+  conversationBrief: text('conversation_brief'),
   validationFocus: jsonb('validation_focus').$type<string[]>().notNull().default([]),
   startedAt: timestamp('started_at'),
   completedAt: timestamp('completed_at'),
