@@ -7,6 +7,13 @@ export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_r
 export type CandidatePriority = 'P1' | 'P2' | 'P3' | 'P4'
 export type EvidenceType = 'resume' | 'recruiter_screening' | 'hiring_manager_interview' | 'hod_interview' | 'hr_interview' | 'interview' | 'manual_reassessment' | 'requirement_change' | 'stage_change' | 'assignment_change'
 export type SkillEvidenceLevel = 'strong_evidence' | 'partial_evidence' | 'no_evidence_found' | 'requires_verification'
+export type RequirementProfile = {
+  functionName?: string | null
+  hiringManager?: string | null
+  experienceRequirement?: string | null
+  openings?: number | null
+  majorRequirements?: string[]
+}
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -16,6 +23,7 @@ export const recruitmentRequirementState = pgTable('recruitment_requirement_stat
   assignmentDate: timestamp('assignment_date'),
   targetClosureDate: timestamp('target_closure_date'),
   closedAt: timestamp('closed_at'),
+  requirementProfile: jsonb('requirement_profile').$type<RequirementProfile>().notNull().default({}),
   revision: integer('revision').notNull().default(1),
   jdVersion: integer('jd_version').notNull().default(1),
   skillMatrixVersion: integer('skill_matrix_version').notNull().default(0),
