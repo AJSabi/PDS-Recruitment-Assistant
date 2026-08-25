@@ -5,13 +5,28 @@ import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmen
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
-const allowedInterviewStatuses = new Set(['hod_round_pending', 'hod_round_completed', 'reassess'])
+const allowedInterviewStatuses = new Set([
+  'hiring_manager_round_pending',
+  'hiring_manager_round_completed',
+  'hod_round_pending',
+  'hod_round_completed',
+  'hr_round_pending',
+  'hr_round_completed',
+  'reassess',
+])
 const recommendationLabels: Record<string, string> = {
   proceed: 'Proceed',
   hold: 'Hold for Comparison',
   reassess: 'Reassess',
   not_proceeding: 'Recruiter Decision Required',
   offer: 'Consider Offer Stage',
+}
+
+function evidenceTypeForInterview(interviewType: 'hiring_manager' | 'hod' | 'hr' | 'interview') {
+  if (interviewType === 'hiring_manager') return 'hiring_manager_interview' as const
+  if (interviewType === 'hod') return 'hod_interview' as const
+  if (interviewType === 'hr') return 'hr_interview' as const
+  return 'interview' as const
 }
 
 export default defineEventHandler(async (event) => {
@@ -42,9 +57,10 @@ export default defineEventHandler(async (event) => {
   const [evidence] = await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
     applicationId,
-    type: body.interviewType === 'hod' ? 'hod_interview' : 'interview',
+    type: evidenceTypeForInterview(body.interviewType),
     summary: body.summary,
     payload: {
+      interviewType: body.interviewType,
       strengths: body.strengths,
       concerns: body.concerns,
       validationFocus: body.validationFocus,
