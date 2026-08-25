@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { organization, user } from './auth'
-import { application, document, job } from './app'
+import { application, candidate, document, job } from './app'
 
 export type CurrentFit = 'strong_fit' | 'potential_fit' | 'borderline_requires_validation' | 'significant_gap' | 'not_yet_assessed'
 export type RecruitmentStage = 'candidate_added' | 'resume_received' | 'resume_reviewed' | 'recruiter_screening_pending' | 'recruiter_screening_completed' | 'hiring_manager_round_pending' | 'hiring_manager_round_completed' | 'hod_round_pending' | 'hod_round_completed' | 'hr_round_pending' | 'hr_round_completed' | 'hold_for_comparison' | 'reassess' | 'not_proceeding' | 'offer_stage' | 'offer_accepted' | 'offer_declined' | 'joined' | 'closed'
@@ -133,4 +133,39 @@ export const recruiterScreeningSession = pgTable('recruiter_screening_session', 
 }, (t) => ([
   uniqueIndex('recruiter_screening_session_app_idx').on(t.applicationId),
   index('recruiter_screening_session_org_idx').on(t.organizationId),
+]))
+
+export const talentPoolMatch = pgTable('talent_pool_match', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
+  jobId: text('job_id').notNull().references(() => job.id, { onDelete: 'cascade' }),
+  candidateId: text('candidate_id').notNull().references(() => candidate.id, { onDelete: 'cascade' }),
+  resumeDocumentId: text('resume_document_id').references(() => document.id, { onDelete: 'set null' }),
+  requirementVersion: integer('requirement_version').notNull().default(0),
+  score: integer('score'),
+  priority: text('priority').$type<CandidatePriority>(),
+  mandatoryMatch: text('mandatory_match'),
+  keyStrength: text('key_strength'),
+  mainGap: text('main_gap'),
+  candidateSnapshot: text('candidate_snapshot'),
+  jdAlignment: text('jd_alignment'),
+  skillAssessment: jsonb('skill_assessment').$type<Array<{
+    classification?: string
+    skill: string
+    priority: 'mandatory' | 'preferred' | 'optional'
+    evidenceLevel: SkillEvidenceLevel
+    evidence?: string
+  }>>().notNull().default([]),
+  keyGaps: jsonb('key_gaps').$type<string[]>().notNull().default([]),
+  verificationAreas: jsonb('verification_areas').$type<string[]>().notNull().default([]),
+  source: text('source').$type<'database' | 'jd_upload'>().notNull().default('database'),
+  promotedApplicationId: text('promoted_application_id').references(() => application.id, { onDelete: 'set null' }),
+  assessedAt: timestamp('assessed_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => ([
+  uniqueIndex('talent_pool_match_job_candidate_idx').on(t.organizationId, t.jobId, t.candidateId),
+  index('talent_pool_match_job_score_idx').on(t.organizationId, t.jobId, t.score),
+  index('talent_pool_match_candidate_idx').on(t.organizationId, t.candidateId),
+  index('talent_pool_match_resume_idx').on(t.resumeDocumentId),
 ]))
