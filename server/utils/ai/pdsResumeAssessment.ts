@@ -8,11 +8,11 @@ export const generatedResumeAssessmentSchema = z.object({
   candidateSnapshot: z.string().min(1),
   jdAlignment: z.string().min(1),
   skillAssessment: z.array(z.object({
-    classification: z.string().optional(),
+    classification: z.string().nullable(),
     skill: z.string().min(1),
     priority: z.enum(['mandatory', 'preferred', 'optional']),
     evidenceLevel,
-    evidence: z.string().optional(),
+    evidence: z.string().nullable(),
   })),
   keyGaps: z.array(z.string()).max(10),
   verificationAreas: z.array(z.string()).max(10),
@@ -57,6 +57,8 @@ Evidence rules:
 - Do not infer protected, sensitive or irrelevant personal attributes.
 - Do not infer skills merely from employer name, job title or education unless explicitly evidenced.
 - Assess every skill in the approved matrix exactly once.
+- Return classification as null only when the source matrix does not provide a usable classification label.
+- Return evidence as null only when there is genuinely no resume evidence to quote or summarise.
 - Scores are evidence-strength percentages from 0-100, not a hiring decision.
 - mandatoryScore reflects Mandatory skill evidence only.
 - preferredScore reflects Preferred skill evidence only; if none exist, use 100.
