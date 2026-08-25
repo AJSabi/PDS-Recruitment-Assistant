@@ -25,11 +25,25 @@ const profile = computed<any>(() => data.value?.profile ?? null)
 const resumes = computed(() => props.documents.filter(d => d.type === 'resume'))
 
 const stageLabels: Record<string, string> = {
-  candidate_added: 'Candidate Added', resume_received: 'Resume Received', resume_reviewed: 'Resume Reviewed',
-  recruiter_screening_pending: 'Recruiter Screening Pending', recruiter_screening_completed: 'Recruiter Screening Completed',
-  hod_round_pending: 'HOD Round Pending', hod_round_completed: 'HOD Round Completed', hold_for_comparison: 'Hold for Comparison',
-  reassess: 'Reassess', not_proceeding: 'Not Proceeding', offer_stage: 'Offer Stage', offer_accepted: 'Offer Accepted',
-  offer_declined: 'Offer Declined', joined: 'Joined', closed: 'Closed',
+  candidate_added: 'Candidate Added',
+  resume_received: 'Resume Received',
+  resume_reviewed: 'Resume Reviewed',
+  recruiter_screening_pending: 'Recruiter Screening Pending',
+  recruiter_screening_completed: 'Recruiter Screening Completed',
+  hiring_manager_round_pending: 'Hiring Manager Round Pending',
+  hiring_manager_round_completed: 'Hiring Manager Round Completed',
+  hod_round_pending: 'HOD Round Pending',
+  hod_round_completed: 'HOD Round Completed',
+  hr_round_pending: 'HR Round Pending',
+  hr_round_completed: 'HR Round Completed',
+  hold_for_comparison: 'Hold for Comparison',
+  reassess: 'Reassess',
+  not_proceeding: 'Not Proceeding',
+  offer_stage: 'Offer Stage',
+  offer_accepted: 'Offer Accepted',
+  offer_declined: 'Offer Declined',
+  joined: 'Joined',
+  closed: 'Closed',
 }
 
 const fitLabels: Record<string, string> = {
