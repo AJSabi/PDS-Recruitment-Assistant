@@ -1,4 +1,7 @@
 import { fileTypeFromBuffer } from 'file-type'
+import { extractRequirementProfileFromJd } from '../../../utils/ai/pdsRequirementProfile'
+import { loadAiConfig } from '../../../utils/ai/loadConfig'
+import type { SupportedProvider } from '../../../utils/ai/provider'
 import { parseDocument } from '../../../utils/resume-parser'
 import {
   ALLOWED_MIME_TYPES,
@@ -15,7 +18,8 @@ function detectLegacyDoc(buffer: Buffer, mimeType?: string) {
 }
 
 export default defineEventHandler(async (event) => {
-  await requirePermission(event, { job: ['create'] })
+  const session = await requirePermission(event, { job: ['create'] })
+  const orgId = session.session.activeOrganizationId
 
   const formData = await readMultipartFormData(event)
   const filePart = (formData ?? []).find(part => part.name === 'file' && part.data && part.filename)
@@ -40,10 +44,26 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 422, statusMessage: 'No readable text could be extracted from this JD.' })
   }
 
+  let requirementProfile = null
+  try {
+    const config = await loadAiConfig(orgId, { purpose: 'analysis' })
+    requirementProfile = await extractRequirementProfileFromJd({
+      provider: config.provider as SupportedProvider,
+      model: config.model,
+      apiKeyEncrypted: config.apiKeyEncrypted,
+      baseUrl: config.baseUrl,
+      maxTokens: config.maxTokens,
+    }, parsed.text)
+  } catch {
+    // JD text extraction must remain usable even when AI profile extraction is temporarily unavailable.
+    requirementProfile = null
+  }
+
   return {
     filename: sanitizeFilename(filePart.filename),
     mimeType,
     text: parsed.text,
     metadata: parsed.metadata,
+    requirementProfile,
   }
 })
