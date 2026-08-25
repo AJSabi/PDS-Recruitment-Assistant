@@ -10,7 +10,7 @@ const generatedSkillMatrixSchema = z.object({
       id: z.string(),
       skill: z.string(),
       priority: z.enum(['mandatory', 'preferred', 'optional']),
-      rationale: z.string().optional(),
+      rationale: z.string().nullable(),
     })),
   })).min(4).max(5),
 })
@@ -35,7 +35,7 @@ Rules:
 - Do not infer protected or irrelevant personal attributes.
 - Do not duplicate the same skill across classifications.
 - Keep skill names short, specific and recruiter-friendly.
-- rationale should briefly explain why the skill matters based on the JD.
+- rationale should briefly explain why the skill matters based on the JD; return null only when no concise rationale is justified.
 - Generate stable lowercase snake_case IDs from the classification/skill names.`,
     prompt: `JOB TITLE: ${jobTitle}\n\nJOB DESCRIPTION:\n${jobDescription}\n\nCreate the Skill Matrix for recruiter review.`,
     schema: generatedSkillMatrixSchema,
