@@ -1,4 +1,4 @@
-import { and, eq, ilike, isNull, sql } from 'drizzle-orm'
+import { and, eq, ilike, isNull } from 'drizzle-orm'
 import { fileTypeFromBuffer } from 'file-type'
 import {
   candidate,
@@ -128,7 +128,6 @@ export default defineEventHandler(async (event) => {
           phone: aiIdentity.phone || fallback.phone,
         }
       } catch {
-        // Identity extraction must not block intake when reliable contact details can be read locally.
         identity = fallback
       }
 
@@ -143,14 +142,11 @@ export default defineEventHandler(async (event) => {
         : undefined
 
       if (!candidateRecord && normalizedPhoneDigits) {
-        candidateRecord = await db.query.candidate.findFirst({
-          where: and(
-            eq(candidate.organizationId, orgId),
-            isNull(candidate.quarantinedAt),
-            sql`regexp_replace(coalesce(${candidate.phone}, ''), '\\D', '', 'g') = ${normalizedPhoneDigits}`,
-          ),
+        const phoneCandidates = await db.query.candidate.findMany({
+          where: and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt)),
           columns: { id: true, email: true, phone: true },
         })
+        candidateRecord = phoneCandidates.find(row => phoneDigits(row.phone) === normalizedPhoneDigits)
       }
 
       let candidateCreated = false
