@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { job, recruitmentRequirementState } from '../../../database/schema'
+import { job } from '../../../database/schema'
 import { ensureRequirementState } from '../../../utils/recruitmentLifecycle'
 import { z } from 'zod'
 
