@@ -4,6 +4,7 @@ import {
   document,
   job,
   jobSkillMatrix,
+  recruiterScreeningSession,
   recruitmentApplicationProfile,
   recruitmentEvidence,
   recruitmentRequirementState,
@@ -11,6 +12,7 @@ import {
 } from '../../../../database/schema'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsResumeAssessment } from '../../../../utils/ai/pdsResumeAssessment'
+import { generatePdsScreeningQuestions } from '../../../../utils/ai/pdsScreening'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
 import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
@@ -67,13 +69,15 @@ export default defineEventHandler(async (event) => {
   if (!resume.parsedContent) throw createError({ statusCode: 422, statusMessage: 'The selected resume has no parsed text yet. Re-upload or reprocess the resume before AI analysis.' })
 
   const config = await loadAiConfig(orgId, { purpose: 'analysis' })
-  const generated = await generatePdsResumeAssessment({
+  const providerConfig = {
     provider: config.provider as SupportedProvider,
     model: config.model,
     apiKeyEncrypted: config.apiKeyEncrypted,
     baseUrl: config.baseUrl,
     maxTokens: config.maxTokens,
-  }, {
+  }
+
+  const generated = await generatePdsResumeAssessment(providerConfig, {
     jobTitle: jobRecord.title,
     jobDescription: jobRecord.description,
     skillMatrix: matrixRecord.approvedMatrix,
@@ -122,6 +126,39 @@ export default defineEventHandler(async (event) => {
     ? await db.update(resumeAssessment).set(values).where(eq(resumeAssessment.id, existing.id)).returning()
     : await db.insert(resumeAssessment).values(values).returning()
 
+  const questions = await generatePdsScreeningQuestions(providerConfig, {
+    jobTitle: jobRecord.title,
+    jobDescription: jobRecord.description,
+    approvedMatrix: matrixRecord.approvedMatrix,
+    resumeAssessment: assessment,
+  })
+
+  const existingScreening = await db.query.recruiterScreeningSession.findFirst({
+    where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
+  })
+  if (!existingScreening) {
+    await db.insert(recruiterScreeningSession).values({
+      organizationId: orgId,
+      applicationId,
+      status: 'not_started',
+      questions,
+      responses: [],
+      validationFocus: [],
+    })
+  } else if (existingScreening.status !== 'in_progress' && existingScreening.status !== 'completed') {
+    await db.update(recruiterScreeningSession).set({
+      questions,
+      responses: [],
+      status: 'not_started',
+      finalFit: null,
+      recommendedNextStep: null,
+      validationFocus: [],
+      startedAt: null,
+      completedAt: null,
+      updatedAt: now,
+    }).where(eq(recruiterScreeningSession.id, existingScreening.id))
+  }
+
   // Resume evidence is provisional. Current Fit remains locked at its existing value.
   await db.update(recruitmentApplicationProfile).set({
     lastStatus: 'resume_reviewed',
@@ -133,7 +170,7 @@ export default defineEventHandler(async (event) => {
     keyStrength: generated.keyStrength,
     mainGap: generated.mainGap,
     requirementVersionAssessed: requirementRevision,
-    nextAction: 'Review AI assessment and start recruiter screening / comparison',
+    nextAction: 'Review AI assessment and start recruiter screening',
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
@@ -151,6 +188,7 @@ export default defineEventHandler(async (event) => {
       priority: ranking.priority,
       mandatoryMatch: generated.mandatoryMatch,
       requirementRevision,
+      screeningQuestionsGenerated: questions.length,
       source: 'ai',
       provider: config.provider,
       model: config.model,
@@ -162,6 +200,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     assessment,
+    questions,
     ranking: { provisionalFitScore: ranking.score, priority: ranking.priority },
     currentFit: profile.currentFit,
     requirementRevision,
