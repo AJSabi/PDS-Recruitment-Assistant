@@ -4,7 +4,7 @@ export const currentFitSchema = z.enum(['strong_fit', 'potential_fit', 'borderli
 export const finalScreeningFitSchema = z.enum(['strong_fit', 'potential_fit', 'borderline_requires_validation', 'significant_gap'])
 export const recruitmentStageSchema = z.enum(['candidate_added', 'resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'recruiter_screening_completed', 'hiring_manager_round_pending', 'hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed', 'hr_round_pending', 'hr_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined', 'closed'])
 export const candidatePrioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
-export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hiring_manager_interview', 'hod_interview', 'hr_interview', 'interview', 'manual_reassessment', 'requirement_change', 'stage_change'])
+export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hiring_manager_interview', 'hod_interview', 'hr_interview', 'interview', 'manual_reassessment', 'requirement_change', 'stage_change', 'assignment_change'])
 export const screeningNextStepSchema = z.enum(['proceed_to_hiring_manager_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required'])
 
 /** Safe recruiter-editable profile metadata. Fit, stage, locks and ranking are changed only by governed workflow endpoints. */
