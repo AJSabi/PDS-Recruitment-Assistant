@@ -6,19 +6,21 @@ const busy = ref(false)
 const reassessSummary = ref('')
 const showReassess = ref(false)
 
-// Evidence-producing stages are intentionally excluded here:
-// Resume Received = selecting a resume
-// Resume Reviewed = saving resume assessment
-// Recruiter Screening Pending/Completed = screening workflow
+// Resume and recruiter-screening evidence-producing stages are advanced by their workflow actions.
+// Hiring Manager, HOD and HR rounds remain manually advanced in the current product version.
 const transitionMap: Record<string, string[]> = {
   candidate_added: ['not_proceeding', 'closed'],
   resume_received: ['not_proceeding', 'closed'],
   resume_reviewed: ['hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
   recruiter_screening_pending: ['hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
-  recruiter_screening_completed: ['hod_round_pending', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  recruiter_screening_completed: ['hiring_manager_round_pending', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  hiring_manager_round_pending: ['hiring_manager_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  hiring_manager_round_completed: ['hod_round_pending', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
   hod_round_pending: ['hod_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
-  hod_round_completed: ['offer_stage', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
-  hold_for_comparison: ['hod_round_pending', 'reassess', 'not_proceeding', 'closed'],
+  hod_round_completed: ['hr_round_pending', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  hr_round_pending: ['hr_round_completed', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  hr_round_completed: ['offer_stage', 'hold_for_comparison', 'reassess', 'not_proceeding', 'closed'],
+  hold_for_comparison: ['hiring_manager_round_pending', 'hod_round_pending', 'hr_round_pending', 'reassess', 'not_proceeding', 'closed'],
   reassess: ['hold_for_comparison', 'not_proceeding', 'closed'],
   not_proceeding: ['reassess', 'closed'],
   offer_stage: ['offer_accepted', 'offer_declined', 'hold_for_comparison', 'closed'],
@@ -29,8 +31,12 @@ const transitionMap: Record<string, string[]> = {
 }
 
 const labels: Record<string, string> = {
+  hiring_manager_round_pending: 'Move to Hiring Manager Round',
+  hiring_manager_round_completed: 'Confirm Hiring Manager Completed',
   hod_round_pending: 'Move to HOD Round',
   hod_round_completed: 'Confirm HOD Completed',
+  hr_round_pending: 'Move to HR Round',
+  hr_round_completed: 'Confirm HR Completed',
   hold_for_comparison: 'Hold for Comparison',
   reassess: 'Reassess',
   not_proceeding: 'Not Proceeding',
@@ -88,7 +94,7 @@ async function startReassess() {
   <section class="rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
     <div class="mb-4">
       <h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Recruitment Lifecycle</h2>
-      <p class="mt-1 text-xs text-surface-500">Only recruiter-confirmed decisions appear here. Evidence-producing stages are advanced automatically by their relevant workflow action.</p>
+      <p class="mt-1 text-xs text-surface-500">Recruiter Screening is completed through the screening workflow. Hiring Manager, HOD and HR stages are moved manually for now while interviews happen externally.</p>
     </div>
 
     <div v-if="available.length" class="flex flex-wrap gap-2">
