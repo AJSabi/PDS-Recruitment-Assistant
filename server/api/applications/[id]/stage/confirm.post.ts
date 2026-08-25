@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Evidence-producing stages must not be manually confirmed without their underlying action.
+  // Resume and recruiter-screening stages are evidence-driven and remain governed by their underlying actions.
   if (body.stage === 'resume_received' && !profile.selectedResumeDocumentId) {
     throw createError({
       statusCode: 422,
@@ -85,23 +85,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (body.stage === 'hod_round_completed') {
-    const hodEvidence = await db.query.recruitmentEvidence.findFirst({
-      where: and(
-        eq(recruitmentEvidence.applicationId, applicationId),
-        eq(recruitmentEvidence.organizationId, orgId),
-        eq(recruitmentEvidence.type, 'hod_interview'),
-      ),
-      columns: { id: true },
-    })
-    if (!hodEvidence) {
-      throw createError({
-        statusCode: 422,
-        statusMessage: 'Save HOD Round evidence before confirming HOD Completed.',
-      })
-    }
-  }
-
+  // Hiring Manager, HOD and HR interviews happen externally in the current version.
+  // Their Pending/Completed stages are intentionally recruiter-controlled; structured interview evidence can be added later.
   const now = new Date()
   const [updated] = await db.update(recruitmentApplicationProfile).set({
     lastStatus: body.stage,
