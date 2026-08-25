@@ -1,15 +1,8 @@
 <script setup lang="ts">
 import { ArrowLeft, Briefcase, FileText, Loader2, UploadCloud } from 'lucide-vue-next'
 
-definePageMeta({
-  layout: 'dashboard',
-  middleware: ['auth', 'require-org'],
-})
-
-useSeoMeta({
-  title: 'New Requirement',
-  description: 'Create a recruitment requirement from a JD',
-})
+definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
+useSeoMeta({ title: 'New Requirement', description: 'Create a recruitment requirement from a JD' })
 
 const localePath = useLocalePath()
 const { createJob } = useJobs()
@@ -29,8 +22,8 @@ const form = reactive({
   majorRequirements: '',
 })
 
-const jdFileInput = ref<HTMLInputElement | null>(null)
 const uploadedJdName = ref('')
+const profileExtracted = ref(false)
 const parsingJd = ref(false)
 const creating = ref(false)
 
@@ -43,10 +36,7 @@ function dateToIso(value: string) {
   return new Date(`${value}T12:00:00`).toISOString()
 }
 
-function wait(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
+function wait(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)) }
 function isNetworkFailure(err: any) {
   const status = err?.statusCode ?? err?.status ?? err?.response?.status
   if (status) return false
@@ -57,7 +47,6 @@ function isNetworkFailure(err: any) {
 async function parseJdWithRetry(file: File) {
   const maxAttempts = 3
   let lastError: any
-
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const body = new FormData()
@@ -69,8 +58,25 @@ async function parseJdWithRetry(file: File) {
       await wait(attempt * 700)
     }
   }
-
   throw lastError
+}
+
+function applyRequirementProfile(profile: any) {
+  if (!profile) {
+    profileExtracted.value = false
+    return
+  }
+  if (profile.jobTitle) form.title = profile.jobTitle
+  if (profile.functionName) form.functionName = profile.functionName
+  if (profile.hiringManager) form.hiringManager = profile.hiringManager
+  if (profile.location) form.location = profile.location
+  if (profile.experienceRequirement) form.experienceRequirement = profile.experienceRequirement
+  if (profile.seniority && ['junior', 'mid', 'senior', 'lead'].includes(profile.seniority)) form.experienceLevel = profile.seniority
+  if (Number.isInteger(profile.openings) && profile.openings > 0) form.openings = profile.openings
+  if (Array.isArray(profile.majorRequirements) && profile.majorRequirements.length) form.majorRequirements = profile.majorRequirements.join('\n')
+  const closure = String(profile.closureDate ?? '')
+  if (/^\d{4}-\d{2}-\d{2}/.test(closure)) form.closureDate = closure.slice(0, 10)
+  profileExtracted.value = true
 }
 
 async function parseJdFile(event: Event) {
@@ -79,15 +85,19 @@ async function parseJdFile(event: Event) {
   if (!file) return
 
   parsingJd.value = true
+  profileExtracted.value = false
   try {
     const result: any = await parseJdWithRetry(file)
     form.description = result.text ?? ''
     uploadedJdName.value = result.filename ?? file.name
-    toast.success('JD extracted', { message: 'Review the extracted JD below before creating the requirement.' })
-  } catch (err: any) {
-    toast.error('Could not read JD', {
-      message: err?.data?.statusMessage ?? err?.message ?? 'Upload a readable PDF, DOC or DOCX file.',
+    applyRequirementProfile(result.requirementProfile)
+    toast.success('JD extracted', {
+      message: result.requirementProfile
+        ? 'JD and Requirement Profile were extracted. Review the populated fields before continuing.'
+        : 'JD text was extracted. Review the fields before continuing.',
     })
+  } catch (err: any) {
+    toast.error('Could not read JD', { message: err?.data?.statusMessage ?? err?.message ?? 'Upload a readable PDF, DOC or DOCX file.' })
   } finally {
     parsingJd.value = false
     input.value = ''
@@ -130,40 +140,39 @@ async function createRequirement() {
       },
     })
 
-    toast.success('Requirement created', {
-      message: 'The JD is now active. AI Skill Matrix analysis will continue on the next screen.',
-    })
+    toast.success('Requirement created', { message: 'The JD is active. AI Skill Matrix analysis will continue on the next screen.' })
     await navigateTo(localePath(`/dashboard/jobs/${created.id}/ai-analysis`))
   } catch (err: any) {
-    toast.error('Could not create requirement', {
-      message: err?.data?.statusMessage ?? err?.message ?? 'Please try again.',
-    })
-  } finally {
-    creating.value = false
-  }
+    toast.error('Could not create requirement', { message: err?.data?.statusMessage ?? err?.message ?? 'Please try again.' })
+  } finally { creating.value = false }
 }
 </script>
 
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-    <div class="mb-5">
-      <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex items-center gap-1.5 text-sm font-medium text-surface-500 hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100">
-        <ArrowLeft class="size-4" /> Jobs
-      </NuxtLink>
-    </div>
+    <div class="mb-5"><NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex items-center gap-1.5 text-sm font-medium text-surface-500 hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100"><ArrowLeft class="size-4" /> Jobs</NuxtLink></div>
 
     <div class="mb-6">
-      <div class="flex items-center gap-2">
-        <Briefcase class="size-5 text-brand-600" />
-        <h1 class="text-xl font-semibold text-surface-900 dark:text-surface-100">New Recruitment Requirement</h1>
-      </div>
-      <p class="mt-1 text-sm text-surface-500">Create the Requirement Profile, then upload or paste the JD for AI Skill Matrix analysis.</p>
+      <div class="flex items-center gap-2"><Briefcase class="size-5 text-brand-600" /><h1 class="text-xl font-semibold text-surface-900 dark:text-surface-100">New Recruitment Requirement</h1></div>
+      <p class="mt-1 text-sm text-surface-500">Upload the JD first where available. PDS Recruitment Assistant will extract the Requirement Profile for your review.</p>
     </div>
 
     <form class="space-y-6 rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900 sm:p-6" @submit.prevent="createRequirement">
-      <section class="space-y-4">
-        <div><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Requirement Profile</h2><p class="mt-1 text-xs text-surface-500">Only Job Title and JD are mandatory. Unavailable fields remain Not Specified.</p></div>
+      <section class="rounded-xl border border-brand-100 bg-brand-50/40 p-4 dark:border-brand-900 dark:bg-brand-950/20">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 class="text-sm font-semibold">Start with the Job Description</h2><p class="mt-1 text-xs text-surface-500">PDF, DOC or DOCX. The JD and available requirement details will be extracted automatically.</p></div>
+          <div>
+            <input id="pds-jd-upload" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" :disabled="parsingJd" @change="parseJdFile" />
+            <label for="pds-jd-upload" :class="['inline-flex cursor-pointer items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-700 dark:text-brand-300', parsingJd ? 'pointer-events-none opacity-50' : '']">
+              <Loader2 v-if="parsingJd" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ parsingJd ? 'Reading JD…' : 'Upload JD' }}
+            </label>
+          </div>
+        </div>
+        <div v-if="uploadedJdName" class="mt-3 flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-700 dark:bg-success-950/30 dark:text-success-300"><FileText class="size-4" />{{ uploadedJdName }} extracted successfully.<span v-if="profileExtracted">Requirement Profile populated below.</span></div>
+      </section>
 
+      <section class="space-y-4">
+        <div><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Requirement Profile</h2><p class="mt-1 text-xs text-surface-500">Review AI-extracted details. Correct anything required. Fields not present in the JD remain editable.</p></div>
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="block"><span class="mb-1.5 block text-sm font-medium">Job Title <span class="text-danger-500">*</span></span><input v-model="form.title" maxlength="200" placeholder="e.g. Account Manager - Enterprise" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
           <label class="block"><span class="mb-1.5 block text-sm font-medium">Function</span><input v-model="form.functionName" maxlength="300" placeholder="e.g. Sales" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
@@ -174,22 +183,13 @@ async function createRequirement() {
           <label class="block"><span class="mb-1.5 block text-sm font-medium">Openings</span><input v-model.number="form.openings" type="number" min="1" max="500" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
           <label class="block"><span class="mb-1.5 block text-sm font-medium">Closure Date</span><input v-model="form.closureDate" type="date" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /><span class="mt-1 block text-xs text-surface-500">If blank, target closure defaults to 60 days from assignment.</span></label>
           <label class="block"><span class="mb-1.5 block text-sm font-medium">Employment Type</span><select v-model="form.type" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900"><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="internship">Internship</option></select></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Major Requirements</span><textarea v-model="form.majorRequirements" rows="3" maxlength="5000" placeholder="Optional: one major requirement per line" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-medium">Major Requirements</span><textarea v-model="form.majorRequirements" rows="4" maxlength="5000" placeholder="One major requirement per line" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
         </div>
       </section>
 
       <section class="border-t border-surface-200 pt-5 dark:border-surface-800">
-        <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
-          <div><label class="block text-sm font-medium">Job Description <span class="text-danger-500">*</span></label><p class="mt-0.5 text-xs text-surface-500">Upload PDF, DOC or DOCX, or paste/write the JD directly.</p></div>
-          <div>
-            <input ref="jdFileInput" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" @change="parseJdFile" />
-            <button type="button" :disabled="parsingJd" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-3.5 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50 dark:border-brand-700 dark:text-brand-300" @click="jdFileInput?.click()">
-              <Loader2 v-if="parsingJd" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ parsingJd ? 'Reading JD…' : 'Upload JD' }}
-            </button>
-          </div>
-        </div>
-        <div v-if="uploadedJdName" class="mb-2 flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-700 dark:bg-success-950/30 dark:text-success-300"><FileText class="size-4" />Extracted from {{ uploadedJdName }}. The text below is editable.</div>
-        <textarea v-model="form.description" rows="16" maxlength="100000" placeholder="Paste or write the complete JD here..." class="w-full rounded-lg border border-surface-300 bg-white px-4 py-3 text-sm leading-6 dark:border-surface-700 dark:bg-surface-900" />
+        <div class="mb-2"><label class="block text-sm font-medium">Active Job Description <span class="text-danger-500">*</span></label><p class="mt-0.5 text-xs text-surface-500">Extracted JD text remains editable. You may also paste/write a JD when no file is available.</p></div>
+        <textarea v-model="form.description" rows="16" maxlength="100000" placeholder="Upload, paste or write the complete JD here..." class="w-full rounded-lg border border-surface-300 bg-white px-4 py-3 text-sm leading-6 dark:border-surface-700 dark:bg-surface-900" />
       </section>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-surface-200 pt-5 dark:border-surface-800">
