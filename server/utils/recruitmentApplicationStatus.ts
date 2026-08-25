@@ -15,8 +15,12 @@ export function coarseStatusForRecruitmentStage(stage: RecruitmentStage): Applic
     case 'hold_for_comparison':
     case 'reassess':
       return 'screening'
+    case 'hiring_manager_round_pending':
+    case 'hiring_manager_round_completed':
     case 'hod_round_pending':
     case 'hod_round_completed':
+    case 'hr_round_pending':
+    case 'hr_round_completed':
       return 'interview'
     case 'offer_stage':
     case 'offer_accepted':
