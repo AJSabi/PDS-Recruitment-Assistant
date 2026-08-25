@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 const priorityOrder: Record<string, number> = { P1: 1, P2: 2, P3: 3, P4: 4 }
+const MIN_VISIBLE_MATCH = 50
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
@@ -25,7 +26,7 @@ export default defineEventHandler(async (event) => {
     .innerJoin(candidate, eq(candidate.id, application.candidateId))
     .where(and(eq(application.organizationId, orgId), eq(application.jobId, jobId)))
 
-  if (!apps.length) return { jobId, requirementRevision, ranking: [] }
+  if (!apps.length) return { jobId, requirementRevision, minimumVisibleMatch: MIN_VISIBLE_MATCH, ranking: [] }
   const appIds = apps.map(a => a.applicationId)
 
   const profiles = await db.select().from(recruitmentApplicationProfile)
@@ -63,13 +64,14 @@ export default defineEventHandler(async (event) => {
       requirementRevision,
       needsReassessment,
     }
-  }).sort((a, b) => {
-    if (a.needsReassessment !== b.needsReassessment) return a.needsReassessment ? 1 : -1
-    const pa = a.priority ? priorityOrder[a.priority] ?? 99 : 99
-    const pb = b.priority ? priorityOrder[b.priority] ?? 99 : 99
-    if (pa !== pb) return pa - pb
-    return (b.provisionalFitScore ?? -1) - (a.provisionalFitScore ?? -1)
-  }).map((item, index) => ({ rank: index + 1, ...item }))
+  }).filter(item => item.provisionalFitScore != null && item.provisionalFitScore >= MIN_VISIBLE_MATCH)
+    .sort((a, b) => {
+      if (a.needsReassessment !== b.needsReassessment) return a.needsReassessment ? 1 : -1
+      const pa = a.priority ? priorityOrder[a.priority] ?? 99 : 99
+      const pb = b.priority ? priorityOrder[b.priority] ?? 99 : 99
+      if (pa !== pb) return pa - pb
+      return (b.provisionalFitScore ?? -1) - (a.provisionalFitScore ?? -1)
+    }).map((item, index) => ({ rank: index + 1, ...item }))
 
-  return { jobId, requirementRevision, ranking }
+  return { jobId, requirementRevision, minimumVisibleMatch: MIN_VISIBLE_MATCH, ranking }
 })
