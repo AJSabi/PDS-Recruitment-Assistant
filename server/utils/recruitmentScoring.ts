@@ -19,12 +19,12 @@ export function calculateProvisionalFit(input: {
   )
 
   let priority: RankingPriority
-  if (score >= 80 && mandatory >= 80) priority = 'P1'
-  else if (score >= 65 && mandatory >= 60) priority = 'P2'
-  else if (score >= 45) priority = 'P3'
+  if (score >= 85) priority = 'P1'
+  else if (score >= 70) priority = 'P2'
+  else if (score >= 60) priority = 'P3'
   else priority = 'P4'
 
-  // Critical Mandatory weakness always overrides an otherwise high weighted score.
+  // Critical Mandatory weakness can override an otherwise higher numerical band.
   if (mandatory < 40) priority = 'P4'
   else if (mandatory < 60 && (priority === 'P1' || priority === 'P2')) priority = 'P3'
 
