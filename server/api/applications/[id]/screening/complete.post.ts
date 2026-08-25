@@ -10,7 +10,7 @@ type ScreeningQuestion = { id: string; question: string; options?: string[]; ver
 type ScreeningResponse = { questionId: string; answer: string; answeredAt?: string }
 
 const nextActionLabels: Record<string, string> = {
-  proceed_to_hod_round: 'Proceed to HOD Round',
+  proceed_to_hiring_manager_round: 'Proceed to Hiring Manager Round',
   hold_for_comparison: 'Hold for Comparison',
   reassess: 'Reassess',
   recruiter_decision_required: 'Recruiter Decision Required',
