@@ -12,7 +12,7 @@ const questionsSchema = z.object({ questions: z.array(questionSchema).min(1).max
 
 const interpretationSchema = z.object({
   finalFit: z.enum(['strong_fit', 'potential_fit', 'borderline_requires_validation', 'significant_gap']),
-  recommendedNextStep: z.enum(['proceed_to_hod_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required']),
+  recommendedNextStep: z.enum(['proceed_to_hiring_manager_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required']),
   conversationBrief: z.string().min(1).max(3000),
   validationFocus: z.array(z.string().min(1).max(500)).max(5),
   rationale: z.string().min(1).max(2000),
@@ -70,9 +70,9 @@ Rules:
 - Do not infer protected or irrelevant personal attributes.
 - finalFit must be Strong Fit, Potential Fit, Borderline/Requires Validation, or Significant Gap.
 - This is a recommendation to the recruiter, never an automatic rejection decision.
-- Recommend Proceed to HOD Round when critical evidence is sufficiently strong; Hold for Comparison when viable but comparative; Reassess when evidence or requirement materially changed; Recruiter Decision Required when critical evidence is conflicting or incomplete.
+- Recommend Proceed to Hiring Manager Round when critical evidence is sufficiently strong; Hold for Comparison when viable but comparative; Reassess when evidence or requirement materially changed; Recruiter Decision Required when critical evidence is conflicting or incomplete.
 - Explicitly highlight contradictions between resume claims and recruiter responses.
-- validationFocus should contain at most 5 concise unresolved items for HOD/interview validation.`,
+- validationFocus should contain at most 5 concise unresolved items for Hiring Manager validation.`,
     prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nRESUME/SKILL ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nSCREENING QUESTIONS:\n${JSON.stringify(input.questions)}\n\nRECRUITER RESPONSES:\n${JSON.stringify(input.responses)}\n\nInterpret the completed recruiter screening against the approved requirement.`,
     schema: interpretationSchema,
     schemaName: 'PdsScreeningInterpretation',
