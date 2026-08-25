@@ -24,18 +24,32 @@ export async function generatePdsScreeningQuestions(
 ) {
   const result = await generateStructuredOutput(config, {
     system: `You create practical recruiter screening questions for a 10-15 minute phone screening.
+
+The candidate has already been analysed against an APPROVED Skill Matrix. The purpose of this screening is NOT to repeat the resume review. It is to validate the most important uncertainties found in the Skill Assessment.
+
+Question priority order:
+1. Mandatory skills marked Requires Verification.
+2. Mandatory skills marked No Evidence Found.
+3. Mandatory skills marked Partial Evidence.
+4. Important Preferred skills with Requires Verification, No Evidence Found or Partial Evidence.
+5. Strong Evidence claims only when ownership, scale, complexity, achievement, recency or actual hands-on responsibility still needs validation.
+
 Rules:
-- Generate no more than 10 questions and only as many as materially useful.
-- Base questions on the Active JD, APPROVED Skill Matrix, resume evidence, gaps and verification areas.
-- Prioritise Mandatory skills, ownership, scale, outcomes, target achievement, relevant domain exposure and unclear resume claims.
-- Do not ask generic theory questions when an experience-verification question would work better.
-- Do not ask about protected, sensitive or irrelevant personal characteristics.
-- Each question should be concise and answerable in roughly 30-90 seconds.
-- Provide 4-6 realistic selectable answer options when structured answers help the recruiter move quickly; include an "Other / Exact Response" option when appropriate.
-- Options must not imply that one answer is automatically accepted or rejected.
-- verificationArea should state what evidence or uncertainty the question is intended to validate.
-- Use sequential stable IDs q1, q2, etc.`,
-    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nRESUME ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nGenerate the recruiter screening questions.`,
+- Generate a maximum of 10 questions and only as many as materially useful for this candidate.
+- Every question must trace to a specific Skill Assessment item, Key Gap, Verification Area or material JD requirement.
+- Do not generate generic interview questions merely because they are common for the role.
+- Do not ask again for information already strongly evidenced unless its scale, ownership or result needs confirmation.
+- Prioritise practical evidence: what the candidate personally did, customer/account ownership, target/revenue/GM responsibility, project or deal size, technology/domain exposure, complexity, measurable outcome and recency where relevant to the role.
+- Convert vague resume claims into verification questions.
+- Where resume claims conflict or look unusually broad, ask a neutral clarification question rather than assuming the claim is false.
+- Avoid duplicate questions covering the same uncertainty.
+- Keep questions concise and answerable in roughly 30-90 seconds.
+- Provide 4-6 realistic selectable answer options whenever this speeds recruiter capture. Add "Other / Exact Response" where free text may be needed.
+- Options must represent plausible evidence levels or factual ranges; they must never act as automatic accept/reject answers.
+- verificationArea must name the exact skill, gap or claim being validated so the recruiter understands why the question exists.
+- Use sequential IDs q1, q2, etc.
+- Use only job-related evidence. Never ask about protected, sensitive or irrelevant personal characteristics.`,
+    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nCANDIDATE AI SKILL/RESUME ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nCreate candidate-specific recruiter screening questions from the unresolved or important validation points in the Skill Assessment.`,
     schema: questionsSchema,
     schemaName: 'PdsScreeningQuestions',
   })
@@ -49,15 +63,17 @@ export async function interpretPdsScreening(
   const result = await generateStructuredOutput(config, {
     system: `You interpret recruiter screening evidence for a hiring workflow.
 Rules:
-- Resume evidence is provisional; recruiter screening can confirm, weaken or contradict it.
+- Resume evidence is provisional; recruiter screening can confirm, strengthen, weaken or contradict it.
+- Give more weight to specific recruiter-screening evidence than to unsupported resume wording.
+- Judge the candidate against the APPROVED Skill Matrix and Active JD, not against other candidates.
 - Use only job-related evidence.
 - Do not infer protected or irrelevant personal attributes.
-- finalFit must be one of Strong Fit, Potential Fit, Borderline/Requires Validation, or Significant Gap.
+- finalFit must be Strong Fit, Potential Fit, Borderline/Requires Validation, or Significant Gap.
 - This is a recommendation to the recruiter, never an automatic rejection decision.
-- recommend Proceed to HOD Round when evidence is sufficiently strong; Hold for Comparison when viable but comparative; Reassess when evidence/requirement materially changed; Recruiter Decision Required when evidence is conflicting or incomplete.
-- Highlight contradictions between resume claims and recruiter responses.
-- validationFocus should contain at most 5 concise items for HOD/interview validation.`,
-    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nRESUME ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nSCREENING QUESTIONS:\n${JSON.stringify(input.questions)}\n\nRECRUITER RESPONSES:\n${JSON.stringify(input.responses)}\n\nInterpret the completed recruiter screening.`,
+- Recommend Proceed to HOD Round when critical evidence is sufficiently strong; Hold for Comparison when viable but comparative; Reassess when evidence or requirement materially changed; Recruiter Decision Required when critical evidence is conflicting or incomplete.
+- Explicitly highlight contradictions between resume claims and recruiter responses.
+- validationFocus should contain at most 5 concise unresolved items for HOD/interview validation.`,
+    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nRESUME/SKILL ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nSCREENING QUESTIONS:\n${JSON.stringify(input.questions)}\n\nRECRUITER RESPONSES:\n${JSON.stringify(input.responses)}\n\nInterpret the completed recruiter screening against the approved requirement.`,
     schema: interpretationSchema,
     schemaName: 'PdsScreeningInterpretation',
   })
