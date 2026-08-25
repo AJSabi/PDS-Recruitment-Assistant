@@ -17,7 +17,7 @@ const busy = ref(false)
 const aiGenerating = ref(false)
 const aiInterpreting = ref(false)
 const finalFit = ref('potential_fit')
-const recommendedNextStep = ref('proceed_to_hod_round')
+const recommendedNextStep = ref('proceed_to_hiring_manager_round')
 const conversationBrief = ref('')
 const validationFocusText = ref('')
 const aiRationale = ref('')
@@ -149,10 +149,10 @@ async function completeScreening() {
         <div v-if="aiRationale" class="rounded-lg bg-brand-50 p-3 text-xs text-brand-900 dark:bg-brand-950/30 dark:text-brand-200"><strong>AI rationale:</strong> {{ aiRationale }}</div>
         <div class="grid gap-3 sm:grid-cols-2">
           <div><label class="mb-1 block text-xs font-medium">Final Fit</label><select v-model="finalFit" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800"><option value="strong_fit">Strong Fit</option><option value="potential_fit">Potential Fit</option><option value="borderline_requires_validation">Borderline / Requires Validation</option><option value="significant_gap">Significant Gap</option></select></div>
-          <div><label class="mb-1 block text-xs font-medium">Recommended Next Step</label><select v-model="recommendedNextStep" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800"><option value="proceed_to_hod_round">Proceed to HOD Round</option><option value="hold_for_comparison">Hold for Comparison</option><option value="reassess">Reassess</option><option value="recruiter_decision_required">Recruiter Decision Required</option></select></div>
+          <div><label class="mb-1 block text-xs font-medium">Recommended Next Step</label><select v-model="recommendedNextStep" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800"><option value="proceed_to_hiring_manager_round">Proceed to Hiring Manager Round</option><option value="hold_for_comparison">Hold for Comparison</option><option value="reassess">Reassess</option><option value="recruiter_decision_required">Recruiter Decision Required</option></select></div>
         </div>
         <div><label class="mb-1 block text-xs font-medium">Conversation Brief</label><textarea v-model="conversationBrief" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></div>
-        <div><label class="mb-1 block text-xs font-medium">HOD Validation Focus</label><textarea v-model="validationFocusText" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One item per line" /></div>
+        <div><label class="mb-1 block text-xs font-medium">Hiring Manager Validation Focus</label><textarea v-model="validationFocusText" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One item per line" /></div>
         <div class="flex justify-end"><button :disabled="busy || aiInterpreting" class="rounded-lg bg-success-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="completeScreening">Confirm & Complete Screening</button></div>
       </div>
     </div>
