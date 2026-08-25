@@ -1,0 +1,47 @@
+import { and, desc, eq, gte } from 'drizzle-orm'
+import { candidate, talentPoolMatch } from '../../../../database/schema'
+import { z } from 'zod'
+
+const paramsSchema = z.object({ id: z.string().min(1) })
+const FINAL_POOL_THRESHOLD = 50
+
+export default defineEventHandler(async (event) => {
+  const session = await requirePermission(event, { application: ['read'] })
+  const orgId = session.session.activeOrganizationId
+  const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+
+  const rows = await db.select({
+    matchId: talentPoolMatch.id,
+    candidateId: talentPoolMatch.candidateId,
+    firstName: candidate.firstName,
+    lastName: candidate.lastName,
+    email: candidate.email,
+    phone: candidate.phone,
+    score: talentPoolMatch.score,
+    priority: talentPoolMatch.priority,
+    mandatoryMatch: talentPoolMatch.mandatoryMatch,
+    keyStrength: talentPoolMatch.keyStrength,
+    mainGap: talentPoolMatch.mainGap,
+    candidateSnapshot: talentPoolMatch.candidateSnapshot,
+    jdAlignment: talentPoolMatch.jdAlignment,
+    source: talentPoolMatch.source,
+    promotedApplicationId: talentPoolMatch.promotedApplicationId,
+    resumeDocumentId: talentPoolMatch.resumeDocumentId,
+    requirementVersion: talentPoolMatch.requirementVersion,
+    assessedAt: talentPoolMatch.assessedAt,
+  }).from(talentPoolMatch)
+    .innerJoin(candidate, eq(candidate.id, talentPoolMatch.candidateId))
+    .where(and(
+      eq(talentPoolMatch.organizationId, orgId),
+      eq(talentPoolMatch.jobId, jobId),
+      gte(talentPoolMatch.score, FINAL_POOL_THRESHOLD),
+    ))
+    .orderBy(desc(talentPoolMatch.score), desc(talentPoolMatch.assessedAt))
+
+  return {
+    jobId,
+    threshold: FINAL_POOL_THRESHOLD,
+    total: rows.length,
+    ranking: rows.map((row, index) => ({ rank: index + 1, ...row })),
+  }
+})
