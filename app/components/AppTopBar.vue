@@ -142,7 +142,6 @@ watch(() => route.path, () => {
           <NuxtLink :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-brand-700">
             <Plus class="size-4" /><span class="hidden sm:inline">New Job</span>
           </NuxtLink>
-          <div class="hidden lg:block"><OrgSwitcher /></div>
           <div class="hidden lg:block"><LanguageSwitcher /></div>
           <button type="button" class="inline-flex size-9 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" @click="toggleColorMode">
             <Sun v-if="isDark" class="size-4" /><Moon v-else class="size-4" />
@@ -153,7 +152,7 @@ watch(() => route.path, () => {
             </button>
             <div v-if="showUserMenu" class="absolute right-0 top-[calc(100%+6px)] w-64 overflow-hidden rounded-xl border border-surface-200 bg-white shadow-xl dark:border-surface-700 dark:bg-surface-900">
               <div class="border-b border-surface-100 px-4 py-3 dark:border-surface-800"><p class="text-sm font-semibold text-surface-900 dark:text-surface-100">{{ userName }}</p><p class="truncate text-xs text-surface-500">{{ userEmail }}</p></div>
-              <div class="p-1 lg:hidden"><OrgSwitcher /><LanguageSwitcher /></div>
+              <div class="p-1 lg:hidden"><LanguageSwitcher /></div>
               <button type="button" :disabled="isSigningOut" class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-surface-600 hover:bg-surface-100 disabled:opacity-50 dark:text-surface-400 dark:hover:bg-surface-800" @click="handleSignOut"><LogOut class="size-4" />{{ isSigningOut ? 'Signing out…' : 'Sign out' }}</button>
             </div>
           </div>
