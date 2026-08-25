@@ -60,7 +60,12 @@ function phoneDigits(phone?: string | null) {
 }
 
 export default defineEventHandler(async (event) => {
-  const session = await requirePermission(event, { document: ['create'], application: ['read'], scoring: ['create'] })
+  const session = await requirePermission(event, {
+    candidate: ['create'],
+    document: ['create'],
+    application: ['read'],
+    scoring: ['create'],
+  })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
 
