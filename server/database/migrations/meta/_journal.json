@@ -37,6 +37,8 @@
     { "idx": 32, "version": "7", "when": 1787551200000, "tag": "0999_pds_skill_matrix", "breakpoints": true },
     { "idx": 33, "version": "7", "when": 1787551260000, "tag": "1000_pds_recruitment_framework", "breakpoints": true },
     { "idx": 34, "version": "7", "when": 1787551320000, "tag": "1001_pds_resume_assessment", "breakpoints": true },
-    { "idx": 35, "version": "7", "when": 1787551380000, "tag": "1002_pds_application_resume_link", "breakpoints": true }
+    { "idx": 35, "version": "7", "when": 1787551380000, "tag": "1002_pds_application_resume_link", "breakpoints": true },
+    { "idx": 36, "version": "7", "when": 1787551440000, "tag": "1003_pds_recruiter_assignment", "breakpoints": true },
+    { "idx": 37, "version": "7", "when": 1787551500000, "tag": "1004_pds_requirement_tat", "breakpoints": true }
   ]
 }
