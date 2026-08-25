@@ -11,6 +11,7 @@ const emit = defineEmits<{ saved: [] }>()
 const toast = useToast()
 const isSaving = ref(false)
 const isAnalyzing = ref(false)
+const autoAttemptedForResume = ref<string | null>(null)
 
 const { data, refresh } = useFetch(() => `/api/applications/${props.applicationId}/resume-assessment`, {
   key: computed(() => `pds-resume-assessment-${props.applicationId}`),
@@ -35,7 +36,17 @@ const priority = ref<string | null>(null)
 
 watch(data, (value: any) => {
   const a = value?.assessment
-  if (!a) return
+  if (!a) {
+    candidateSnapshot.value = ''
+    jdAlignment.value = ''
+    keyGapsText.value = ''
+    verificationAreasText.value = ''
+    skillAssessment.value = []
+    assessmentSource.value = null
+    provisionalFitScore.value = null
+    priority.value = null
+    return
+  }
   candidateSnapshot.value = a.candidateSnapshot ?? ''
   jdAlignment.value = a.jdAlignment ?? ''
   keyGapsText.value = (a.keyGaps ?? []).join('\n')
@@ -61,23 +72,39 @@ function evidenceLabel(value?: string) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-async function runAiAnalysis() {
-  if (!props.selectedResumeDocumentId) return toast.warning('Select a resume first', 'Choose the resume for this application before AI analysis.')
+async function runAiAnalysis(auto = false) {
+  if (!props.selectedResumeDocumentId) return
   if (!['resume_received', 'resume_reviewed', 'reassess'].includes(props.recruitmentStatus ?? '')) {
-    return toast.warning('AI analysis not available', 'The current recruitment status does not allow resume assessment.')
+    if (!auto) toast.warning('AI analysis not available', 'The current recruitment status does not allow resume assessment.')
+    return
   }
   isAnalyzing.value = true
   try {
     const result: any = await $fetch(`/api/applications/${props.applicationId}/resume-assessment/generate`, { method: 'POST' })
     await refresh()
     emit('saved')
-    toast.success('AI resume analysis completed', { message: `${result?.ranking?.priority ?? ''}${result?.ranking?.provisionalFitScore != null ? ` · Score ${result.ranking.provisionalFitScore}` : ''}`.trim() })
+    toast.success(auto ? 'AI candidate analysis completed automatically' : 'AI resume analysis completed', {
+      message: `${result?.ranking?.priority ?? ''}${result?.ranking?.provisionalFitScore != null ? ` · Score ${result.ranking.provisionalFitScore}` : ''}${result?.questions?.length ? ` · ${result.questions.length} screening questions generated` : ''}`.trim(),
+    })
   } catch (err: any) {
-    toast.error('AI analysis could not be completed', { message: err?.data?.statusMessage ?? err?.message })
+    const message = err?.data?.statusMessage ?? err?.message
+    toast.error(auto ? 'Automatic AI analysis could not run' : 'AI analysis could not be completed', { message })
   } finally {
     isAnalyzing.value = false
   }
 }
+
+watch(
+  () => [props.selectedResumeDocumentId, props.recruitmentStatus, data.value?.assessment] as const,
+  async ([resumeId, status, existing]) => {
+    if (!resumeId || !['resume_received', 'reassess'].includes(status ?? '')) return
+    if (existing) return
+    if (autoAttemptedForResume.value === resumeId) return
+    autoAttemptedForResume.value = resumeId
+    await runAiAnalysis(true)
+  },
+  { immediate: true },
+)
 
 async function saveAssessment() {
   if (!props.selectedResumeDocumentId) return toast.warning('Select a resume first', 'Choose the resume for this application before assessment.')
@@ -109,7 +136,7 @@ async function saveAssessment() {
     })
     await refresh()
     emit('saved')
-    toast.success('Resume assessment saved')
+    toast.success('Assessment adjustments saved')
   } catch (err: any) {
     toast.error('Could not save assessment', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isSaving.value = false }
@@ -122,14 +149,17 @@ async function saveAssessment() {
       <div class="flex items-start gap-2">
         <ClipboardCheck class="mt-0.5 size-4 text-brand-600" />
         <div>
-          <div class="flex flex-wrap items-center gap-2"><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Resume Assessment</h2><span v-if="assessmentSource" class="rounded-full bg-surface-100 px-2 py-0.5 text-xs text-surface-600 dark:bg-surface-800">{{ assessmentSource === 'ai' ? 'AI generated' : 'Manual' }}</span><span v-if="priority" class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{{ priority }}</span><span v-if="provisionalFitScore != null" class="text-xs text-surface-500">Score {{ provisionalFitScore }}/100</span></div>
-          <p class="mt-1 text-xs text-surface-500">AI assesses the selected resume against the approved Skill Matrix. Resume analysis is provisional and does not change Current Fit.</p>
+          <div class="flex flex-wrap items-center gap-2"><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">AI Candidate Skill Assessment</h2><span v-if="assessmentSource" class="rounded-full bg-surface-100 px-2 py-0.5 text-xs text-surface-600 dark:bg-surface-800">{{ assessmentSource === 'ai' ? 'AI generated' : 'Adjusted manually' }}</span><span v-if="priority" class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{{ priority }}</span><span v-if="provisionalFitScore != null" class="text-xs text-surface-500">Score {{ provisionalFitScore }}/100</span></div>
+          <p class="mt-1 text-xs text-surface-500">After a resume is selected, AI automatically assesses it against the approved Skill Matrix and prepares recruiter screening questions. Resume evidence remains provisional and does not change Current Fit.</p>
         </div>
       </div>
-      <button v-if="selectedResumeDocumentId" type="button" :disabled="isAnalyzing || isSaving" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="runAiAnalysis"><Loader2 v-if="isAnalyzing" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isAnalyzing ? 'Analyzing…' : (assessmentSource ? 'Run AI Analysis Again' : 'Analyze Resume with AI') }}</button>
+      <button v-if="selectedResumeDocumentId && assessmentSource" type="button" :disabled="isAnalyzing || isSaving" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="runAiAnalysis(false)"><Loader2 v-if="isAnalyzing" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isAnalyzing ? 'Analyzing…' : 'Run AI Analysis Again' }}</button>
     </div>
 
-    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">Select a resume for this application before assessment.</div>
+    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">Select the resume for this application. AI analysis will then start automatically once the Skill Matrix is approved.</div>
+    <div v-else-if="isAnalyzing && !assessmentSource" class="rounded-lg border border-brand-200 bg-brand-50/50 p-4 text-sm text-brand-800 dark:border-brand-900 dark:bg-brand-950/20 dark:text-brand-200"><span class="inline-flex items-center gap-2"><Loader2 class="size-4 animate-spin" />AI is analysing the resume against the approved Skill Matrix and creating candidate-specific screening questions…</span></div>
+
+    <div v-else-if="selectedResumeDocumentId && !assessmentSource" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">No AI assessment is available yet. If automatic analysis failed, verify that the Skill Matrix is approved, the resume has parsed text, and an AI analysis provider is configured.</div>
 
     <div v-else class="space-y-4">
       <div class="grid gap-4 md:grid-cols-2">
@@ -142,8 +172,8 @@ async function saveAssessment() {
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
-        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Key Gaps</span><textarea v-model="keyGapsText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One gap per line" /></label>
-        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Verification Areas</span><textarea v-model="verificationAreasText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="One verification area per line" /></label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Key Gaps</span><textarea v-model="keyGapsText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
+        <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Verification Areas</span><textarea v-model="verificationAreasText" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
       </div>
 
       <div class="grid gap-3 sm:grid-cols-4">
@@ -159,7 +189,7 @@ async function saveAssessment() {
         <label class="block"><span class="text-xs font-medium text-surface-600 dark:text-surface-300">Main Gap</span><input v-model="mainGap" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></label>
       </div>
 
-      <div class="flex justify-end"><button type="button" :disabled="isSaving || isAnalyzing" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-50" @click="saveAssessment"><Loader2 v-if="isSaving" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isSaving ? 'Saving…' : 'Save / Adjust Assessment' }}</button></div>
+      <details class="rounded-lg border border-surface-200 p-4 dark:border-surface-800"><summary class="cursor-pointer text-sm font-medium">Manual adjustment</summary><div class="mt-3 flex justify-end"><button type="button" :disabled="isSaving || isAnalyzing" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-50" @click="saveAssessment"><Loader2 v-if="isSaving" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isSaving ? 'Saving…' : 'Save Adjustments' }}</button></div></details>
     </div>
   </section>
 </template>
