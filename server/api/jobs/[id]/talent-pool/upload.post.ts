@@ -135,6 +135,9 @@ export default defineEventHandler(async (event) => {
       }).returning({ id: document.id })
       if (!createdDocument) throw new Error('Resume record could not be created')
 
+      // The resume is now a valid database record. Do not delete its S3 object if later AI analysis fails.
+      storageKey = null
+
       const generated = await generatePdsResumeAssessment(providerConfig, {
         jobTitle: jobRecord.title,
         jobDescription: jobRecord.description,
@@ -197,7 +200,6 @@ export default defineEventHandler(async (event) => {
         score: ranking.score,
         priority: ranking.priority,
       })
-      storageKey = null
     } catch (error: any) {
       if (storageKey) {
         try { await deleteFromS3(storageKey) } catch { /* best-effort cleanup */ }
