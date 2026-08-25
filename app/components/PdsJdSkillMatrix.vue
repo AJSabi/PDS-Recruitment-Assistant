@@ -164,7 +164,19 @@ async function persist(approve: boolean) {
     approved.value = approve
     dirty.value = false
     await refresh()
-    toast.success(approve ? 'Skill Matrix approved' : 'Draft saved')
+
+    if (!approve) {
+      toast.success('Draft saved')
+      return
+    }
+
+    toast.success('Skill Matrix approved', { message: 'Searching the existing resume database for matching candidates.' })
+    try {
+      const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/sync`, { method: 'POST' })
+      toast.success('AI Candidate Pool prepared', { message: `${result.visibleMatches ?? 0} candidates meet the ${result.threshold ?? 50}% match threshold.` })
+    } catch (poolErr: any) {
+      toast.warning('Skill Matrix approved', poolErr?.data?.statusMessage ?? poolErr?.message ?? 'Candidate Pool will update when AI analysis is available.')
+    }
   } catch (err: any) {
     toast.error('Could not save Skill Matrix', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isSaving.value = false }
