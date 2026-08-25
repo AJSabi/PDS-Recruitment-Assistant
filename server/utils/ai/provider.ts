@@ -1,7 +1,7 @@
 /**
  * AI Provider Abstraction Layer
  *
- * Supports OpenAI, Anthropic, and custom OpenAI-compatible endpoints.
+ * Supports OpenAI, Anthropic, Google, and custom OpenAI-compatible endpoints.
  * Credentials are decrypted per-request from the organization's AI config.
  * Never logs or stores raw API keys — only encrypted values in the database.
  */
@@ -22,32 +22,21 @@ export interface ProviderConfig {
   maxTokens: number
 }
 
-/** Detailed info about a single model (presentation + suggested defaults). */
 export interface ModelInfo {
-  /** Provider-recognised model id, e.g. `gpt-4.1-mini`. */
   id: string
-  /** Human label shown in dropdowns, e.g. `GPT‑4.1 Mini`. */
   label: string
-  /** One-line plain-English description for non-experts. */
   description: string
-  /** Suggested USD price per 1M input tokens — used to pre-fill the form. */
   inputPricePer1m?: number
-  /** Suggested USD price per 1M output tokens — used to pre-fill the form. */
   outputPricePer1m?: number
-  /** Optional badge: `recommended`, `fast`, `powerful`, `cheap`. */
   badge?: 'recommended' | 'fast' | 'powerful' | 'cheap'
 }
 
-/** Well-known providers with links for obtaining API keys and curated model lists. */
 export const PROVIDER_REGISTRY: Record<string, {
   name: string
-  /** Short tagline describing the provider for the UI. */
   tagline: string
   modelsUrl: string
   apiKeyUrl: string
-  /** Optional docs link explaining how to get started. */
   signupUrl?: string
-  /** Whether a custom Base URL field should be exposed. */
   supportsBaseUrl: boolean
   defaultModel: string
   models: ModelInfo[]
@@ -110,18 +99,14 @@ export const PROVIDER_REGISTRY: Record<string, {
   },
 }
 
-/**
- * Create a language model instance from encrypted config.
- * Decrypts the API key just-in-time and never persists it in memory beyond the call.
- */
 export function createLanguageModel(config: ProviderConfig) {
   const secret = env.BETTER_AUTH_SECRET
   const apiKey = decrypt(config.apiKeyEncrypted, secret)
 
   if (!apiKey) {
     throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to decrypt AI API key. The key may be corrupted.',
+      statusCode: 422,
+      statusMessage: 'AI connection is unavailable because the configured API key could not be decrypted. Re-enter the key in Settings → AI.',
     })
   }
 
@@ -149,17 +134,78 @@ export function createLanguageModel(config: ProviderConfig) {
       return google(config.model)
     }
     default:
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Unsupported AI provider: ${config.provider}`,
-      })
+      throw createError({ statusCode: 422, statusMessage: 'The selected AI provider is not supported. Check Settings → AI.' })
   }
 }
 
-/**
- * Generate a structured JSON response from the AI provider.
- * Uses Vercel AI SDK's `generateObject` for reliable schema-conformant output.
- */
+function providerErrorText(error: any) {
+  return [
+    error?.code,
+    error?.data?.code,
+    error?.type,
+    error?.data?.type,
+    error?.message,
+    error?.data?.message,
+    error?.responseBody,
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
+/** Convert provider/SDK failures into safe, recruiter-facing errors without leaking credentials or raw provider payloads. */
+export function normalizeAiProviderError(error: any): never {
+  // Preserve deliberate application errors that already have a useful message.
+  if (error?.statusCode && error?.statusMessage && !String(error.statusMessage).toLowerCase().includes('server error')) throw error
+
+  const text = providerErrorText(error)
+  const providerStatus = Number(error?.statusCode ?? error?.status ?? error?.response?.status ?? 0)
+
+  if (text.includes('insufficient_quota') || text.includes('exceeded your current quota') || text.includes('billing') && text.includes('quota')) {
+    throw createError({
+      statusCode: 402,
+      statusMessage: 'AI quota or credits are exhausted. Check the provider billing/usage, then retry.',
+    })
+  }
+
+  if (text.includes('invalid_api_key') || text.includes('incorrect api key') || text.includes('authentication') || providerStatus === 401) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'AI authentication failed. Check the API key in Settings → AI and test the connection.',
+    })
+  }
+
+  if (text.includes('model_not_found') || text.includes('model not found') || text.includes('does not exist') && text.includes('model')) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'The configured AI model is unavailable or not accessible. Choose another model in Settings → AI.',
+    })
+  }
+
+  if (text.includes('invalid_json_schema') || text.includes('invalid schema') || text.includes('response_format') || text.includes('schema validation')) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: 'AI could not produce the required structured response. Please retry; if it persists, the AI workflow needs technical review.',
+    })
+  }
+
+  if (text.includes('rate limit') || text.includes('rate_limit') || providerStatus === 429) {
+    throw createError({
+      statusCode: 429,
+      statusMessage: 'AI request limit reached. Wait briefly and retry.',
+    })
+  }
+
+  if (text.includes('timeout') || text.includes('timed out') || text.includes('fetch failed') || text.includes('connection') || text.includes('network') || providerStatus >= 500) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'AI service is temporarily unavailable. Retry in a moment. Your recruitment data has not been lost.',
+    })
+  }
+
+  throw createError({
+    statusCode: 502,
+    statusMessage: 'AI processing could not be completed. Retry once; if the issue continues, check Settings → AI.',
+  })
+}
+
 export async function generateStructuredOutput<T>(
   config: ProviderConfig,
   options: {
@@ -170,24 +216,27 @@ export async function generateStructuredOutput<T>(
     schemaDescription?: string
   },
 ): Promise<{ object: T; usage: { promptTokens: number; completionTokens: number } }> {
-  const model = createLanguageModel(config)
+  try {
+    const model = createLanguageModel(config)
+    const result = await generateObject({
+      model,
+      system: options.system,
+      prompt: options.prompt,
+      schema: options.schema,
+      schemaName: options.schemaName,
+      schemaDescription: options.schemaDescription,
+      maxTokens: config.maxTokens,
+      temperature: 0.1,
+    })
 
-  const result = await generateObject({
-    model,
-    system: options.system,
-    prompt: options.prompt,
-    schema: options.schema,
-    schemaName: options.schemaName,
-    schemaDescription: options.schemaDescription,
-    maxTokens: config.maxTokens,
-    temperature: 0.1,
-  })
-
-  return {
-    object: result.object,
-    usage: {
-      promptTokens: result.usage.inputTokens ?? 0,
-      completionTokens: result.usage.outputTokens ?? 0,
-    },
+    return {
+      object: result.object,
+      usage: {
+        promptTokens: result.usage.inputTokens ?? 0,
+        completionTokens: result.usage.outputTokens ?? 0,
+      },
+    }
+  } catch (error: any) {
+    normalizeAiProviderError(error)
   }
 }
