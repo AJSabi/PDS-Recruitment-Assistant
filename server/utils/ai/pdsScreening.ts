@@ -4,8 +4,8 @@ import { generateStructuredOutput, type ProviderConfig } from './provider'
 const questionSchema = z.object({
   id: z.string().min(1).max(100),
   question: z.string().min(1).max(1000),
-  options: z.array(z.string().min(1).max(500)).min(4).max(7).optional(),
-  verificationArea: z.string().max(500).optional(),
+  options: z.array(z.string().min(1).max(500)).min(4).max(7).nullable(),
+  verificationArea: z.string().max(500).nullable(),
 })
 
 const questionsSchema = z.object({ questions: z.array(questionSchema).min(1).max(10) })
@@ -45,8 +45,9 @@ Rules:
 - Avoid duplicate questions covering the same uncertainty.
 - Keep questions concise and answerable in roughly 30-90 seconds.
 - Provide 4-6 realistic selectable answer options whenever this speeds recruiter capture. Add "Other / Exact Response" where free text may be needed.
+- If selectable options would not help, return options as null.
 - Options must represent plausible evidence levels or factual ranges; they must never act as automatic accept/reject answers.
-- verificationArea must name the exact skill, gap or claim being validated so the recruiter understands why the question exists.
+- verificationArea must name the exact skill, gap or claim being validated; use null only when there is no distinct validation area.
 - Use sequential IDs q1, q2, etc.
 - Use only job-related evidence. Never ask about protected, sensitive or irrelevant personal characteristics.`,
     prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${JSON.stringify(input.approvedMatrix)}\n\nCANDIDATE AI SKILL/RESUME ASSESSMENT:\n${JSON.stringify(input.resumeAssessment)}\n\nCreate candidate-specific recruiter screening questions from the unresolved or important validation points in the Skill Assessment.`,
