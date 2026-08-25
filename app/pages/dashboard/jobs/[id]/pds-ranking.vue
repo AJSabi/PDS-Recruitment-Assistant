@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Database, FileSearch, Loader2, RefreshCw, Sparkles, UserPlus, UsersRound } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound } from 'lucide-vue-next'
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
 const jobId = route.params.id as string
@@ -19,7 +19,9 @@ const { data: poolData, status: poolStatus, refresh: refreshPool } = useFetch(()
 const batchBusy = ref(false)
 const batchProgress = ref({ done: 0, total: 0 })
 const poolBusy = ref(false)
+const uploadingResumes = ref(false)
 const promotingMatchId = ref<string | null>(null)
+const resumeInput = ref<HTMLInputElement | null>(null)
 const rows = computed<any[]>(() => data.value?.ranking ?? [])
 const poolRows = computed<any[]>(() => poolData.value?.ranking ?? [])
 const summary = computed(() => ({
@@ -49,6 +51,27 @@ async function syncTalentPool() {
   } catch (err: any) {
     toast.error('Could not update AI Candidate Pool', { message: err?.data?.statusMessage ?? err?.message })
   } finally { poolBusy.value = false }
+}
+
+async function uploadResumes(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (!files.length) return
+  uploadingResumes.value = true
+  try {
+    const formData = new FormData()
+    for (const file of files) formData.append('files', file)
+    const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/upload`, { method: 'POST', body: formData })
+    await refreshPool()
+    const summaryText = `${result.matched ?? 0} added to the 50%+ pool; ${result.belowThreshold ?? 0} below threshold; ${result.failed ?? 0} failed.`
+    if (result.failed) toast.warning('Resume intake completed with exceptions', summaryText)
+    else toast.success(files.length === 1 ? 'Resume analysed' : 'Resumes analysed', { message: summaryText })
+  } catch (err: any) {
+    toast.error('Could not process resume upload', { message: err?.data?.statusMessage ?? err?.message })
+  } finally {
+    uploadingResumes.value = false
+    input.value = ''
+  }
 }
 
 async function promoteMatch(row: any) {
@@ -110,9 +133,13 @@ async function analyzePendingWithAi() {
       <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div class="flex items-center gap-2"><Database class="size-4 text-brand-600" /><h2 class="text-base font-semibold">Live AI Candidate Pool</h2></div>
-          <p class="mt-1 text-sm text-surface-500">Existing database resumes are matched to the approved Skill Matrix. Candidates remain outside the active pipeline until you choose to move them forward.</p>
+          <p class="mt-1 text-sm text-surface-500">Existing database resumes and resumes added directly to this JD feed the same live ranking. Candidates remain outside the active pipeline until you choose to move them forward.</p>
         </div>
-        <button :disabled="poolBusy" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="syncTalentPool"><Loader2 v-if="poolBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ poolBusy ? 'Updating Candidate Pool…' : 'Refresh AI Candidate Pool' }}</button>
+        <div class="flex flex-wrap gap-2">
+          <input ref="resumeInput" type="file" multiple accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" @change="uploadResumes" />
+          <button :disabled="uploadingResumes || poolBusy" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="resumeInput?.click()"><Loader2 v-if="uploadingResumes" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ uploadingResumes ? 'Analysing Resume(s)…' : 'Add Resume(s)' }}</button>
+          <button :disabled="poolBusy || uploadingResumes" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="syncTalentPool"><Loader2 v-if="poolBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ poolBusy ? 'Updating Candidate Pool…' : 'Refresh Database Matches' }}</button>
+        </div>
       </div>
 
       <div v-if="poolStatus === 'pending'" class="py-8 text-center text-surface-400">Loading AI Candidate Pool…</div>
