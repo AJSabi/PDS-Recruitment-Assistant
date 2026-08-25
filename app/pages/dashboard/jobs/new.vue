@@ -43,6 +43,36 @@ function dateToIso(value: string) {
   return new Date(`${value}T12:00:00`).toISOString()
 }
 
+function wait(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isNetworkFailure(err: any) {
+  const status = err?.statusCode ?? err?.status ?? err?.response?.status
+  if (status) return false
+  const message = String(err?.message ?? '').toLowerCase()
+  return message.includes('failed to fetch') || message.includes('<no response>') || message.includes('network')
+}
+
+async function parseJdWithRetry(file: File) {
+  const maxAttempts = 3
+  let lastError: any
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      return await $fetch('/api/jobs/jd/parse', { method: 'POST', body })
+    } catch (err: any) {
+      lastError = err
+      if (!isNetworkFailure(err) || attempt === maxAttempts) throw err
+      await wait(attempt * 700)
+    }
+  }
+
+  throw lastError
+}
+
 async function parseJdFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -50,9 +80,7 @@ async function parseJdFile(event: Event) {
 
   parsingJd.value = true
   try {
-    const body = new FormData()
-    body.append('file', file)
-    const result: any = await $fetch('/api/jobs/jd/parse', { method: 'POST', body })
+    const result: any = await parseJdWithRetry(file)
     form.description = result.text ?? ''
     uploadedJdName.value = result.filename ?? file.name
     toast.success('JD extracted', { message: 'Review the extracted JD below before creating the requirement.' })
