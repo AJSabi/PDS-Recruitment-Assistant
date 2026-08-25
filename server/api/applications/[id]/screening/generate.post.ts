@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { application, job, jobSkillMatrix, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
+import { application, job, jobSkillMatrix, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsScreeningQuestions } from '../../../../utils/ai/pdsScreening'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
@@ -48,6 +48,40 @@ export default defineEventHandler(async (event) => {
     approvedMatrix: matrixRecord.approvedMatrix,
     resumeAssessment: assessment,
   })
+
+  const existing = await db.query.recruiterScreeningSession.findFirst({
+    where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
+  })
+  if (existing?.status === 'in_progress') {
+    throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
+  }
+  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') {
+    throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
+  }
+
+  const now = new Date()
+  if (existing) {
+    await db.update(recruiterScreeningSession).set({
+      questions,
+      responses: [],
+      status: 'not_started',
+      finalFit: null,
+      recommendedNextStep: null,
+      validationFocus: [],
+      startedAt: null,
+      completedAt: null,
+      updatedAt: now,
+    }).where(eq(recruiterScreeningSession.id, existing.id))
+  } else {
+    await db.insert(recruiterScreeningSession).values({
+      organizationId: orgId,
+      applicationId,
+      status: 'not_started',
+      questions,
+      responses: [],
+      validationFocus: [],
+    })
+  }
 
   return { questions, source: 'ai', provider: config.provider, model: config.model }
 })
