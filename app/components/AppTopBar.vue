@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   Sun,
+  UserRoundCog,
   X,
 } from 'lucide-vue-next'
 
@@ -22,6 +23,12 @@ const { isDark, toggle: toggleColorMode } = useColorMode()
 const isSigningOut = ref(false)
 const showUserMenu = ref(false)
 const showMobileMenu = ref(false)
+
+const { data: recruitmentScope } = useFetch('/api/recruitment-scope', {
+  key: 'pds-recruitment-scope',
+  headers: useRequestHeaders(['cookie']),
+})
+const canManageRequirements = computed(() => Boolean(recruitmentScope.value?.canManageRequirements))
 
 const userName = computed(() => session.value?.user?.name ?? 'User')
 const userEmail = computed(() => session.value?.user?.email ?? '')
@@ -38,12 +45,13 @@ async function handleSignOut() {
   await navigateTo(localePath('/auth/sign-in'))
 }
 
-const mainNav = [
+const mainNav = computed(() => [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, exact: true },
   { label: 'Requirements', to: '/dashboard/jobs', icon: Briefcase, exact: false },
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
+  ...(canManageRequirements.value ? [{ label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true }] : []),
   { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false },
-]
+])
 
 function isActiveRoute(to: string, exact = false) {
   const localized = localePath(to)
@@ -116,7 +124,7 @@ watch(() => route.path, () => {
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <NuxtLink :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-brand-700">
+          <NuxtLink v-if="canManageRequirements" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-brand-700">
             <Plus class="size-4" /><span class="hidden sm:inline">New Requirement</span>
           </NuxtLink>
           <div class="hidden lg:block"><LanguageSwitcher /></div>
