@@ -31,8 +31,10 @@ export default defineEventHandler(async (event) => {
     applicationScope.push(inArray(application.jobId, visibleRequirementIds))
   }
 
-  const now = new Date()
-  const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const nowDate = new Date()
+  const sevenDaysDate = new Date(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const now = nowDate.toISOString().slice(0, 10)
+  const sevenDays = sevenDaysDate.toISOString().slice(0, 10)
 
   const [
     openJobsCount,
@@ -117,7 +119,7 @@ export default defineEventHandler(async (event) => {
       .where(and(
         eq(recruitmentRequirementState.organizationId, orgId),
         eq(job.status, 'open'),
-        sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} < ${now}`,
+        sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} < ${now}::date`,
         ...(visibleRequirementIds ? [inArray(recruitmentRequirementState.jobId, visibleRequirementIds)] : []),
       )),
 
@@ -127,7 +129,7 @@ export default defineEventHandler(async (event) => {
       .where(and(
         eq(recruitmentRequirementState.organizationId, orgId),
         eq(job.status, 'open'),
-        sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} >= ${now} and ${recruitmentRequirementState.targetClosureDate} <= ${sevenDays}`,
+        sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} >= ${now}::date and ${recruitmentRequirementState.targetClosureDate} <= ${sevenDays}::date`,
         ...(visibleRequirementIds ? [inArray(recruitmentRequirementState.jobId, visibleRequirementIds)] : []),
       )),
 
