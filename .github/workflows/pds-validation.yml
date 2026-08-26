@@ -31,7 +31,6 @@ jobs:
         run: npm ci --include=dev
 
       - name: Typecheck
-        continue-on-error: true
         run: npm run typecheck
 
       - name: Production build
