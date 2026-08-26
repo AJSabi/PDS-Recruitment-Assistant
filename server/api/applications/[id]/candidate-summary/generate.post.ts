@@ -9,16 +9,19 @@ import {
 import { generatePdsCandidateSummary } from '../../../../utils/ai/pdsCandidateSummary'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
+import { createRateLimiter } from '../../../../utils/rateLimit'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
+const limiter = createRateLimiter({ windowMs: 60_000, maxRequests: 6, message: 'Too many AI candidate summary requests. Please wait before retrying.' })
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'], scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
+  await limiter(event)
 
   const [profile, jobRecord, assessment, screening, evidence] = await Promise.all([
     db.query.recruitmentApplicationProfile.findFirst({
