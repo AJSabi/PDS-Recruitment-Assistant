@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { job, member, recruitmentRequirementState } from '../../database/schema'
+import { application, job, member, recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema'
 import { getRequirementVisibility } from '../../utils/recruitmentVisibility'
 
 const paramsSchema = z.object({ jobId: z.string().min(1) })
@@ -56,24 +56,60 @@ export default defineEventHandler(async (event) => {
     ? body.targetClosureDate ? new Date(body.targetClosureDate) : plusDays(assignmentDate!, 60)
     : null
 
-  let state
-  if (existing) {
-    ;[state] = await db.update(recruitmentRequirementState).set({
-      ownerUserId: body.ownerUserId,
-      assignmentDate,
-      targetClosureDate,
-      updatedAt: now,
-    }).where(eq(recruitmentRequirementState.id, existing.id)).returning()
-  } else {
-    ;[state] = await db.insert(recruitmentRequirementState).values({
-      organizationId: orgId,
-      jobId,
-      ownerUserId: body.ownerUserId,
-      assignmentDate,
-      targetClosureDate,
-      updatedAt: now,
-    }).returning()
-  }
+  const applicationRows = await db.select({ id: application.id })
+    .from(application)
+    .where(and(eq(application.organizationId, orgId), eq(application.jobId, jobId)))
+  const applicationIds = applicationRows.map(row => row.id)
 
-  return { state }
+  const state = await db.transaction(async (tx) => {
+    let updatedState
+    if (existing) {
+      ;[updatedState] = await tx.update(recruitmentRequirementState).set({
+        ownerUserId: body.ownerUserId,
+        assignmentDate,
+        targetClosureDate,
+        updatedAt: now,
+      }).where(eq(recruitmentRequirementState.id, existing.id)).returning()
+    } else {
+      ;[updatedState] = await tx.insert(recruitmentRequirementState).values({
+        organizationId: orgId,
+        jobId,
+        ownerUserId: body.ownerUserId,
+        assignmentDate,
+        targetClosureDate,
+        updatedAt: now,
+      }).returning()
+    }
+
+    if (applicationIds.length) {
+      await tx.update(recruitmentApplicationProfile).set({
+        assignedRecruiterId: body.ownerUserId,
+        lastUpdatedBy: session.user.id,
+        updatedAt: now,
+      }).where(and(
+        eq(recruitmentApplicationProfile.organizationId, orgId),
+        inArray(recruitmentApplicationProfile.applicationId, applicationIds),
+      ))
+    }
+
+    return updatedState
+  })
+
+  recordActivity({
+    organizationId: orgId,
+    actorId: session.user.id,
+    action: 'updated',
+    resourceType: 'job',
+    resourceId: jobId,
+    metadata: {
+      action: 'requirement_reallocated',
+      previousOwnerUserId: existing?.ownerUserId ?? null,
+      ownerUserId: body.ownerUserId,
+      cascadedApplications: applicationIds.length,
+      assignmentDate,
+      targetClosureDate,
+    },
+  })
+
+  return { state, cascadedApplications: applicationIds.length }
 })
