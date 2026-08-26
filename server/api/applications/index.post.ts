@@ -2,17 +2,19 @@ import { eq, and } from 'drizzle-orm'
 import { application, job, recruitmentApplicationProfile } from '../../database/schema'
 import { createApplicationSchema } from '../../utils/schemas/application'
 import { findActiveCandidate } from '../../utils/candidate-retention'
+import { assertRequirementAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * POST /api/applications
- * Create an application linking an existing candidate to a job.
- * Both candidate and job must belong to the session's organization.
+ * Legacy compatibility route. Creation is allowed only against a requirement
+ * visible to the current recruiter under the PDS allocation model.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create'] })
   const orgId = session.session.activeOrganizationId
 
   const body = await readValidatedBody(event, createApplicationSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, body.jobId)
 
   const existingCandidate = await findActiveCandidate(orgId, body.candidateId)
   if (!existingCandidate) {
@@ -23,7 +25,7 @@ export default defineEventHandler(async (event) => {
     where: and(eq(job.id, body.jobId), eq(job.organizationId, orgId)),
     columns: { id: true },
   })
-  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const existing = await db.query.application.findFirst({
     where: and(
@@ -34,7 +36,7 @@ export default defineEventHandler(async (event) => {
     columns: { id: true },
   })
   if (existing) {
-    throw createError({ statusCode: 409, statusMessage: 'This candidate has already been applied to this job' })
+    throw createError({ statusCode: 409, statusMessage: 'This candidate is already in recruitment for this requirement' })
   }
 
   const [created] = await db.insert(application).values({
