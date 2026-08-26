@@ -125,10 +125,11 @@ export default defineEventHandler(async (event) => {
   recordActivity({
     organizationId: orgId,
     actorId: session.user.id,
-    action: 'candidate_intake_created',
+    action: 'created',
     resourceType: 'application',
     resourceId: createdApplication.id,
     metadata: {
+      event: 'candidate_intake_created',
       candidateId,
       jobId,
       candidateEmail: candidateRecord.email,
