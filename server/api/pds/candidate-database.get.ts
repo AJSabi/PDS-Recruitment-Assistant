@@ -13,17 +13,8 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
 
   const [candidates, applications, resumes, users] = await Promise.all([
-    db.select({
-      candidateId: candidate.id,
-      firstName: candidate.firstName,
-      lastName: candidate.lastName,
-      email: candidate.email,
-      phone: candidate.phone,
-      createdAt: candidate.createdAt,
-      updatedAt: candidate.updatedAt,
-    }).from(candidate)
-      .where(and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt)))
-      .orderBy(desc(candidate.updatedAt)),
+    db.select({ candidateId: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, email: candidate.email, phone: candidate.phone, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt })
+      .from(candidate).where(and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt))).orderBy(desc(candidate.updatedAt)),
 
     db.select({
       applicationId: application.id,
@@ -38,23 +29,17 @@ export default defineEventHandler(async (event) => {
       nextAction: recruitmentApplicationProfile.nextAction,
       priority: recruitmentApplicationProfile.priority,
       provisionalFitScore: recruitmentApplicationProfile.provisionalFitScore,
+      aiCandidateSummary: recruitmentApplicationProfile.aiCandidateSummary,
+      aiFinalBrief: recruitmentApplicationProfile.aiFinalBrief,
+      aiSummaryStale: recruitmentApplicationProfile.aiSummaryStale,
       profileUpdatedAt: recruitmentApplicationProfile.updatedAt,
     }).from(application)
       .innerJoin(job, and(eq(job.id, application.jobId), eq(job.organizationId, orgId)))
-      .leftJoin(recruitmentApplicationProfile, and(
-        eq(recruitmentApplicationProfile.applicationId, application.id),
-        eq(recruitmentApplicationProfile.organizationId, orgId),
-      ))
+      .leftJoin(recruitmentApplicationProfile, and(eq(recruitmentApplicationProfile.applicationId, application.id), eq(recruitmentApplicationProfile.organizationId, orgId)))
       .where(eq(application.organizationId, orgId)),
 
-    db.select({
-      candidateId: document.candidateId,
-      documentId: document.id,
-      originalFilename: document.originalFilename,
-      createdAt: document.createdAt,
-    }).from(document)
-      .where(and(eq(document.organizationId, orgId), eq(document.type, 'resume')))
-      .orderBy(desc(document.createdAt)),
+    db.select({ candidateId: document.candidateId, documentId: document.id, originalFilename: document.originalFilename, createdAt: document.createdAt })
+      .from(document).where(and(eq(document.organizationId, orgId), eq(document.type, 'resume'))).orderBy(desc(document.createdAt)),
 
     db.select({ id: user.id, name: user.name }).from(user),
   ])
@@ -107,6 +92,9 @@ export default defineEventHandler(async (event) => {
       nextAction: latest?.nextAction ?? (candidateApps.length ? 'Review candidate history.' : 'Available in candidate database.'),
       priority: latest?.priority ?? null,
       provisionalFitScore: latest?.provisionalFitScore ?? null,
+      aiCandidateSummary: latest?.aiCandidateSummary ?? null,
+      aiFinalBrief: latest?.aiFinalBrief ?? null,
+      aiSummaryStale: latest?.aiSummaryStale ?? false,
       requirements: candidateApps.map(row => ({
         applicationId: row.applicationId,
         jobId: row.jobId,
@@ -117,6 +105,9 @@ export default defineEventHandler(async (event) => {
         statusDate: row.statusDate ?? row.applicationCreatedAt,
         priority: row.priority,
         provisionalFitScore: row.provisionalFitScore,
+        aiCandidateSummary: row.aiCandidateSummary ?? null,
+        aiFinalBrief: row.aiFinalBrief ?? null,
+        aiSummaryStale: row.aiSummaryStale ?? false,
       })),
     }
   })
