@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { job, jobSkillMatrix, recruitmentRequirementState } from '../../../../database/schema'
 import { saveSkillMatrixSchema } from '../../../../utils/schemas/skillMatrix'
 import { ensureRequirementState, flagRequirementChange } from '../../../../utils/recruitmentLifecycle'
+import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -10,13 +11,14 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['update'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, saveSkillMatrixSchema.parse)
 
   const jobRecord = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
     columns: { id: true },
   })
-  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const previous = await db.query.jobSkillMatrix.findFirst({
     where: and(eq(jobSkillMatrix.jobId, jobId), eq(jobSkillMatrix.organizationId, orgId)),
@@ -60,11 +62,7 @@ export default defineEventHandler(async (event) => {
     })
 
     await db.update(recruitmentRequirementState)
-      .set({
-        skillMatrixApproved: true,
-        skillMatrixApprovedAt: now,
-        updatedAt: now,
-      })
+      .set({ skillMatrixApproved: true, skillMatrixApprovedAt: now, updatedAt: now })
       .where(eq(recruitmentRequirementState.id, result.state.id))
   } else {
     await db.update(recruitmentRequirementState)
