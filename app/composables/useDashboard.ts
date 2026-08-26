@@ -1,7 +1,7 @@
 /**
- * Composable for the recruiter dashboard — fetches aggregated stats,
- * pipeline breakdown, recent applications, and top active jobs.
- * Read-only: no mutation methods needed.
+ * PDS recruiter dashboard data.
+ * Server-side visibility determines whether the current user sees all
+ * requirements or only the requirements allocated to them.
  */
 export function useDashboard() {
   const { data, status: fetchStatus, error, refresh } = useFetch('/api/dashboard/stats', {
@@ -9,7 +9,6 @@ export function useDashboard() {
     headers: useRequestHeaders(['cookie']),
   })
 
-  /** Summary counts (open jobs, candidates, applications, unreviewed) */
   const counts = computed(() => data.value?.counts ?? {
     openJobs: 0,
     totalCandidates: 0,
@@ -17,7 +16,6 @@ export function useDashboard() {
     newApplications: 0,
   })
 
-  /** Application count per status */
   const pipeline = computed(() => data.value?.pipeline ?? {
     new: 0,
     screening: 0,
@@ -27,7 +25,6 @@ export function useDashboard() {
     rejected: 0,
   })
 
-  /** Job count per status */
   const jobsByStatus = computed(() => data.value?.jobsByStatus ?? {
     draft: 0,
     open: 0,
@@ -35,11 +32,14 @@ export function useDashboard() {
     archived: 0,
   })
 
-  /** Last 10 applications with candidate + job info */
   const recentApplications = computed(() => data.value?.recentApplications ?? [])
-
-  /** Top 5 open jobs sorted by application count */
   const topJobs = computed(() => data.value?.topJobs ?? [])
+  const recruitment = computed(() => data.value?.recruitment ?? {
+    overdueRequirements: 0,
+    dueSoonRequirements: 0,
+    actionPending: 0,
+  })
+  const scope = computed(() => data.value?.scope ?? { role: 'member', allocatedOnly: true })
 
   return {
     counts,
@@ -47,6 +47,8 @@ export function useDashboard() {
     jobsByStatus,
     recentApplications,
     topJobs,
+    recruitment,
+    scope,
     fetchStatus,
     error,
     refresh,
