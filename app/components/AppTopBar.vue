@@ -1,20 +1,16 @@
 <script setup lang="ts">
 import {
   Briefcase,
-  Calendar,
   ChevronDown,
   ChevronLeft,
-  FileText,
+  Database,
   LayoutDashboard,
   LogOut,
   Menu,
   Moon,
-  MoreHorizontal,
   Plus,
   Settings,
-  Sparkles,
   Sun,
-  Users,
   X,
 } from 'lucide-vue-next'
 
@@ -26,7 +22,6 @@ const { isDark, toggle: toggleColorMode } = useColorMode()
 const isSigningOut = ref(false)
 const showUserMenu = ref(false)
 const showMobileMenu = ref(false)
-const showMoreNav = ref(false)
 
 const userName = computed(() => session.value?.user?.name ?? 'User')
 const userEmail = computed(() => session.value?.user?.email ?? '')
@@ -45,14 +40,8 @@ async function handleSignOut() {
 
 const mainNav = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, exact: true },
-  { label: 'Jobs', to: '/dashboard/jobs', icon: Briefcase, exact: false },
-  { label: 'Candidates', to: '/dashboard/candidates', icon: Users, exact: false },
-  { label: 'Applications', to: '/dashboard/applications', icon: FileText, exact: false },
-  { label: 'Interviews', to: '/dashboard/interviews', icon: Calendar, exact: false },
-]
-
-const moreNav = [
-  { label: 'AI Analysis', to: '/dashboard/ai-analysis', icon: Sparkles, exact: true },
+  { label: 'Requirements', to: '/dashboard/jobs', icon: Briefcase, exact: false },
+  { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
   { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false },
 ]
 
@@ -95,7 +84,6 @@ const jobTabs = computed(() => {
 watch(() => route.path, () => {
   showUserMenu.value = false
   showMobileMenu.value = false
-  showMoreNav.value = false
 })
 </script>
 
@@ -124,23 +112,12 @@ watch(() => route.path, () => {
               <component :is="item.icon" class="size-4" />
               {{ item.label }}
             </NuxtLink>
-
-            <div class="relative">
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-surface-600 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800" @click="showMoreNav = !showMoreNav">
-                <MoreHorizontal class="size-4" />More<ChevronDown class="size-3" />
-              </button>
-              <div v-if="showMoreNav" class="absolute left-0 top-[calc(100%+6px)] w-52 overflow-hidden rounded-xl border border-surface-200 bg-white py-1 shadow-xl dark:border-surface-700 dark:bg-surface-900">
-                <NuxtLink v-for="item in moreNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-2.5 px-3 py-2 text-sm text-surface-600 no-underline hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800">
-                  <component :is="item.icon" class="size-4" />{{ item.label }}
-                </NuxtLink>
-              </div>
-            </div>
           </nav>
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
           <NuxtLink :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-brand-700">
-            <Plus class="size-4" /><span class="hidden sm:inline">New Job</span>
+            <Plus class="size-4" /><span class="hidden sm:inline">New Requirement</span>
           </NuxtLink>
           <div class="hidden lg:block"><LanguageSwitcher /></div>
           <button type="button" class="inline-flex size-9 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" @click="toggleColorMode">
@@ -161,7 +138,7 @@ watch(() => route.path, () => {
       </div>
 
       <nav v-if="showMobileMenu" class="border-t border-surface-100 px-4 py-3 md:hidden dark:border-surface-800">
-        <NuxtLink v-for="item in [...mainNav, ...moreNav]" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800">
+        <NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800">
           <component :is="item.icon" class="size-4" />{{ item.label }}
         </NuxtLink>
       </nav>
@@ -169,7 +146,7 @@ watch(() => route.path, () => {
 
     <div v-if="activeJobId" class="border-b border-surface-200 bg-surface-50/95 dark:border-surface-800 dark:bg-surface-950/95">
       <div class="flex h-11 items-center gap-3 overflow-x-auto px-4 lg:px-6">
-        <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Jobs</NuxtLink>
+        <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</NuxtLink>
         <span class="hidden max-w-52 truncate text-sm font-semibold text-surface-900 sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requirement' }}</span>
         <nav class="flex items-center gap-1">
           <NuxtLink v-for="tab in jobTabs" :key="tab.to" :to="localePath(tab.to)" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-surface-900 shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</NuxtLink>
