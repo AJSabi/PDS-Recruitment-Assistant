@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound, ShieldCheck, Target, TrendingUp } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, CheckCircle2, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound, ShieldCheck, Target, TrendingUp } from 'lucide-vue-next'
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
 const jobId = route.params.id as string
@@ -7,11 +7,11 @@ const localePath = useLocalePath()
 const toast = useToast()
 const { job } = useJob(jobId)
 
-const { data, status, refresh } = useFetch(() => `/api/jobs/${jobId}/batch-ranking`, {
+const { data, status, error, refresh } = useFetch(() => `/api/jobs/${jobId}/batch-ranking`, {
   key: `pds-batch-ranking-${jobId}`,
   headers: useRequestHeaders(['cookie']),
 })
-const { data: poolData, status: poolStatus, refresh: refreshPool } = useFetch(() => `/api/jobs/${jobId}/talent-pool`, {
+const { data: poolData, status: poolStatus, error: poolError, refresh: refreshPool } = useFetch(() => `/api/jobs/${jobId}/talent-pool`, {
   key: `pds-talent-pool-${jobId}`,
   headers: useRequestHeaders(['cookie']),
 })
@@ -107,6 +107,8 @@ async function analyzePendingWithAi() {
 
 <template>
   <div class="mx-auto max-w-7xl space-y-6">
+    <JobSubNavActions :job-id="jobId" />
+
     <div class="flex flex-wrap items-center gap-2">
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />Pipeline</NuxtLink>
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/ai-analysis`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><FileSearch class="size-4" />JD & Skill Matrix</NuxtLink>
@@ -118,7 +120,7 @@ async function analyzePendingWithAi() {
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9FD3F2]">AI Candidate Pool</p>
           <h1 class="mt-2 text-2xl font-bold">{{ job?.title ?? 'Requirement' }}</h1>
-          <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Only candidates scoring 50% or more against the approved requirement are shown. Use the cards below to compare fit, evidence and risk before moving a candidate into active recruitment.</p>
+          <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Only candidates scoring 50% or more against the approved requirement are shown. Add a candidate directly from the requirement header or upload resumes here for AI matching.</p>
         </div>
         <button class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15" @click="refreshAll"><RefreshCw class="size-4" />Refresh View</button>
       </div>
@@ -137,7 +139,8 @@ async function analyzePendingWithAi() {
       <div v-if="deferredAiCount" class="mt-4 flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800 dark:border-warning-900 dark:bg-warning-950/30 dark:text-warning-200"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-semibold">AI batch limit reached</p><p class="mt-0.5 text-xs">{{ deferredAiCount }} plausible resume{{ deferredAiCount === 1 ? '' : 's' }} remain queued for the next controlled refresh.</p></div></div>
 
       <div v-if="poolStatus === 'pending'" class="py-10 text-center text-surface-400">Loading AI Candidate Pool…</div>
-      <div v-else-if="!poolRows.length" class="mt-5 rounded-2xl border border-dashed border-surface-300 bg-surface-50 px-5 py-10 text-center dark:border-surface-700 dark:bg-surface-800/30"><ShieldCheck class="mx-auto size-7 text-brand-500" /><p class="mt-3 font-semibold text-surface-800 dark:text-white">No candidates currently meet the 50% threshold</p><p class="mt-1 text-sm text-surface-500">Add resumes or refresh database matches after the approved Skill Matrix is ready.</p></div>
+      <div v-else-if="poolError" class="mt-5 rounded-xl border border-danger-200 bg-danger-50 p-5 text-danger-700 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-300"><div class="flex items-start gap-2"><AlertTriangle class="mt-0.5 size-5 shrink-0" /><div><p class="font-semibold">AI Candidate Pool could not be loaded</p><p class="mt-1 text-sm">{{ poolError?.data?.statusMessage ?? poolError?.message ?? 'The server returned an error.' }}</p></div></div></div>
+      <div v-else-if="!poolRows.length" class="mt-5 rounded-2xl border border-dashed border-surface-300 bg-surface-50 px-5 py-10 text-center dark:border-surface-700 dark:bg-surface-800/30"><ShieldCheck class="mx-auto size-7 text-brand-500" /><p class="mt-3 font-semibold text-surface-800 dark:text-white">No 50%+ AI matches yet</p><p class="mt-1 text-sm text-surface-500">Approve the Skill Matrix first, then add resumes or explicitly refresh database matches. An empty pool is different from a load error.</p></div>
       <div v-else class="mt-5 grid gap-4 lg:grid-cols-2">
         <article v-for="row in poolRows" :key="row.matchId" class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
           <div class="flex items-start justify-between gap-4">
@@ -163,6 +166,7 @@ async function analyzePendingWithAi() {
     <section class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
       <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-bold text-[#102A43] dark:text-white">Active Recruitment Pipeline</h2><p class="mt-1 text-sm text-surface-500">Candidates you have already selected for recruiter action.</p></div><button :disabled="batchBusy || !batchEligible.length" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-40" @click="analyzePendingWithAi"><Loader2 v-if="batchBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ batchBusy ? `Analyzing ${batchProgress.done}/${batchProgress.total}` : `Analyze Pending (${batchEligible.length})` }}</button></div>
       <div v-if="status === 'pending'" class="py-10 text-center text-surface-400">Loading active recruitment…</div>
+      <div v-else-if="error" class="mt-4 rounded-xl border border-danger-200 bg-danger-50 p-5 text-danger-700 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-300"><div class="flex items-start gap-2"><AlertTriangle class="mt-0.5 size-5 shrink-0" /><div><p class="font-semibold">Active recruitment could not be loaded</p><p class="mt-1 text-sm">{{ error?.data?.statusMessage ?? error?.message ?? 'The server returned an error.' }}</p></div></div></div>
       <template v-else>
         <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div class="rounded-xl bg-[#F7FBFE] p-4"><p class="text-xs font-semibold text-surface-500">Active Candidates</p><p class="mt-1 text-2xl font-bold text-[#102A43]">{{ summary.total }}</p></div>
@@ -177,7 +181,7 @@ async function analyzePendingWithAi() {
             <div><p class="text-[10px] uppercase tracking-wide text-surface-400">Stage</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ label(row.lastStatus) }}</p></div>
             <div><p class="text-[10px] uppercase tracking-wide text-surface-400">Next Action</p><p class="mt-1 text-sm font-medium text-[#1F6FA3]">{{ row.nextAction ?? 'Open recruitment workflow' }}</p></div>
           </NuxtLink>
-          <div v-if="!rows.length" class="rounded-xl border border-dashed border-surface-300 px-4 py-8 text-center text-sm text-surface-400">No candidates are currently in the active recruitment pipeline.</div>
+          <div v-if="!rows.length" class="rounded-xl border border-dashed border-surface-300 px-4 py-8 text-center text-sm text-surface-400">No candidates are currently in active recruitment. Use Add Candidate in the requirement header, or move a 50%+ AI match forward from the pool above.</div>
         </div>
       </template>
     </section>
