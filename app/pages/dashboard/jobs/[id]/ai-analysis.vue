@@ -13,7 +13,7 @@ const { data: requirementData } = useFetch(() => `/api/jobs/${jobId}/requirement
   headers: useRequestHeaders(['cookie']),
 })
 const { data: matrixData } = useFetch(() => `/api/jobs/${jobId}/skill-matrix`, {
-  key: `pds-skill-matrix-shell-${jobId}`,
+  key: `skill-matrix-${jobId}`,
   headers: useRequestHeaders(['cookie']),
 })
 const { job } = useJob(jobId)
