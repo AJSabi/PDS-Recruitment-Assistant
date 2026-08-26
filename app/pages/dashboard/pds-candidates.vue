@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { BriefcaseBusiness, FileText, RefreshCw, Search, UserCheck, UsersRound } from 'lucide-vue-next'
+import { AlertTriangle, BriefcaseBusiness, FileText, RefreshCw, Search, UserCheck, UsersRound } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const localePath = useLocalePath()
 const search = ref('')
 const filter = ref<'all' | 'active' | 'database_only' | 'with_resume'>('all')
 
-const { data, status, refresh } = useFetch('/api/pds/candidate-database', {
+const { data, status, error, refresh } = useFetch('/api/pds/candidate-database', {
   key: 'pds-candidate-database',
   headers: useRequestHeaders(['cookie']),
 })
@@ -48,6 +48,9 @@ const filtered = computed<any[]>(() => {
     </header>
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading candidate database…</div>
+    <div v-else-if="error" class="rounded-xl border border-danger-200 bg-danger-50 p-5 text-danger-700 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-300">
+      <div class="flex items-start gap-2"><AlertTriangle class="mt-0.5 size-5 shrink-0" /><div><p class="font-semibold">Candidate Database could not be loaded</p><p class="mt-1 text-sm">{{ error?.data?.statusMessage ?? error?.message ?? 'The server returned an error. Refresh the page or verify your organisation access.' }}</p></div></div>
+    </div>
     <template v-else>
       <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <button class="rounded-xl border border-surface-200 bg-white p-4 text-left dark:border-surface-800 dark:bg-surface-900" @click="filter = 'all'"><div class="flex items-center gap-2 text-surface-500"><UsersRound class="size-4" /><span class="text-xs">Total Candidates</span></div><p class="mt-2 text-2xl font-bold">{{ data?.summary?.totalCandidates ?? 0 }}</p></button>
@@ -62,7 +65,12 @@ const filtered = computed<any[]>(() => {
         <button v-if="filter !== 'all'" class="rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="filter = 'all'">Clear Filter</button>
       </div>
 
-      <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white dark:border-surface-800 dark:bg-surface-900">
+      <div v-if="!data?.summary?.totalCandidates" class="rounded-2xl border border-dashed border-surface-300 bg-surface-50 p-10 text-center dark:border-surface-700 dark:bg-surface-900">
+        <p class="font-semibold text-surface-800 dark:text-white">No candidates in the central database yet</p>
+        <p class="mt-1 text-sm text-surface-500">Candidates created inside a requirement or imported from resumes will appear here automatically.</p>
+      </div>
+
+      <div v-else class="overflow-x-auto rounded-xl border border-surface-200 bg-white dark:border-surface-800 dark:bg-surface-900">
         <table class="min-w-full text-sm">
           <thead class="bg-surface-50 text-left text-xs uppercase tracking-wide text-surface-500 dark:bg-surface-800/60">
             <tr><th class="px-4 py-3">Candidate</th><th class="px-4 py-3">Resume</th><th class="px-4 py-3">Latest / Active Requirement</th><th class="px-4 py-3">Recruiter</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Fit</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Requirement History</th></tr>
