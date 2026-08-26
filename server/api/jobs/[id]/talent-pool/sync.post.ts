@@ -132,6 +132,7 @@ export default defineEventHandler(async (event) => {
     if (existing?.resumeDocumentId === resume.documentId && existing.requirementVersion === requirementVersion && existing.assessedAt) {
       skippedCurrent++
       if ((existing.score ?? 0) >= FINAL_POOL_THRESHOLD) visibleMatches++
+      else belowThreshold++
       continue
     }
 
@@ -166,12 +167,6 @@ export default defineEventHandler(async (event) => {
       })
       analyzed++
 
-      if (ranking.score < FINAL_POOL_THRESHOLD) {
-        belowThreshold++
-        if (existing) await db.delete(talentPoolMatch).where(eq(talentPoolMatch.id, existing.id))
-        continue
-      }
-
       const now = new Date()
       const values = {
         organizationId: orgId,
@@ -199,11 +194,15 @@ export default defineEventHandler(async (event) => {
 
       if (existing) {
         await db.update(talentPoolMatch).set(values).where(eq(talentPoolMatch.id, existing.id))
-      } else {
+      }
+      else {
         await db.insert(talentPoolMatch).values({ ...values, source: 'database' })
       }
-      visibleMatches++
-    } catch (error: any) {
+
+      if (ranking.score < FINAL_POOL_THRESHOLD) belowThreshold++
+      else visibleMatches++
+    }
+    catch (error: any) {
       failures.push({ candidateId, error: error?.data?.statusMessage ?? error?.message ?? 'AI analysis failed' })
     }
   }
