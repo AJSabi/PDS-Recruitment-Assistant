@@ -1,16 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { aiConfig } from '../../database/schema'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
-/**
- * GET /api/ai-config
- *
- * List ALL AI configurations for the active organization, ordered with
- * defaults first then by recency. Never returns the encrypted API key —
- * only a `hasApiKey` boolean.
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['read'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const rows = await db.query.aiConfig.findMany({
     where: eq(aiConfig.organizationId, orgId),
