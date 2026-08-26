@@ -12,6 +12,8 @@ const { data, status, refresh } = useFetch(() => `/api/jobs/${jobId}/candidate-r
   headers: useRequestHeaders(['cookie']),
 })
 
+function reload() { void refresh() }
+
 function label(value?: string | null) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
@@ -64,7 +66,7 @@ function exportCsv() {
         <p class="mt-1 text-sm text-surface-500">Latest confirmed recruitment state and AI summary for every candidate in this requirement.</p>
       </div>
       <div class="flex gap-2">
-        <button class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="refresh"><RefreshCw class="size-4" />Refresh</button>
+        <button class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="reload"><RefreshCw class="size-4" />Refresh</button>
         <button class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white" @click="exportCsv"><Download class="size-4" />Export CSV</button>
       </div>
     </header>
