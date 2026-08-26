@@ -3,7 +3,8 @@ import { z } from 'zod'
 export const skillPrioritySchema = z.enum(['mandatory', 'preferred', 'optional'])
 
 // Drafts are intentionally permissive. Recruiters must be able to save work in progress.
-// Strict business rules are enforced only when approved=true.
+// Approval validates matrix structure and evidence quality without forcing arbitrary
+// Mandatory-skill quotas that can make a JD-specific matrix generic.
 export const skillMatrixItemSchema = z.object({
   id: z.string().min(1).max(100),
   skill: z.string().trim().max(200),
@@ -48,19 +49,22 @@ export const saveSkillMatrixSchema = z.object({
       ctx.addIssue({ code: 'custom', message: 'Every approved classification needs a name.', path: ['matrix', 'classifications', i, 'name'] })
     }
 
+    if (!classification.skills.length) {
+      ctx.addIssue({ code: 'custom', message: 'Every approved classification needs at least one assessable skill.', path: ['matrix', 'classifications', i, 'skills'] })
+      continue
+    }
+
     if (classification.skills.some(skill => !skill.skill.trim())) {
       ctx.addIssue({ code: 'custom', message: 'Approved Skill Matrix cannot contain blank skills.', path: ['matrix', 'classifications', i, 'skills'] })
     }
 
-    const mandatoryCount = classification.skills.filter(s => s.priority === 'mandatory').length
-    mandatoryTotal += mandatoryCount
-    if (mandatoryCount < 2 || mandatoryCount > 3) {
-      ctx.addIssue({ code: 'custom', message: 'Each approved classification must contain 2–3 Mandatory skills.', path: ['matrix', 'classifications', i, 'skills'] })
-    }
+    mandatoryTotal += classification.skills.filter(s => s.priority === 'mandatory').length
   }
 
-  if (mandatoryTotal < 8 || mandatoryTotal > 12) {
-    ctx.addIssue({ code: 'custom', message: 'An approved Skill Matrix must contain 8–12 Mandatory skills overall.', path: ['matrix', 'classifications'] })
+  // At least one true hiring gate is required so downstream scoring has a meaningful
+  // Mandatory dimension. The exact count is determined by JD evidence, not a quota.
+  if (mandatoryTotal < 1) {
+    ctx.addIssue({ code: 'custom', message: 'Mark at least one genuinely role-critical criterion as Mandatory before approval.', path: ['matrix', 'classifications'] })
   }
 })
 
