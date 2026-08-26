@@ -53,7 +53,7 @@ export async function assertRequirementAccess(orgId: string, userId: string, job
 export async function assertApplicationAccess(orgId: string, userId: string, applicationId: string) {
   const row = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true, jobId: true },
+    columns: { id: true, jobId: true, candidateId: true },
   })
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
   await assertRequirementAccess(orgId, userId, row.jobId)
