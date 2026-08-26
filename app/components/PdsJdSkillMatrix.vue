@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Save, CheckCircle2, Plus, Trash2, FileText, ShieldCheck, WandSparkles, Loader2, Sparkles } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Plus, Save, ShieldCheck, Sparkles, Trash2, WandSparkles } from 'lucide-vue-next'
 
 const route = useRoute()
 const jobId = route.params.id as string
@@ -45,6 +45,10 @@ watch(matrix, () => { dirty.value = true }, { deep: true })
 const jdDirty = computed(() => jdDraft.value !== savedJd.value)
 const totalSkills = computed(() => matrix.value.classifications.flatMap(c => c.skills).length)
 const mandatoryCount = computed(() => matrix.value.classifications.flatMap(c => c.skills).filter(s => s.priority === 'mandatory').length)
+const preferredCount = computed(() => matrix.value.classifications.flatMap(c => c.skills).filter(s => s.priority === 'preferred').length)
+const optionalCount = computed(() => matrix.value.classifications.flatMap(c => c.skills).filter(s => s.priority === 'optional').length)
+const approvalError = computed(() => validate(true))
+const approvalReady = computed(() => Boolean(savedJd.value.trim()) && !jdDirty.value && !approvalError.value)
 const placeholderMatrix = computed(() => {
   if (!matrix.value.classifications.length) return true
   return matrix.value.classifications.every((c, index) => {
@@ -184,59 +188,106 @@ async function persist(approve: boolean) {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl">
+  <div class="space-y-6">
     <JobSubNavActions :job-id="jobId" />
-    <div v-if="jobFetchStatus === 'pending' || matrixFetchStatus === 'pending'" class="py-12 text-center text-surface-400">Loading…</div>
-    <div v-else-if="jobError" class="rounded-lg border border-danger-200 bg-danger-50 p-4 text-danger-700">Failed to load job.</div>
+
+    <div v-if="jobFetchStatus === 'pending' || matrixFetchStatus === 'pending'" class="rounded-2xl border border-surface-200 bg-white py-12 text-center text-surface-400 dark:border-surface-800 dark:bg-surface-900">Loading JD and Skill Matrix…</div>
+    <div v-else-if="jobError" class="rounded-2xl border border-danger-200 bg-danger-50 p-4 text-danger-700">Failed to load requirement.</div>
+
     <template v-else-if="job">
-      <div class="mb-6">
-        <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-bold text-surface-900 dark:text-surface-50">JD & Skill Matrix</h1>
-          <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-1 text-xs font-medium text-success-700 ring-1 ring-success-200"><ShieldCheck class="size-3.5" /> Approved</span>
-        </div>
-        <p class="mt-1 text-sm text-surface-500">AI prepares the Skill Matrix automatically from the Active JD. Recruiter review and explicit approval remain mandatory before candidate analysis.</p>
-      </div>
-
-      <section class="mb-6 rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
-        <div class="mb-4 flex items-center justify-between">
-          <div><p class="text-sm font-semibold">Active Requirement</p><p class="mt-1 text-sm text-surface-500"><strong>{{ job.title }}</strong><span v-if="job.location"> · {{ job.location }}</span></p></div>
-          <span class="text-xs text-surface-400">{{ matrix.classifications.length }} classifications · {{ totalSkills }} skills · {{ mandatoryCount }} mandatory</span>
+      <section class="rounded-2xl border border-[#CFE0ED] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2"><FileText class="size-5 text-[#2E86C1]" /><h2 class="font-bold text-[#102A43] dark:text-white">1. Active Job Description</h2></div>
+            <p class="mt-1 text-sm text-surface-500">This saved JD is the source AI uses to propose the Skill Matrix. Edit it here before regenerating the matrix.</p>
+          </div>
+          <span v-if="jdDirty" class="rounded-full bg-warning-50 px-3 py-1 text-xs font-bold text-warning-700">Unsaved changes</span>
+          <span v-else-if="savedJd" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><CheckCircle2 class="size-3.5" />JD saved</span>
         </div>
 
-        <div class="rounded-lg border border-surface-200 bg-surface-50 p-4 dark:border-surface-700 dark:bg-surface-800/50">
-          <div class="mb-2 flex items-center gap-2"><FileText class="size-4 text-brand-600" /><h2 class="text-sm font-semibold">Active JD</h2><span v-if="jdDirty" class="rounded-full bg-warning-50 px-2 py-0.5 text-xs text-warning-700">Unsaved changes</span><span v-else-if="savedJd" class="rounded-full bg-success-50 px-2 py-0.5 text-xs text-success-700">Saved</span></div>
-          <textarea v-model="jdDraft" rows="10" placeholder="Paste or write the Job Description here." class="w-full rounded-lg border border-surface-300 bg-white px-3 py-3 text-sm leading-relaxed dark:border-surface-700 dark:bg-surface-900" />
-          <div class="mt-3 flex justify-end"><button type="button" :disabled="isSavingJd || isGenerating || !jdDraft.trim() || !jdDirty" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40" @click="saveActiveJd"><Loader2 v-if="isSavingJd || isGenerating" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isGenerating ? 'Preparing AI Matrix…' : 'Save Active JD' }}</button></div>
+        <textarea v-model="jdDraft" rows="12" placeholder="Paste or write the Job Description here." class="mt-4 w-full rounded-xl border border-surface-300 bg-[#FBFDFF] px-4 py-4 text-sm leading-6 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-surface-700 dark:bg-surface-950" />
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p class="text-xs text-surface-500"><strong>{{ job.title }}</strong><span v-if="job.location"> · {{ job.location }}</span></p>
+          <button type="button" :disabled="isSavingJd || isGenerating || !jdDraft.trim() || !jdDirty" class="inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="saveActiveJd"><Loader2 v-if="isSavingJd || isGenerating" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isGenerating ? 'Preparing AI Matrix…' : 'Save Active JD' }}</button>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-[#CFE0ED] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2"><Sparkles class="size-5 text-[#16847F]" /><h2 class="font-bold text-[#102A43] dark:text-white">2. AI Skill Matrix</h2></div>
+            <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes assessable evidence criteria. Recruiter review and explicit approval remain mandatory before candidates are matched.</p>
+          </div>
+          <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><ShieldCheck class="size-3.5" />Approved</span>
+          <span v-else class="rounded-full bg-[#FFF7E8] px-3 py-1 text-xs font-bold text-[#976511]">Review required</span>
         </div>
 
-        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p class="text-xs text-surface-500">AI is the default. Use regenerate for a fresh proposal; manual creation is only an override.</p>
+        <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Classifications</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ matrix.classifications.length }}</p><p class="text-xs text-surface-400">Target 4–5</p></div>
+          <div class="rounded-xl bg-[#EAF4FB] p-3 dark:bg-brand-950/20"><p class="text-[10px] font-bold uppercase tracking-wide text-[#1F6FA3]">Mandatory</p><p class="mt-1 text-2xl font-black text-[#1F6FA3]">{{ mandatoryCount }}</p><p class="text-xs text-[#6389A7]">Target 8–12 overall</p></div>
+          <div class="rounded-xl bg-[#F4FBFA] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-[#16847F]">Preferred</p><p class="mt-1 text-2xl font-black text-[#16847F]">{{ preferredCount }}</p><p class="text-xs text-surface-400">Supporting evidence</p></div>
+          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Optional</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ optionalCount }}</p><p class="text-xs text-surface-400">Additional evidence</p></div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 dark:border-surface-700 dark:bg-surface-800/40">
+          <div><p class="text-sm font-bold text-[#102A43] dark:text-white">Generate from the saved JD</p><p class="mt-1 text-xs text-surface-500">Regeneration replaces the current draft. Manual Override is available only when needed.</p></div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-medium text-brand-700 disabled:opacity-40" @click="generateAiMatrix(false)"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
-            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-40 dark:border-surface-700" @click="createManualMatrix"><WandSparkles class="size-4" />Manual Override</button>
+            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="generateAiMatrix(false)"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
+            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:border-surface-700" @click="createManualMatrix"><WandSparkles class="size-4" />Manual Override</button>
           </div>
         </div>
       </section>
 
-      <div v-if="!matrix.classifications.length" class="rounded-xl border-2 border-dashed border-surface-200 p-10 text-center dark:border-surface-800"><Loader2 v-if="isGenerating" class="mx-auto mb-3 size-5 animate-spin text-brand-600" /><h2 class="font-semibold">{{ isGenerating ? 'AI is preparing the Skill Matrix' : 'No Skill Matrix yet' }}</h2><p class="mt-1 text-sm text-surface-500">{{ isGenerating ? 'The saved JD is being analysed into role-relevant classifications and skills.' : 'Save the Active JD. AI will prepare the first Skill Matrix automatically.' }}</p></div>
-
-      <div v-else class="space-y-4">
-        <section v-for="(classification, ci) in matrix.classifications" :key="classification.id" class="rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
-          <div class="mb-4 flex items-center gap-3"><input v-model="classification.name" class="min-w-0 flex-1 rounded-lg border border-surface-300 px-3 py-2 font-semibold dark:border-surface-700 dark:bg-surface-800" /><span class="text-xs text-surface-400">{{ classification.skills.filter(s => s.priority === 'mandatory').length }}/3 mandatory</span><button type="button" class="rounded-lg p-2 text-danger-500" @click="removeClassification(ci)"><Trash2 class="size-4" /></button></div>
-          <div class="space-y-3">
-            <div v-for="(skill, si) in classification.skills" :key="skill.id" class="grid grid-cols-1 gap-2 rounded-lg bg-surface-50 p-3 md:grid-cols-[1.4fr_160px_2fr_36px] md:items-center dark:bg-surface-800/60">
-              <input v-model="skill.skill" placeholder="Skill / requirement" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
-              <select v-model="skill.priority" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900"><option value="mandatory">Mandatory</option><option value="preferred">Preferred</option><option value="optional">Optional</option></select>
-              <input v-model="skill.rationale" placeholder="Why this matters / evidence expected" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
-              <button type="button" class="rounded-lg p-2 text-surface-400 hover:text-danger-500" @click="removeSkill(classification, si)"><Trash2 class="size-4" /></button>
-            </div>
-          </div>
-          <button type="button" :disabled="classification.skills.length >= 8" class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-600 disabled:opacity-40" @click="addSkill(classification)"><Plus class="size-4" /> Add skill</button>
-        </section>
-
-        <button v-if="matrix.classifications.length < 5" type="button" class="inline-flex items-center gap-1 rounded-lg border border-dashed border-surface-300 px-4 py-2 text-sm font-medium" @click="addClassification"><Plus class="size-4" /> Add classification</button>
-        <div class="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-surface-200 bg-white/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between dark:border-surface-800 dark:bg-surface-900/95"><p class="text-xs text-surface-500"><span v-if="dirty">Review the AI proposal before approval. </span>Approval requires 4–5 classifications, 2–3 Mandatory skills per classification, and 8–12 Mandatory skills overall.</p><div class="flex gap-2"><button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium disabled:opacity-50" @click="persist(false)"><Save class="size-4" /> Save Draft</button><button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50" @click="persist(true)"><CheckCircle2 class="size-4" /> Approve Skill Matrix</button></div></div>
+      <div v-if="!matrix.classifications.length" class="rounded-2xl border-2 border-dashed border-[#CFE0ED] bg-white p-10 text-center dark:border-surface-800 dark:bg-surface-900">
+        <Loader2 v-if="isGenerating" class="mx-auto mb-3 size-6 animate-spin text-[#2E86C1]" />
+        <Sparkles v-else class="mx-auto mb-3 size-6 text-[#2E86C1]" />
+        <h2 class="font-bold text-[#102A43] dark:text-white">{{ isGenerating ? 'AI is preparing the Skill Matrix' : 'No Skill Matrix yet' }}</h2>
+        <p class="mx-auto mt-1 max-w-xl text-sm text-surface-500">{{ isGenerating ? 'The saved JD is being converted into role-relevant, evidence-based classifications and skills.' : 'Save the Active JD. AI will prepare the first Skill Matrix automatically.' }}</p>
       </div>
+
+      <section v-else class="space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div><h2 class="text-lg font-bold text-[#102A43] dark:text-white">3. Review classifications and evidence</h2><p class="mt-1 text-sm text-surface-500">Edit AI suggestions where necessary. Mandatory criteria should represent evidence the candidate must genuinely demonstrate.</p></div>
+          <span class="text-xs text-surface-400">{{ totalSkills }} total skills</span>
+        </div>
+
+        <article v-for="(classification, ci) in matrix.classifications" :key="classification.id" class="overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
+          <div class="flex flex-wrap items-center gap-3 border-b border-surface-100 bg-[#F8FBFD] px-5 py-4 dark:border-surface-800 dark:bg-surface-800/40">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#102A43] text-xs font-black text-white">{{ ci + 1 }}</div>
+            <input v-model="classification.name" class="min-w-[220px] flex-1 rounded-lg border border-surface-300 bg-white px-3 py-2 font-bold text-[#102A43] dark:border-surface-700 dark:bg-surface-900 dark:text-white" />
+            <span class="rounded-full px-2.5 py-1 text-xs font-bold" :class="classification.skills.filter(s => s.priority === 'mandatory').length >= 2 && classification.skills.filter(s => s.priority === 'mandatory').length <= 3 ? 'bg-[#E9F8F6] text-[#13756F]' : 'bg-warning-50 text-warning-700'">{{ classification.skills.filter(s => s.priority === 'mandatory').length }} Mandatory</span>
+            <button type="button" class="rounded-lg p-2 text-surface-400 hover:bg-danger-50 hover:text-danger-600" title="Remove classification" @click="removeClassification(ci)"><Trash2 class="size-4" /></button>
+          </div>
+
+          <div class="space-y-3 p-5">
+            <div v-for="(skill, si) in classification.skills" :key="skill.id" class="rounded-xl border border-surface-200 p-3 dark:border-surface-700">
+              <div class="grid grid-cols-1 gap-2 md:grid-cols-[1.2fr_150px_1.8fr_36px] md:items-center">
+                <input v-model="skill.skill" placeholder="Skill / requirement" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm font-semibold dark:border-surface-700 dark:bg-surface-900" />
+                <select v-model="skill.priority" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm font-semibold dark:border-surface-700 dark:bg-surface-900"><option value="mandatory">Mandatory</option><option value="preferred">Preferred</option><option value="optional">Optional</option></select>
+                <input v-model="skill.rationale" placeholder="Evidence expected / why it matters" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
+                <button type="button" class="rounded-lg p-2 text-surface-400 hover:text-danger-500" title="Remove skill" @click="removeSkill(classification, si)"><Trash2 class="size-4" /></button>
+              </div>
+            </div>
+            <button type="button" :disabled="classification.skills.length >= 8" class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-[#9FC7DF] px-3 py-2 text-sm font-semibold text-[#1F6FA3] disabled:opacity-40" @click="addSkill(classification)"><Plus class="size-4" />Add skill</button>
+          </div>
+        </article>
+
+        <button v-if="matrix.classifications.length < 5" type="button" class="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-[#9FC7DF] bg-white px-4 py-3 text-sm font-bold text-[#1F6FA3] dark:bg-surface-900" @click="addClassification"><Plus class="size-4" />Add classification</button>
+      </section>
+
+      <section v-if="matrix.classifications.length" class="sticky bottom-4 z-10 rounded-2xl border border-[#CFE0ED] bg-white/95 p-4 shadow-xl backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div class="min-w-0">
+            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval will lock this evidence framework and immediately prepare the AI Candidate Pool.</p></div></div>
+            <div v-else class="flex items-start gap-2 text-sm text-warning-700"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Review required before approval</p><p class="mt-0.5 text-xs text-surface-500">{{ jdDirty ? 'Save the Active JD before approving the matrix.' : (approvalError || 'Review the current AI proposal before approval.') }}</p></div></div>
+          </div>
+          <div class="flex shrink-0 flex-wrap gap-2">
+            <button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-bold disabled:opacity-50" @click="persist(false)"><Save class="size-4" />Save Draft</button>
+            <button type="button" :disabled="isSaving || isGenerating || !approvalReady" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="persist(true)"><CheckCircle2 class="size-4" />Approve Skill Matrix</button>
+          </div>
+        </div>
+      </section>
     </template>
   </div>
 </template>
