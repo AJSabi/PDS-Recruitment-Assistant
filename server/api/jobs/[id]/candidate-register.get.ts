@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { application, candidate, job } from '../../../database/schema/app'
 import { recruitmentApplicationProfile } from '../../../database/schema/recruitmentWorkflow'
 import { user } from '../../../database/schema/auth'
+import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -10,12 +11,13 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
 
   const requirement = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
     columns: { id: true, title: true, status: true },
   })
-  if (!requirement) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!requirement) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const rows = await db.select({
     applicationId: application.id,
@@ -50,7 +52,7 @@ export default defineEventHandler(async (event) => {
     .leftJoin(user, eq(user.id, recruitmentApplicationProfile.lastUpdatedBy))
     .where(and(eq(application.organizationId, orgId), eq(application.jobId, jobId)))
 
-  const register = rows.map((row) => ({
+  const register = rows.map(row => ({
     ...row,
     candidate: `${row.firstName} ${row.lastName}`.trim(),
     currentFit: row.currentFit ?? 'not_yet_assessed',
