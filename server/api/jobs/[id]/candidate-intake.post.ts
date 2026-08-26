@@ -1,16 +1,11 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { application, candidate, job, recruitmentApplicationProfile } from '../../../database/schema'
+import { application, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
-/**
- * POST /api/jobs/:id/candidate-intake
- * Creates or links an active candidate to the job and initializes the PDS recruitment profile.
- * Resume upload remains handled by the existing candidate document endpoint.
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create'], candidate: ['create'] })
   const orgId = session.session.activeOrganizationId
@@ -18,10 +13,19 @@ export default defineEventHandler(async (event) => {
   await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, candidateIntakeSchema.parse)
 
-  const existingJob = await db.query.job.findFirst({
-    where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
-    columns: { id: true, title: true },
-  })
+  const [existingJob, requirementState] = await Promise.all([
+    db.query.job.findFirst({
+      where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
+      columns: { id: true, title: true },
+    }),
+    db.query.recruitmentRequirementState.findFirst({
+      where: and(
+        eq(recruitmentRequirementState.organizationId, orgId),
+        eq(recruitmentRequirementState.jobId, jobId),
+      ),
+      columns: { ownerUserId: true },
+    }),
+  ])
   if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   let candidateId = body.candidateId
@@ -33,7 +37,8 @@ export default defineEventHandler(async (event) => {
       columns: { id: true, firstName: true, lastName: true, email: true },
     })
     if (!candidateRecord) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
-  } else {
+  }
+  else {
     const email = body.email!
     const matchedCandidate = await db.query.candidate.findFirst({
       where: and(eq(candidate.organizationId, orgId), eq(candidate.email, email)),
@@ -51,7 +56,8 @@ export default defineEventHandler(async (event) => {
         lastName: matchedCandidate.lastName,
         email: matchedCandidate.email,
       }
-    } else {
+    }
+    else {
       const [createdCandidate] = await db.insert(candidate).values({
         organizationId: orgId,
         firstName: body.firstName!,
@@ -81,6 +87,12 @@ export default defineEventHandler(async (event) => {
         eq(recruitmentApplicationProfile.organizationId, orgId),
       ),
     })
+    if (profile && requirementState?.ownerUserId && profile.assignedRecruiterId !== requirementState.ownerUserId) {
+      await db.update(recruitmentApplicationProfile).set({
+        assignedRecruiterId: requirementState.ownerUserId,
+        updatedAt: new Date(),
+      }).where(eq(recruitmentApplicationProfile.id, profile.id))
+    }
     return {
       created: false,
       candidate: candidateRecord,
@@ -102,6 +114,7 @@ export default defineEventHandler(async (event) => {
   const [profile] = await db.insert(recruitmentApplicationProfile).values({
     organizationId: orgId,
     applicationId: createdApplication.id,
+    assignedRecruiterId: requirementState?.ownerUserId ?? null,
     currentFit: 'not_yet_assessed',
     lastStatus: 'candidate_added',
     statusDate: new Date(),
@@ -115,7 +128,12 @@ export default defineEventHandler(async (event) => {
     action: 'candidate_intake_created',
     resourceType: 'application',
     resourceId: createdApplication.id,
-    metadata: { candidateId, jobId, candidateEmail: candidateRecord.email },
+    metadata: {
+      candidateId,
+      jobId,
+      candidateEmail: candidateRecord.email,
+      assignedRecruiterId: requirementState?.ownerUserId ?? null,
+    },
   })
 
   setResponseStatus(event, 201)
