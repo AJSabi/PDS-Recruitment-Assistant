@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   Sun,
+  UserRound,
   UserRoundCog,
   X,
 } from 'lucide-vue-next'
@@ -50,7 +51,9 @@ const mainNav = computed(() => [
   { label: 'Requirements', to: '/dashboard/jobs', icon: Briefcase, exact: false },
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
   ...(canManageRequirements.value ? [{ label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true }] : []),
-  { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false },
+  canManageRequirements.value
+    ? { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false }
+    : { label: 'My Account', to: '/dashboard/settings/account', icon: UserRound, exact: true },
 ])
 
 function isActiveRoute(to: string, exact = false) {
@@ -97,12 +100,12 @@ watch(() => route.path, () => {
 
 <template>
   <header class="sticky top-0 z-50 w-full">
-    <div class="border-b border-surface-200 bg-white/95 backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
+    <div class="border-b border-[#D9E6EF] bg-white/95 backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
       <div class="flex h-16 items-center justify-between gap-3 px-4 lg:px-6">
         <div class="flex min-w-0 items-center gap-3">
           <NuxtLink :to="localePath('/dashboard')" class="flex shrink-0 items-center gap-2.5 no-underline">
             <img src="/eagle-mascot-logo.png" alt="PDS Recruitment Assistant" class="size-9 object-contain" />
-            <span class="hidden text-[15px] font-bold leading-tight text-surface-900 dark:text-surface-100 sm:block">
+            <span class="hidden text-[15px] font-bold leading-tight text-[#102A43] dark:text-surface-100 sm:block">
               PDS Recruitment<br />Assistant
             </span>
           </NuxtLink>
@@ -114,8 +117,8 @@ watch(() => route.path, () => {
               :to="localePath(item.to)"
               class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors"
               :class="isActiveRoute(item.to, item.exact)
-                ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300'
-                : 'text-surface-600 hover:bg-surface-100 hover:text-surface-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100'"
+                ? 'bg-[#EAF4FB] text-[#1F6FA3] dark:bg-brand-950/40 dark:text-brand-300'
+                : 'text-surface-600 hover:bg-[#F3F8FB] hover:text-[#102A43] dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100'"
             >
               <component :is="item.icon" class="size-4" />
               {{ item.label }}
@@ -124,7 +127,7 @@ watch(() => route.path, () => {
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <NuxtLink v-if="canManageRequirements" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-brand-700">
+          <NuxtLink v-if="canManageRequirements" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-[#2E86C1] px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-[#2677AD]">
             <Plus class="size-4" /><span class="hidden sm:inline">New Requirement</span>
           </NuxtLink>
           <div class="hidden lg:block"><LanguageSwitcher /></div>
@@ -133,10 +136,11 @@ watch(() => route.path, () => {
           </button>
           <div class="relative">
             <button type="button" class="flex items-center gap-1.5 rounded-lg px-1.5 py-1 hover:bg-surface-100 dark:hover:bg-surface-800" @click="showUserMenu = !showUserMenu">
-              <span class="flex size-8 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">{{ userInitials }}</span><ChevronDown class="size-3 text-surface-400" />
+              <span class="flex size-8 items-center justify-center rounded-full bg-[#102A43] text-xs font-bold text-white">{{ userInitials }}</span><ChevronDown class="size-3 text-surface-400" />
             </button>
             <div v-if="showUserMenu" class="absolute right-0 top-[calc(100%+6px)] w-64 overflow-hidden rounded-xl border border-surface-200 bg-white shadow-xl dark:border-surface-700 dark:bg-surface-900">
               <div class="border-b border-surface-100 px-4 py-3 dark:border-surface-800"><p class="text-sm font-semibold text-surface-900 dark:text-surface-100">{{ userName }}</p><p class="truncate text-xs text-surface-500">{{ userEmail }}</p></div>
+              <NuxtLink :to="localePath('/dashboard/settings/account')" class="flex items-center gap-2 px-4 py-2.5 text-sm text-surface-600 no-underline hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800"><UserRound class="size-4" />My Account</NuxtLink>
               <div class="p-1 lg:hidden"><LanguageSwitcher /></div>
               <button type="button" :disabled="isSigningOut" class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-surface-600 hover:bg-surface-100 disabled:opacity-50 dark:text-surface-400 dark:hover:bg-surface-800" @click="handleSignOut"><LogOut class="size-4" />{{ isSigningOut ? 'Signing out…' : 'Sign out' }}</button>
             </div>
@@ -146,18 +150,18 @@ watch(() => route.path, () => {
       </div>
 
       <nav v-if="showMobileMenu" class="border-t border-surface-100 px-4 py-3 md:hidden dark:border-surface-800">
-        <NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800">
+        <NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-[#F3F8FB] dark:text-surface-400 dark:hover:bg-surface-800">
           <component :is="item.icon" class="size-4" />{{ item.label }}
         </NuxtLink>
       </nav>
     </div>
 
-    <div v-if="activeJobId" class="border-b border-surface-200 bg-surface-50/95 dark:border-surface-800 dark:bg-surface-950/95">
+    <div v-if="activeJobId" class="border-b border-[#D9E6EF] bg-[#F7FBFE]/95 dark:border-surface-800 dark:bg-surface-950/95">
       <div class="flex h-11 items-center gap-3 overflow-x-auto px-4 lg:px-6">
-        <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</NuxtLink>
-        <span class="hidden max-w-52 truncate text-sm font-semibold text-surface-900 sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requirement' }}</span>
+        <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-[#102A43] dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</NuxtLink>
+        <span class="hidden max-w-52 truncate text-sm font-semibold text-[#102A43] sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requirement' }}</span>
         <nav class="flex items-center gap-1">
-          <NuxtLink v-for="tab in jobTabs" :key="tab.to" :to="localePath(tab.to)" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-surface-900 shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</NuxtLink>
+          <NuxtLink v-for="tab in jobTabs" :key="tab.to" :to="localePath(tab.to)" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-[#1F6FA3] dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</NuxtLink>
         </nav>
         <div id="job-sub-nav-actions" class="ml-auto flex items-center gap-2" />
       </div>
