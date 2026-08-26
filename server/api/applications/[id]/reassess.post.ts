@@ -46,6 +46,7 @@ export default defineEventHandler(async (event) => {
     conversationBrief: body.conversationBrief ?? profile.conversationBrief,
     nextAction: body.nextAction ?? profile.nextAction,
     assessmentLocked: body.currentFit ? true : profile.assessmentLocked,
+    aiSummaryStale: true,
     requirementVersionAssessed: body.currentFit ? requirementRevision : profile.requirementVersionAssessed,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
