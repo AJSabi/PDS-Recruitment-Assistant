@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm'
-import { application, job, jobSkillMatrix, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
+import { job, jobSkillMatrix, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsScreeningQuestions } from '../../../../utils/ai/pdsScreening'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
 import { createRateLimiter } from '../../../../utils/rateLimit'
+import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -14,12 +15,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'], scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
-
-  const app = await db.query.application.findFirst({
-    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true, jobId: true },
-  })
-  if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
+  const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
 
   const [profile, requirementState, jobRecord, matrixRecord, assessment] = await Promise.all([
     db.query.recruitmentApplicationProfile.findFirst({ where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)) }),
@@ -52,35 +48,14 @@ export default defineEventHandler(async (event) => {
   const existing = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
   })
-  if (existing?.status === 'in_progress') {
-    throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
-  }
-  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') {
-    throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
-  }
+  if (existing?.status === 'in_progress') throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
+  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
 
   const now = new Date()
   if (existing) {
-    await db.update(recruiterScreeningSession).set({
-      questions,
-      responses: [],
-      status: 'not_started',
-      finalFit: null,
-      recommendedNextStep: null,
-      validationFocus: [],
-      startedAt: null,
-      completedAt: null,
-      updatedAt: now,
-    }).where(eq(recruiterScreeningSession.id, existing.id))
+    await db.update(recruiterScreeningSession).set({ questions, responses: [], status: 'not_started', finalFit: null, recommendedNextStep: null, validationFocus: [], startedAt: null, completedAt: null, updatedAt: now }).where(eq(recruiterScreeningSession.id, existing.id))
   } else {
-    await db.insert(recruiterScreeningSession).values({
-      organizationId: orgId,
-      applicationId,
-      status: 'not_started',
-      questions,
-      responses: [],
-      validationFocus: [],
-    })
+    await db.insert(recruiterScreeningSession).values({ organizationId: orgId, applicationId, status: 'not_started', questions, responses: [], validationFocus: [] })
   }
 
   return { questions, source: 'ai', provider: config.provider, model: config.model }
