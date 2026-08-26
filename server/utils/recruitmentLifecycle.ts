@@ -8,6 +8,9 @@ export async function ensureRequirementState(organizationId: string, jobId: stri
   if (existing) return existing
 
   const [created] = await db.insert(recruitmentRequirementState).values({ organizationId, jobId }).returning()
+  if (!created) {
+    throw createError({ statusCode: 500, statusMessage: 'Requirement state could not be created.' })
+  }
   return created
 }
 
@@ -106,8 +109,6 @@ export async function flagRequirementChange(input: {
     .where(eq(recruitmentRequirementState.id, state.id))
     .returning()
 
-  // A material JD change invalidates only the current approval. The last approved
-  // matrix snapshot is preserved so the recruiter can review/reapprove it.
   if (changeType === 'jd') {
     await db.update(jobSkillMatrix)
       .set({ approvedAt: null, updatedAt: now })
