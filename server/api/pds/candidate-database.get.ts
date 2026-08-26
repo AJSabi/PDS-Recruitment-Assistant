@@ -1,16 +1,25 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import {
   application,
   candidate,
   document,
   job,
+  member,
   recruitmentApplicationProfile,
   user,
 } from '../../database/schema'
+import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
+  const visibleRequirementIds = await getVisibleRequirementIds(orgId, session.user.id)
+
+  const applicationWhere = visibleRequirementIds === null
+    ? eq(application.organizationId, orgId)
+    : visibleRequirementIds.length
+      ? and(eq(application.organizationId, orgId), inArray(application.jobId, visibleRequirementIds))
+      : and(eq(application.organizationId, orgId), inArray(application.jobId, ['__no_visible_requirement__']))
 
   const [candidates, applications, resumes, users] = await Promise.all([
     db.select({ candidateId: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, email: candidate.email, phone: candidate.phone, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt })
@@ -36,12 +45,15 @@ export default defineEventHandler(async (event) => {
     }).from(application)
       .innerJoin(job, and(eq(job.id, application.jobId), eq(job.organizationId, orgId)))
       .leftJoin(recruitmentApplicationProfile, and(eq(recruitmentApplicationProfile.applicationId, application.id), eq(recruitmentApplicationProfile.organizationId, orgId)))
-      .where(eq(application.organizationId, orgId)),
+      .where(applicationWhere),
 
     db.select({ candidateId: document.candidateId, documentId: document.id, originalFilename: document.originalFilename, createdAt: document.createdAt })
       .from(document).where(and(eq(document.organizationId, orgId), eq(document.type, 'resume'))).orderBy(desc(document.createdAt)),
 
-    db.select({ id: user.id, name: user.name }).from(user),
+    db.select({ id: user.id, name: user.name })
+      .from(member)
+      .innerJoin(user, eq(user.id, member.userId))
+      .where(eq(member.organizationId, orgId)),
   ])
 
   const recruiterNames = new Map(users.map(row => [row.id, row.name]))
