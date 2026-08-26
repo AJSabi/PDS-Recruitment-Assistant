@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { application, candidate, job, recruitmentApplicationProfile } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
+import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -14,13 +15,14 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create'], candidate: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, candidateIntakeSchema.parse)
 
   const existingJob = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
     columns: { id: true, title: true },
   })
-  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   let candidateId = body.candidateId
   let candidateRecord: { id: string; firstName: string; lastName: string; email: string } | undefined
