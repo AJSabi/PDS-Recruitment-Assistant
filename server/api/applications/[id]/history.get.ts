@@ -1,5 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { application, candidate, job, recruitmentApplicationProfile, recruitmentEvidence, recruiterScreeningSession, resumeAssessment } from '../../../database/schema'
+import { assertApplicationAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -8,6 +9,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, applicationId)
 
   const app = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
