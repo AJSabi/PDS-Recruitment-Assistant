@@ -52,9 +52,10 @@ export default defineEventHandler(async (event) => {
   const assignmentDate = body.ownerUserId
     ? body.assignmentDate ? new Date(body.assignmentDate) : now
     : null
-  const targetClosureDate = body.ownerUserId
-    ? body.targetClosureDate ? new Date(body.targetClosureDate) : plusDays(assignmentDate!, 60)
-    : null
+
+  const targetClosureDate = body.targetClosureDate !== undefined
+    ? body.targetClosureDate ? new Date(body.targetClosureDate) : null
+    : existing?.targetClosureDate ?? (body.ownerUserId ? plusDays(assignmentDate!, 60) : null)
 
   const applicationRows = await db.select({ id: application.id })
     .from(application)
