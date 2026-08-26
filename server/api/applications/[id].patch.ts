@@ -1,6 +1,7 @@
 import { eq, and } from 'drizzle-orm'
 import { application, recruitmentApplicationProfile } from '../../database/schema'
 import { applicationIdParamSchema, updateApplicationSchema, APPLICATION_STATUS_TRANSITIONS } from '../../utils/schemas/application'
+import { assertApplicationAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * PATCH /api/applications/:id
@@ -13,13 +14,14 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, applicationIdParamSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, id)
   const body = await readValidatedBody(event, updateApplicationSchema.parse)
 
   const current = await db.query.application.findFirst({
     where: and(eq(application.id, id), eq(application.organizationId, orgId)),
     columns: { id: true, status: true },
   })
-  if (!current) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!current) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const recruitmentProfile = await db.query.recruitmentApplicationProfile.findFirst({
     where: and(
@@ -60,7 +62,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: application.updatedAt,
     })
 
-  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   recordActivity({
     organizationId: orgId,
