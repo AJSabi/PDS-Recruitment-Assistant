@@ -41,9 +41,7 @@ export default defineEventHandler(async (event) => {
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!allowedInterviewStatuses.has(profile.lastStatus)) {
-    throw createError({ statusCode: 422, statusMessage: `Interview evidence cannot be recorded while candidate status is ${profile.lastStatus}.` })
-  }
+  if (!allowedInterviewStatuses.has(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: `Interview evidence cannot be recorded while candidate status is ${profile.lastStatus}.` })
 
   const requirementState = await db.query.recruitmentRequirementState.findFirst({
     where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
@@ -73,6 +71,7 @@ export default defineEventHandler(async (event) => {
     conversationBrief: body.summary,
     lastContactAt: now,
     nextAction: body.recommendation ? recommendationLabels[body.recommendation] : profile.nextAction,
+    aiSummaryStale: true,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }
