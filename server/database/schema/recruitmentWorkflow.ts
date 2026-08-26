@@ -18,6 +18,19 @@ export type CandidateInterviewBrief = {
   round: 'recruiter_screening' | 'hiring_manager' | 'hod' | 'hr'
   brief: string
 }
+export type RecruitmentSkillAssessmentItem = {
+  classification?: string | null
+  skill: string
+  priority: 'mandatory' | 'preferred' | 'optional'
+  evidenceLevel: SkillEvidenceLevel
+  evidence?: string | null
+}
+export type RecruiterScreeningQuestion = {
+  id: string
+  question: string
+  options?: string[] | null
+  verificationArea?: string | null
+}
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -89,13 +102,7 @@ export const resumeAssessment = pgTable('resume_assessment', {
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
   candidateSnapshot: text('candidate_snapshot'),
   jdAlignment: text('jd_alignment'),
-  skillAssessment: jsonb('skill_assessment').$type<Array<{
-    classification?: string
-    skill: string
-    priority: 'mandatory' | 'preferred' | 'optional'
-    evidenceLevel: SkillEvidenceLevel
-    evidence?: string
-  }>>().notNull().default([]),
+  skillAssessment: jsonb('skill_assessment').$type<RecruitmentSkillAssessmentItem[]>().notNull().default([]),
   keyGaps: jsonb('key_gaps').$type<string[]>().notNull().default([]),
   verificationAreas: jsonb('verification_areas').$type<string[]>().notNull().default([]),
   mandatoryScore: integer('mandatory_score'),
@@ -139,7 +146,7 @@ export const recruiterScreeningSession = pgTable('recruiter_screening_session', 
   organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
   applicationId: text('application_id').notNull().references(() => application.id, { onDelete: 'cascade' }),
   status: text('status').$type<'not_started' | 'in_progress' | 'completed'>().notNull().default('not_started'),
-  questions: jsonb('questions').$type<Array<{ id: string; question: string; options?: string[]; verificationArea?: string }>>().notNull().default([]),
+  questions: jsonb('questions').$type<RecruiterScreeningQuestion[]>().notNull().default([]),
   responses: jsonb('responses').$type<Array<{ questionId: string; answer: string; answeredAt?: string }>>().notNull().default([]),
   finalFit: text('final_fit').$type<Exclude<CurrentFit, 'not_yet_assessed'>>(),
   recommendedNextStep: text('recommended_next_step').$type<'proceed_to_hiring_manager_round' | 'hold_for_comparison' | 'reassess' | 'recruiter_decision_required'>(),
@@ -172,13 +179,7 @@ export const talentPoolMatch = pgTable('talent_pool_match', {
   mainGap: text('main_gap'),
   candidateSnapshot: text('candidate_snapshot'),
   jdAlignment: text('jd_alignment'),
-  skillAssessment: jsonb('skill_assessment').$type<Array<{
-    classification?: string
-    skill: string
-    priority: 'mandatory' | 'preferred' | 'optional'
-    evidenceLevel: SkillEvidenceLevel
-    evidence?: string
-  }>>().notNull().default([]),
+  skillAssessment: jsonb('skill_assessment').$type<RecruitmentSkillAssessmentItem[]>().notNull().default([]),
   keyGaps: jsonb('key_gaps').$type<string[]>().notNull().default([]),
   verificationAreas: jsonb('verification_areas').$type<string[]>().notNull().default([]),
   source: text('source').$type<'database' | 'jd_upload'>().notNull().default('database'),
