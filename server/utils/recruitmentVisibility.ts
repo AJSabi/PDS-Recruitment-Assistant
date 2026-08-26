@@ -1,22 +1,13 @@
 import { and, eq } from 'drizzle-orm'
 import { application, interview, member, recruitmentRequirementState } from '../database/schema'
 
-/**
- * PDS requirement visibility policy.
- * Organization owners/admins can see all requirements.
- * Standard members (recruiters) can see only requirements allocated to them
- * through recruitment_requirement_state.owner_user_id.
- */
 export async function getRequirementVisibility(orgId: string, userId: string) {
   const membership = await db.query.member.findFirst({
     where: and(eq(member.organizationId, orgId), eq(member.userId, userId)),
     columns: { role: true },
   })
-
   const role = membership?.role ?? 'member'
-  const canSeeAll = role === 'owner' || role === 'admin'
-
-  return { role, canSeeAll, userId }
+  return { role, canSeeAll: role === 'owner' || role === 'admin', userId }
 }
 
 export async function assertRecruitmentAdmin(orgId: string, userId: string) {
@@ -30,21 +21,18 @@ export async function assertRecruitmentAdmin(orgId: string, userId: string) {
 export async function getVisibleRequirementIds(orgId: string, userId: string) {
   const visibility = await getRequirementVisibility(orgId, userId)
   if (visibility.canSeeAll) return null
-
   const rows = await db.select({ jobId: recruitmentRequirementState.jobId })
     .from(recruitmentRequirementState)
     .where(and(
       eq(recruitmentRequirementState.organizationId, orgId),
       eq(recruitmentRequirementState.ownerUserId, userId),
     ))
-
   return rows.map(row => row.jobId)
 }
 
 export async function canAccessRequirement(orgId: string, userId: string, jobId: string) {
   const visibility = await getRequirementVisibility(orgId, userId)
   if (visibility.canSeeAll) return true
-
   const allocation = await db.query.recruitmentRequirementState.findFirst({
     where: and(
       eq(recruitmentRequirementState.organizationId, orgId),
@@ -53,13 +41,11 @@ export async function canAccessRequirement(orgId: string, userId: string, jobId:
     ),
     columns: { id: true },
   })
-
   return Boolean(allocation)
 }
 
 export async function assertRequirementAccess(orgId: string, userId: string, jobId: string) {
-  const allowed = await canAccessRequirement(orgId, userId, jobId)
-  if (!allowed) {
+  if (!(await canAccessRequirement(orgId, userId, jobId))) {
     throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   }
 }
@@ -69,11 +55,7 @@ export async function assertApplicationAccess(orgId: string, userId: string, app
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
     columns: { id: true, jobId: true },
   })
-
-  if (!row) {
-    throw createError({ statusCode: 404, statusMessage: 'Application not found' })
-  }
-
+  if (!row) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
   await assertRequirementAccess(orgId, userId, row.jobId)
   return row
 }
@@ -83,11 +65,21 @@ export async function assertInterviewAccess(orgId: string, userId: string, inter
     where: and(eq(interview.id, interviewId), eq(interview.organizationId, orgId)),
     columns: { id: true, applicationId: true },
   })
-
-  if (!row) {
-    throw createError({ statusCode: 404, statusMessage: 'Interview not found' })
-  }
-
+  if (!row) throw createError({ statusCode: 404, statusMessage: 'Interview not found' })
   await assertApplicationAccess(orgId, userId, row.applicationId)
   return row
+}
+
+/** Candidate records are intentionally shared in the central PDS Candidate Database.
+ * Job/application comments follow requirement allocation visibility.
+ */
+export async function assertCommentTargetAccess(
+  orgId: string,
+  userId: string,
+  targetType: 'candidate' | 'application' | 'job',
+  targetId: string,
+) {
+  if (targetType === 'candidate') return
+  if (targetType === 'application') return assertApplicationAccess(orgId, userId, targetId)
+  return assertRequirementAccess(orgId, userId, targetId)
 }
