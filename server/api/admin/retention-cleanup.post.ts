@@ -1,12 +1,11 @@
 /**
  * POST /api/admin/retention-cleanup
- *
- * External cron and interactive admin entrypoint. The built-in Nitro task uses
- * the same shared runner, so every trigger has identical behavior.
+ * External cron and interactive admin entrypoint.
  */
 import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { runRetentionCleanup } from '../../utils/retention-cleanup'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const bodySchema = z.object({
   dryRun: z.boolean().optional().default(false),
@@ -22,13 +21,12 @@ export default defineEventHandler(async (event) => {
     const supplied = Buffer.from(cronSecret)
     const expected = Buffer.from(env.CRON_SECRET)
     const valid = supplied.length === expected.length && timingSafeEqual(supplied, expected)
-    if (!valid) {
-      throw createError({ statusCode: 403, statusMessage: 'Invalid cron secret' })
-    }
+    if (!valid) throw createError({ statusCode: 403, statusMessage: 'Invalid cron secret' })
     source = 'cron_endpoint'
-  }
-  else {
+  } else {
     const session = await requirePermission(event, { candidate: ['delete'] })
+    const orgId = session.session.activeOrganizationId
+    await assertRecruitmentAdmin(orgId, session.user.id)
     actorId = session.user.id
   }
 
