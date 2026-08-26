@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
+import { recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
 import { startScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -11,68 +12,30 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, applicationId)
   const body = await readValidatedBody(event, startScreeningSchema.parse)
-
-  const app = await db.query.application.findFirst({
-    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true },
-  })
-  if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const profile = await db.query.recruitmentApplicationProfile.findFirst({
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!allowedStartStatuses.has(profile.lastStatus)) {
-    throw createError({ statusCode: 422, statusMessage: `Recruiter screening cannot start while candidate status is ${profile.lastStatus}.` })
-  }
+  if (!allowedStartStatuses.has(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: `Recruiter screening cannot start while candidate status is ${profile.lastStatus}.` })
 
   const existing = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
   })
-  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') {
-    throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before starting another screening.' })
-  }
+  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before starting another screening.' })
 
   const now = new Date()
   let screening
   if (existing) {
-    ;[screening] = await db.update(recruiterScreeningSession).set({
-      questions: body.questions,
-      responses: [],
-      status: 'in_progress',
-      finalFit: null,
-      recommendedNextStep: null,
-      validationFocus: [],
-      startedAt: now,
-      completedAt: null,
-      updatedAt: now,
-    }).where(eq(recruiterScreeningSession.id, existing.id)).returning()
+    ;[screening] = await db.update(recruiterScreeningSession).set({ questions: body.questions, responses: [], status: 'in_progress', finalFit: null, recommendedNextStep: null, validationFocus: [], startedAt: now, completedAt: null, updatedAt: now }).where(eq(recruiterScreeningSession.id, existing.id)).returning()
   } else {
-    ;[screening] = await db.insert(recruiterScreeningSession).values({
-      organizationId: orgId,
-      applicationId,
-      status: 'in_progress',
-      questions: body.questions,
-      responses: [],
-      validationFocus: [],
-      startedAt: now,
-    }).returning()
+    ;[screening] = await db.insert(recruiterScreeningSession).values({ organizationId: orgId, applicationId, status: 'in_progress', questions: body.questions, responses: [], validationFocus: [], startedAt: now }).returning()
   }
 
-  await db.update(recruitmentApplicationProfile).set({
-    lastStatus: 'recruiter_screening_pending',
-    statusDate: now,
-    nextAction: 'Complete recruiter screening',
-    lastUpdatedBy: session.user.id,
-    updatedAt: now,
-  }).where(eq(recruitmentApplicationProfile.id, profile.id))
-
+  await db.update(recruitmentApplicationProfile).set({ lastStatus: 'recruiter_screening_pending', statusDate: now, nextAction: 'Complete recruiter screening', lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id))
   await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'recruiter_screening_pending')
 
-  return {
-    screening,
-    currentQuestion: body.questions[0],
-    progress: { answered: 0, total: body.questions.length },
-  }
+  return { screening, currentQuestion: body.questions[0], progress: { answered: 0, total: body.questions.length } }
 })
