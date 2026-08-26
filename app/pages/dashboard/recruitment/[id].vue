@@ -73,6 +73,8 @@ useSeoMeta({
         <div class="rounded-2xl border border-[#E8D7B4] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900"><div class="flex items-center gap-2"><AlertTriangle class="size-5 text-[#976511]" /><h2 class="font-bold text-[#102A43] dark:text-white">What needs validation</h2></div><p class="mt-3 text-sm leading-6 text-surface-700 dark:text-surface-200">{{ profile.mainGap || 'No material gap is currently recorded.' }}</p></div>
       </section>
 
+      <PdsCandidateSummary :application-id="applicationId" />
+
       <div class="rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] px-4 py-3 text-xs text-[#486581] dark:border-surface-800 dark:bg-surface-900 dark:text-surface-400"><Sparkles class="mr-1 inline size-3.5" />Recruiter ownership follows the requirement allocation. Reassignment is managed centrally from Requirement Allocations.</div>
 
       <div class="space-y-6">
