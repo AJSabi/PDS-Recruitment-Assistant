@@ -6,6 +6,7 @@ import {
   recruiterScreeningSession,
   recruitmentApplicationProfile,
   recruitmentEvidence,
+  recruitmentRequirementState,
   resumeAssessment,
   talentPoolMatch,
 } from '../../../../../database/schema'
@@ -25,7 +26,7 @@ export default defineEventHandler(async (event) => {
   const { id: jobId, matchId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
 
-  const [jobRecord, matrixRecord, match] = await Promise.all([
+  const [jobRecord, matrixRecord, match, requirementState] = await Promise.all([
     db.query.job.findFirst({
       where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
       columns: { id: true, title: true, description: true },
@@ -40,6 +41,13 @@ export default defineEventHandler(async (event) => {
         eq(talentPoolMatch.organizationId, orgId),
       ),
     }),
+    db.query.recruitmentRequirementState.findFirst({
+      where: and(
+        eq(recruitmentRequirementState.organizationId, orgId),
+        eq(recruitmentRequirementState.jobId, jobId),
+      ),
+      columns: { ownerUserId: true },
+    }),
   ])
 
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
@@ -48,9 +56,7 @@ export default defineEventHandler(async (event) => {
   if (!match.resumeDocumentId) throw createError({ statusCode: 422, statusMessage: 'The matched resume is no longer available.' })
   if (!matrixRecord?.approvedMatrix || !jobRecord.description) throw createError({ statusCode: 422, statusMessage: 'Active JD and approved Skill Matrix are required.' })
 
-  if (match.promotedApplicationId) {
-    return { applicationId: match.promotedApplicationId, alreadyPromoted: true }
-  }
+  if (match.promotedApplicationId) return { applicationId: match.promotedApplicationId, alreadyPromoted: true }
 
   const existingApplication = await db.query.application.findFirst({
     where: and(
@@ -62,6 +68,15 @@ export default defineEventHandler(async (event) => {
   })
   if (existingApplication) {
     await db.update(talentPoolMatch).set({ promotedApplicationId: existingApplication.id, updatedAt: new Date() }).where(eq(talentPoolMatch.id, match.id))
+    if (requirementState?.ownerUserId) {
+      await db.update(recruitmentApplicationProfile).set({
+        assignedRecruiterId: requirementState.ownerUserId,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(recruitmentApplicationProfile.organizationId, orgId),
+        eq(recruitmentApplicationProfile.applicationId, existingApplication.id),
+      ))
+    }
     return { applicationId: existingApplication.id, alreadyPromoted: true }
   }
 
@@ -81,6 +96,7 @@ export default defineEventHandler(async (event) => {
     organizationId: orgId,
     applicationId: created.id,
     selectedResumeDocumentId: match.resumeDocumentId,
+    assignedRecruiterId: requirementState?.ownerUserId ?? null,
     currentFit: 'not_yet_assessed',
     lastStatus: 'resume_reviewed',
     statusDate: now,
@@ -152,7 +168,8 @@ export default defineEventHandler(async (event) => {
         priority: match.priority,
       },
     })
-  } catch (error: any) {
+  }
+  catch (error: any) {
     questionGenerationError = error?.data?.statusMessage ?? error?.message ?? 'Screening questions could not be generated.'
   }
 
@@ -184,6 +201,7 @@ export default defineEventHandler(async (event) => {
       source: match.source,
       screeningQuestionsGenerated: questions.length,
       screeningQuestionGenerationPending: Boolean(questionGenerationError),
+      assignedRecruiterId: requirementState?.ownerUserId ?? null,
     },
     createdBy: session.user.id,
   })
