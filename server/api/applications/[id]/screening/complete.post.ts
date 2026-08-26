@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
+import { recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
 import { completeScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
+import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -20,21 +21,14 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
   const body = await readValidatedBody(event, completeScreeningSchema.parse)
-
-  const app = await db.query.application.findFirst({
-    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true, jobId: true },
-  })
-  if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const profile = await db.query.recruitmentApplicationProfile.findFirst({
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (profile.lastStatus !== 'recruiter_screening_pending') {
-    throw createError({ statusCode: 422, statusMessage: 'Candidate is not currently in Recruiter Screening Pending status.' })
-  }
+  if (profile.lastStatus !== 'recruiter_screening_pending') throw createError({ statusCode: 422, statusMessage: 'Candidate is not currently in Recruiter Screening Pending status.' })
 
   const screening = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
@@ -46,9 +40,7 @@ export default defineEventHandler(async (event) => {
   const responses = (screening.responses ?? []) as ScreeningResponse[]
   const answeredIds = new Set(responses.map(r => r.questionId))
   const unanswered = questions.filter(q => !answeredIds.has(q.id))
-  if (!questions.length || unanswered.length) {
-    throw createError({ statusCode: 422, statusMessage: `Complete all screening questions before final assessment. ${unanswered.length} unanswered.` })
-  }
+  if (!questions.length || unanswered.length) throw createError({ statusCode: 422, statusMessage: `Complete all screening questions before final assessment. ${unanswered.length} unanswered.` })
 
   const requirementState = await db.query.recruitmentRequirementState.findFirst({
     where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
@@ -56,14 +48,7 @@ export default defineEventHandler(async (event) => {
   const requirementRevision = requirementState?.revision ?? profile.requirementVersionAssessed
   const now = new Date()
 
-  const [updatedScreening] = await db.update(recruiterScreeningSession).set({
-    status: 'completed',
-    finalFit: body.finalFit,
-    recommendedNextStep: body.recommendedNextStep,
-    validationFocus: body.validationFocus,
-    completedAt: now,
-    updatedAt: now,
-  }).where(eq(recruiterScreeningSession.id, screening.id)).returning()
+  const [updatedScreening] = await db.update(recruiterScreeningSession).set({ status: 'completed', finalFit: body.finalFit, recommendedNextStep: body.recommendedNextStep, validationFocus: body.validationFocus, completedAt: now, updatedAt: now }).where(eq(recruiterScreeningSession.id, screening.id)).returning()
 
   await db.update(recruitmentApplicationProfile).set({
     currentFit: body.finalFit,
@@ -79,32 +64,8 @@ export default defineEventHandler(async (event) => {
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
 
   await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'recruiter_screening_completed')
-
-  await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    applicationId,
-    type: 'recruiter_screening',
-    summary: body.conversationBrief ?? `Recruiter screening completed: ${body.finalFit}`,
-    payload: {
-      finalFit: body.finalFit,
-      recommendedNextStep: body.recommendedNextStep,
-      validationFocus: body.validationFocus,
-      responses,
-      requirementRevision,
-    },
-    createdBy: session.user.id,
-  })
-
+  await db.insert(recruitmentEvidence).values({ organizationId: orgId, applicationId, type: 'recruiter_screening', summary: body.conversationBrief ?? `Recruiter screening completed: ${body.finalFit}`, payload: { finalFit: body.finalFit, recommendedNextStep: body.recommendedNextStep, validationFocus: body.validationFocus, responses, requirementRevision }, createdBy: session.user.id })
   await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
-  return {
-    screening: updatedScreening,
-    finalAssessment: {
-      currentFit: body.finalFit,
-      lastStatus: 'recruiter_screening_completed',
-      recommendedNextStep: body.recommendedNextStep,
-      validationFocus: body.validationFocus,
-      requirementRevision,
-    },
-  }
+  return { screening: updatedScreening, finalAssessment: { currentFit: body.finalFit, lastStatus: 'recruiter_screening_completed', recommendedNextStep: body.recommendedNextStep, validationFocus: body.validationFocus, requirementRevision } }
 })
