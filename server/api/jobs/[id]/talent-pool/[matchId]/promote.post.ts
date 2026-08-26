@@ -13,6 +13,7 @@ import { loadAiConfig } from '../../../../../utils/ai/loadConfig'
 import { generatePdsScreeningQuestions } from '../../../../../utils/ai/pdsScreening'
 import type { SupportedProvider } from '../../../../../utils/ai/provider'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../../utils/recruitmentApplicationStatus'
+import { assertRequirementAccess } from '../../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1), matchId: z.string().min(1) })
@@ -22,6 +23,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create', 'update'], scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId, matchId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
 
   const [jobRecord, matrixRecord, match] = await Promise.all([
     db.query.job.findFirst({
@@ -40,7 +42,7 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
-  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   if (!match) throw createError({ statusCode: 404, statusMessage: 'Talent pool match not found' })
   if ((match.score ?? 0) < FINAL_POOL_THRESHOLD) throw createError({ statusCode: 422, statusMessage: 'Only candidates with a 50% or higher AI match can be moved into recruitment.' })
   if (!match.resumeDocumentId) throw createError({ statusCode: 422, statusMessage: 'The matched resume is no longer available.' })
