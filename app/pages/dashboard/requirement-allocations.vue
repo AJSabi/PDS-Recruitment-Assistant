@@ -14,14 +14,6 @@ const { data, status, error, refresh } = useFetch('/api/requirement-allocations'
   headers: useRequestHeaders(['cookie']),
 })
 
-const rows = computed(() => {
-  const list = data.value?.requirements ?? []
-  const q = search.value.trim().toLowerCase()
-  if (!q) return list
-  return list.filter((row: any) => [row.title, row.location, row.recruiterName, row.recruiterEmail, row.status]
-    .some(value => String(value ?? '').toLowerCase().includes(q)))
-})
-
 function toInputDate(value?: string | Date | null) {
   if (!value) return ''
   const d = new Date(value)
@@ -43,18 +35,32 @@ function plus60(value: string) {
 }
 
 type AllocationDraft = { ownerUserId: string; assignmentDate: string; targetClosureDate: string }
-const drafts = reactive<any>({}) as Record<string, AllocationDraft>
+const drafts = reactive<Record<string, AllocationDraft>>({})
+
+function ensureDraft(row: any): AllocationDraft {
+  const existing = drafts[row.jobId]
+  if (existing) return existing
+  const created: AllocationDraft = {
+    ownerUserId: row.ownerUserId ?? '',
+    assignmentDate: toInputDate(row.assignmentDate),
+    targetClosureDate: toInputDate(row.targetClosureDate),
+  }
+  drafts[row.jobId] = created
+  return created
+}
+
+const rows = computed<any[]>(() => {
+  const list = (data.value?.requirements ?? []) as any[]
+  const q = search.value.trim().toLowerCase()
+  const filtered = q
+    ? list.filter(row => [row.title, row.location, row.recruiterName, row.recruiterEmail, row.status]
+        .some(value => String(value ?? '').toLowerCase().includes(q)))
+    : list
+  return filtered.map(row => ({ ...row, draft: ensureDraft(row) }))
+})
 
 watch(data, (value: any) => {
-  for (const row of value?.requirements ?? []) {
-    if (!drafts[row.jobId]) {
-      drafts[row.jobId] = {
-        ownerUserId: row.ownerUserId ?? '',
-        assignmentDate: toInputDate(row.assignmentDate),
-        targetClosureDate: toInputDate(row.targetClosureDate),
-      }
-    }
-  }
+  for (const row of value?.requirements ?? []) ensureDraft(row)
 }, { immediate: true })
 
 function reload() {
@@ -67,9 +73,8 @@ function workloadFor(userId?: string) {
   return Number(members.find(person => person.userId === userId)?.openRequirements ?? 0)
 }
 
-function onRecruiterChange(jobId: string) {
-  const draft = drafts[jobId]
-  if (!draft) return
+function onRecruiterChange(row: any) {
+  const draft: AllocationDraft = row.draft
   if (!draft.ownerUserId) {
     draft.assignmentDate = ''
     return
@@ -78,15 +83,14 @@ function onRecruiterChange(jobId: string) {
   if (!draft.targetClosureDate) draft.targetClosureDate = plus60(draft.assignmentDate)
 }
 
-function onAssignmentDateChange(jobId: string) {
-  const draft = drafts[jobId]
-  if (!draft?.assignmentDate || !draft.ownerUserId) return
+function onAssignmentDateChange(row: any) {
+  const draft: AllocationDraft = row.draft
+  if (!draft.assignmentDate || !draft.ownerUserId) return
   draft.targetClosureDate = plus60(draft.assignmentDate)
 }
 
 async function save(row: any) {
-  const draft = drafts[row.jobId]
-  if (!draft) return
+  const draft: AllocationDraft = row.draft
   savingJobId.value = row.jobId
   try {
     await $fetch(`/api/requirement-allocations/${row.jobId}`, {
@@ -147,10 +151,10 @@ async function save(row: any) {
           <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
             <tr v-for="row in rows" :key="row.jobId" class="align-top">
               <td class="min-w-[240px] px-4 py-4"><NuxtLink :to="localePath(`/dashboard/jobs/${row.jobId}`)" class="font-semibold text-[#102A43] no-underline hover:text-[#1F6FA3] hover:underline dark:text-white">{{ row.title }}</NuxtLink><p class="mt-1 text-xs text-surface-400">{{ row.location || 'Location not specified' }} · {{ row.status }}</p></td>
-              <td class="min-w-[230px] px-4 py-4"><select v-model="drafts[row.jobId].ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" @change="onRecruiterChange(row.jobId)"><option value="">Unallocated</option><option v-for="person in data?.members ?? []" :key="person.userId" :value="person.userId">{{ person.name }} — {{ person.role }}</option></select></td>
-              <td class="px-4 py-4 whitespace-nowrap"><template v-if="drafts[row.jobId]?.ownerUserId"><span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-xs font-semibold text-[#1F6FA3]">{{ workloadFor(drafts[row.jobId].ownerUserId) }} open</span></template><span v-else class="text-xs text-surface-400">—</span></td>
-              <td class="min-w-[165px] px-4 py-4"><div class="relative"><CalendarDays class="pointer-events-none absolute left-3 top-2.5 size-4 text-surface-400" /><input v-model="drafts[row.jobId].assignmentDate" type="date" :disabled="!drafts[row.jobId].ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white py-2 pl-9 pr-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800 dark:disabled:bg-surface-900" @change="onAssignmentDateChange(row.jobId)" /></div></td>
-              <td class="min-w-[165px] px-4 py-4"><input v-model="drafts[row.jobId].targetClosureDate" type="date" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></td>
+              <td class="min-w-[230px] px-4 py-4"><select v-model="row.draft.ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" @change="onRecruiterChange(row)"><option value="">Unallocated</option><option v-for="person in data?.members ?? []" :key="person.userId" :value="person.userId">{{ person.name }} — {{ person.role }}</option></select></td>
+              <td class="px-4 py-4 whitespace-nowrap"><template v-if="row.draft.ownerUserId"><span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-xs font-semibold text-[#1F6FA3]">{{ workloadFor(row.draft.ownerUserId) }} open</span></template><span v-else class="text-xs text-surface-400">—</span></td>
+              <td class="min-w-[165px] px-4 py-4"><div class="relative"><CalendarDays class="pointer-events-none absolute left-3 top-2.5 size-4 text-surface-400" /><input v-model="row.draft.assignmentDate" type="date" :disabled="!row.draft.ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white py-2 pl-9 pr-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800 dark:disabled:bg-surface-900" @change="onAssignmentDateChange(row)" /></div></td>
+              <td class="min-w-[165px] px-4 py-4"><input v-model="row.draft.targetClosureDate" type="date" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></td>
               <td class="px-4 py-4 text-right"><button :disabled="savingJobId === row.jobId" class="inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" @click="save(row)"><Loader2 v-if="savingJobId === row.jobId" class="size-3.5 animate-spin" />Save</button></td>
             </tr>
             <tr v-if="!rows.length"><td colspan="6" class="px-4 py-12 text-center text-sm text-surface-400">No matching requirements.</td></tr>
