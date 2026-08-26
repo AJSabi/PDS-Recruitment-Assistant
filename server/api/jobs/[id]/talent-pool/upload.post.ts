@@ -215,37 +215,36 @@ export default defineEventHandler(async (event) => {
         where: and(eq(talentPoolMatch.organizationId, orgId), eq(talentPoolMatch.jobId, jobId), eq(talentPoolMatch.candidateId, candidateRecord.id)),
       })
 
-      if (ranking.score >= FINAL_POOL_THRESHOLD) {
-        const now = new Date()
-        const values = {
-          organizationId: orgId,
-          jobId,
-          candidateId: candidateRecord.id,
-          resumeDocumentId: createdDocument.id,
-          requirementVersion: requirementState.revision,
-          mandatoryScore: generated.mandatoryScore,
-          preferredScore: generated.preferredScore,
-          experienceScore: generated.experienceScore,
-          optionalScore: generated.optionalScore,
-          score: ranking.score,
-          priority: ranking.priority,
-          mandatoryMatch: generated.mandatoryMatch,
-          keyStrength: generated.keyStrength,
-          mainGap: generated.mainGap,
-          candidateSnapshot: generated.candidateSnapshot,
-          jdAlignment: generated.jdAlignment,
-          skillAssessment: generated.skillAssessment,
-          keyGaps: generated.keyGaps,
-          verificationAreas: generated.verificationAreas,
-          source: 'jd_upload' as const,
-          assessedAt: now,
-          updatedAt: now,
-        }
-        if (existingMatch) await db.update(talentPoolMatch).set(values).where(eq(talentPoolMatch.id, existingMatch.id))
-        else await db.insert(talentPoolMatch).values(values)
-      } else if (existingMatch) {
-        await db.delete(talentPoolMatch).where(eq(talentPoolMatch.id, existingMatch.id))
+      // Persist every completed AI assessment, including scores below 50%.
+      // The pool listing filters at 50%, so below-threshold rows remain hidden
+      // while preventing the same resume + requirement revision from being paid for again.
+      const now = new Date()
+      const values = {
+        organizationId: orgId,
+        jobId,
+        candidateId: candidateRecord.id,
+        resumeDocumentId: createdDocument.id,
+        requirementVersion: requirementState.revision,
+        mandatoryScore: generated.mandatoryScore,
+        preferredScore: generated.preferredScore,
+        experienceScore: generated.experienceScore,
+        optionalScore: generated.optionalScore,
+        score: ranking.score,
+        priority: ranking.priority,
+        mandatoryMatch: generated.mandatoryMatch,
+        keyStrength: generated.keyStrength,
+        mainGap: generated.mainGap,
+        candidateSnapshot: generated.candidateSnapshot,
+        jdAlignment: generated.jdAlignment,
+        skillAssessment: generated.skillAssessment,
+        keyGaps: generated.keyGaps,
+        verificationAreas: generated.verificationAreas,
+        source: 'jd_upload' as const,
+        assessedAt: now,
+        updatedAt: now,
       }
+      if (existingMatch) await db.update(talentPoolMatch).set(values).where(eq(talentPoolMatch.id, existingMatch.id))
+      else await db.insert(talentPoolMatch).values(values)
 
       results.push({
         filename,
