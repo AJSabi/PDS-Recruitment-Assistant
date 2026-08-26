@@ -19,6 +19,14 @@ export async function getRequirementVisibility(orgId: string, userId: string) {
   return { role, canSeeAll, userId }
 }
 
+export async function assertRecruitmentAdmin(orgId: string, userId: string) {
+  const visibility = await getRequirementVisibility(orgId, userId)
+  if (!visibility.canSeeAll) {
+    throw createError({ statusCode: 403, statusMessage: 'Only recruitment administrators can perform this action.' })
+  }
+  return visibility
+}
+
 export async function getVisibleRequirementIds(orgId: string, userId: string) {
   const visibility = await getRequirementVisibility(orgId, userId)
   if (visibility.canSeeAll) return null
@@ -49,11 +57,6 @@ export async function canAccessRequirement(orgId: string, userId: string, jobId:
   return Boolean(allocation)
 }
 
-/**
- * Use inside every requirement-specific API after authentication.
- * Returns 404 rather than 403 so recruiters cannot probe the existence of
- * requirements allocated to other recruiters.
- */
 export async function assertRequirementAccess(orgId: string, userId: string, jobId: string) {
   const allowed = await canAccessRequirement(orgId, userId, jobId)
   if (!allowed) {
@@ -61,10 +64,6 @@ export async function assertRequirementAccess(orgId: string, userId: string, job
   }
 }
 
-/**
- * Resolve an application to its requirement and apply the same allocation rule.
- * This protects legacy application routes that do not carry a jobId in the URL.
- */
 export async function assertApplicationAccess(orgId: string, userId: string, applicationId: string) {
   const row = await db.query.application.findFirst({
     where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
@@ -79,11 +78,6 @@ export async function assertApplicationAccess(orgId: string, userId: string, app
   return row
 }
 
-/**
- * Resolve a legacy interview to its application and therefore to its allocated
- * requirement. PDS V1 keeps interviews external, but old Reqcore endpoints are
- * retained for compatibility and must not bypass recruiter visibility.
- */
 export async function assertInterviewAccess(orgId: string, userId: string, interviewId: string) {
   const row = await db.query.interview.findFirst({
     where: and(eq(interview.id, interviewId), eq(interview.organizationId, orgId)),
