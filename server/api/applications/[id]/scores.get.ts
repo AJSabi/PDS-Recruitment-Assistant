@@ -1,5 +1,5 @@
 import { eq, and, desc } from 'drizzle-orm'
-import { criterionScore, analysisRun, scoringCriterion } from '../../../database/schema'
+import { application, criterionScore, analysisRun, scoringCriterion } from '../../../database/schema'
 import { assertApplicationAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -10,6 +10,11 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
+
+  const applicationScore = await db.query.application.findFirst({
+    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
+    columns: { score: true },
+  })
 
   const rawScores = await db.select({
     criterionKey: criterionScore.criterionKey,
@@ -42,5 +47,5 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(analysisRun.createdAt))
     .limit(1)
 
-  return { compositeScore: null, scores: rawScores, latestRun: latestRun ?? null }
+  return { compositeScore: applicationScore?.score ?? null, scores: rawScores, latestRun: latestRun ?? null }
 })
