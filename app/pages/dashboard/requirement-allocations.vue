@@ -42,7 +42,8 @@ function plus60(value: string) {
   return toInputDate(d)
 }
 
-const drafts = reactive<Record<string, { ownerUserId: string; assignmentDate: string; targetClosureDate: string }>>({})
+type AllocationDraft = { ownerUserId: string; assignmentDate: string; targetClosureDate: string }
+const drafts = reactive<any>({}) as Record<string, AllocationDraft>
 
 watch(data, (value: any) => {
   for (const row of value?.requirements ?? []) {
@@ -56,12 +57,21 @@ watch(data, (value: any) => {
   }
 }, { immediate: true })
 
+function reload() {
+  void refresh()
+}
+
+function workloadFor(userId?: string) {
+  if (!userId) return 0
+  const members = (data.value?.members ?? []) as any[]
+  return Number(members.find(person => person.userId === userId)?.openRequirements ?? 0)
+}
+
 function onRecruiterChange(jobId: string) {
   const draft = drafts[jobId]
   if (!draft) return
   if (!draft.ownerUserId) {
     draft.assignmentDate = ''
-    draft.targetClosureDate = ''
     return
   }
   if (!draft.assignmentDate) draft.assignmentDate = toInputDate(new Date())
@@ -89,9 +99,11 @@ async function save(row: any) {
     })
     await refresh()
     toast.success(draft.ownerUserId ? 'Requirement allocation updated' : 'Requirement unallocated')
-  } catch (err: any) {
+  }
+  catch (err: any) {
     toast.error('Could not update allocation', { message: err?.data?.statusMessage ?? err?.message })
-  } finally {
+  }
+  finally {
     savingJobId.value = null
   }
 }
@@ -106,7 +118,7 @@ async function save(row: any) {
         <h1 class="mt-1 text-2xl font-bold text-[#102A43] dark:text-white">Requirement Allocation</h1>
         <p class="mt-1 text-sm text-surface-500">Assign or reassign requirements after reviewing each recruiter's current open workload.</p>
       </div>
-      <button class="inline-flex items-center gap-2 rounded-xl border border-surface-300 bg-white px-4 py-2 text-sm font-semibold text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200" @click="refresh"><RefreshCw class="size-4" />Refresh</button>
+      <button class="inline-flex items-center gap-2 rounded-xl border border-surface-300 bg-white px-4 py-2 text-sm font-semibold text-surface-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200" @click="reload"><RefreshCw class="size-4" />Refresh</button>
     </div>
 
     <div v-if="status === 'pending'" class="flex min-h-[45vh] items-center justify-center"><Loader2 class="size-7 animate-spin text-[#2E86C1]" /></div>
@@ -136,9 +148,9 @@ async function save(row: any) {
             <tr v-for="row in rows" :key="row.jobId" class="align-top">
               <td class="min-w-[240px] px-4 py-4"><NuxtLink :to="localePath(`/dashboard/jobs/${row.jobId}`)" class="font-semibold text-[#102A43] no-underline hover:text-[#1F6FA3] hover:underline dark:text-white">{{ row.title }}</NuxtLink><p class="mt-1 text-xs text-surface-400">{{ row.location || 'Location not specified' }} · {{ row.status }}</p></td>
               <td class="min-w-[230px] px-4 py-4"><select v-model="drafts[row.jobId].ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" @change="onRecruiterChange(row.jobId)"><option value="">Unallocated</option><option v-for="person in data?.members ?? []" :key="person.userId" :value="person.userId">{{ person.name }} — {{ person.role }}</option></select></td>
-              <td class="px-4 py-4 whitespace-nowrap"><template v-if="drafts[row.jobId]?.ownerUserId"><span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-xs font-semibold text-[#1F6FA3]">{{ data?.members?.find((p: any) => p.userId === drafts[row.jobId].ownerUserId)?.openRequirements ?? 0 }} open</span></template><span v-else class="text-xs text-surface-400">—</span></td>
+              <td class="px-4 py-4 whitespace-nowrap"><template v-if="drafts[row.jobId]?.ownerUserId"><span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-xs font-semibold text-[#1F6FA3]">{{ workloadFor(drafts[row.jobId].ownerUserId) }} open</span></template><span v-else class="text-xs text-surface-400">—</span></td>
               <td class="min-w-[165px] px-4 py-4"><div class="relative"><CalendarDays class="pointer-events-none absolute left-3 top-2.5 size-4 text-surface-400" /><input v-model="drafts[row.jobId].assignmentDate" type="date" :disabled="!drafts[row.jobId].ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white py-2 pl-9 pr-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800 dark:disabled:bg-surface-900" @change="onAssignmentDateChange(row.jobId)" /></div></td>
-              <td class="min-w-[165px] px-4 py-4"><input v-model="drafts[row.jobId].targetClosureDate" type="date" :disabled="!drafts[row.jobId].ownerUserId" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800 dark:disabled:bg-surface-900" /></td>
+              <td class="min-w-[165px] px-4 py-4"><input v-model="drafts[row.jobId].targetClosureDate" type="date" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" /></td>
               <td class="px-4 py-4 text-right"><button :disabled="savingJobId === row.jobId" class="inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50" @click="save(row)"><Loader2 v-if="savingJobId === row.jobId" class="size-3.5 animate-spin" />Save</button></td>
             </tr>
             <tr v-if="!rows.length"><td colspan="6" class="px-4 py-12 text-center text-sm text-surface-400">No matching requirements.</td></tr>
@@ -146,7 +158,7 @@ async function save(row: any) {
         </table>
       </section>
 
-      <p class="text-xs text-surface-400">Target Closure defaults to Assignment Date + 60 days. Changing the Assignment Date recalculates the target, after which the target can be adjusted manually if required.</p>
+      <p class="text-xs text-surface-400">When no target exists, allocation defaults Target Closure to Assignment Date + 60 days. An existing target is preserved during allocation or temporary unallocation unless an administrator changes it.</p>
     </template>
   </div>
 </template>
