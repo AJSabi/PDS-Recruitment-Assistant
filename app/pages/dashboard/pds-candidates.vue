@@ -11,6 +11,8 @@ const { data, status, refresh } = useFetch('/api/pds/candidate-database', {
   headers: useRequestHeaders(['cookie']),
 })
 
+function reload() { void refresh() }
+
 function label(value?: string | null) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
@@ -42,7 +44,7 @@ const filtered = computed<any[]>(() => {
         <h1 class="mt-1 text-2xl font-bold">Candidate Database</h1>
         <p class="mt-1 max-w-3xl text-sm text-surface-500">Organisation-wide candidate records across all requirements. Recruitment summaries remain requirement-specific and do not imply that a candidate is active in every role.</p>
       </div>
-      <button class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="refresh"><RefreshCw class="size-4" />Refresh</button>
+      <button class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="reload"><RefreshCw class="size-4" />Refresh</button>
     </header>
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading candidate database…</div>
