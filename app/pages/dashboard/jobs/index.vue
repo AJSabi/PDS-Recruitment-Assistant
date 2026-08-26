@@ -28,6 +28,8 @@ const canManage = computed(() => Boolean(scope.value?.canManageRequirements))
 const search = ref('')
 const statusFilter = ref<'all' | 'open' | 'draft' | 'closed'>('all')
 
+function reload() { void refresh() }
+
 function activeCandidates(pipeline: any) {
   return (pipeline?.new ?? 0) + (pipeline?.screening ?? 0) + (pipeline?.interview ?? 0) + (pipeline?.offer ?? 0)
 }
@@ -115,7 +117,7 @@ const statusClasses: Record<string, string> = {
       </div>
 
       <div v-if="fetchStatus === 'pending'" class="flex items-center justify-center py-16 text-surface-400"><Loader2 class="mr-2 size-5 animate-spin" />Loading requirements…</div>
-      <div v-else-if="error" class="p-6 text-center"><AlertTriangle class="mx-auto size-6 text-danger-500" /><p class="mt-2 text-sm text-danger-600">Requirements could not be loaded.</p><button class="mt-3 text-sm font-semibold text-[#1F6FA3]" @click="refresh">Retry</button></div>
+      <div v-else-if="error" class="p-6 text-center"><AlertTriangle class="mx-auto size-6 text-danger-500" /><p class="mt-2 text-sm text-danger-600">Requirements could not be loaded.</p><button class="mt-3 text-sm font-semibold text-[#1F6FA3]" @click="reload">Retry</button></div>
 
       <div v-else-if="filteredJobs.length" class="divide-y divide-surface-100 dark:divide-surface-800">
         <NuxtLink v-for="item in filteredJobs" :key="item.id" :to="localePath(`/dashboard/jobs/${item.id}`)" class="group grid gap-4 px-5 py-5 no-underline transition hover:bg-[#F7FBFE] lg:grid-cols-[1.2fr_.8fr_auto] lg:items-center dark:hover:bg-surface-800/40">
