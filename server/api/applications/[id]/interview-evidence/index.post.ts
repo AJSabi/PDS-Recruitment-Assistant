@@ -15,6 +15,14 @@ const allowedInterviewStatuses = new Set([
   'hr_round_completed',
   'reassess',
 ])
+const expectedInterviewTypeByStatus: Record<string, 'hiring_manager' | 'hod' | 'hr'> = {
+  hiring_manager_round_pending: 'hiring_manager',
+  hiring_manager_round_completed: 'hiring_manager',
+  hod_round_pending: 'hod',
+  hod_round_completed: 'hod',
+  hr_round_pending: 'hr',
+  hr_round_completed: 'hr',
+}
 const recommendationLabels: Record<string, string> = {
   proceed: 'Proceed',
   hold: 'Hold for Comparison',
@@ -42,6 +50,11 @@ export default defineEventHandler(async (event) => {
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
   if (!allowedInterviewStatuses.has(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: `Interview evidence cannot be recorded while candidate status is ${profile.lastStatus}.` })
+
+  const expectedInterviewType = expectedInterviewTypeByStatus[profile.lastStatus]
+  if (expectedInterviewType && body.interviewType !== expectedInterviewType) {
+    throw createError({ statusCode: 422, statusMessage: `Interview evidence must match the current recruitment round: ${expectedInterviewType}.` })
+  }
 
   const requirementState = await db.query.recruitmentRequirementState.findFirst({
     where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)),
