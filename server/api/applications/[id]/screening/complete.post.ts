@@ -58,6 +58,7 @@ export default defineEventHandler(async (event) => {
     conversationBrief: body.conversationBrief ?? profile.conversationBrief,
     nextAction: nextActionLabels[body.recommendedNextStep] ?? body.recommendedNextStep,
     assessmentLocked: true,
+    aiSummaryStale: true,
     requirementVersionAssessed: requirementRevision,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
