@@ -4,6 +4,7 @@ import { loadAiConfig } from '../../../../../utils/ai/loadConfig'
 import { generateSkillMatrixFromDescription } from '../../../../../utils/ai/skillMatrix'
 import type { SupportedProvider } from '../../../../../utils/ai/provider'
 import { createRateLimiter } from '../../../../../utils/rateLimit'
+import { assertRequirementAccess } from '../../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -14,12 +15,13 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
 
   const jobRecord = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
     columns: { id: true, title: true, description: true },
   })
-  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found in the active organization.' })
+  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   if (!jobRecord.description) throw createError({ statusCode: 422, statusMessage: 'Active JD is required before AI Skill Matrix generation.' })
 
   const config = await loadAiConfig(orgId, { purpose: 'analysis' })
