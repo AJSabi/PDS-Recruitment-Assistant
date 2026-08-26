@@ -4,7 +4,7 @@
  * requirements or only the requirements allocated to them.
  */
 export function useDashboard() {
-  const { data, status: fetchStatus, error, refresh } = useFetch('/api/dashboard/stats', {
+  const { data, status: fetchStatus, error, refresh: refreshData } = useFetch('/api/dashboard/stats', {
     key: 'dashboard-stats',
     headers: useRequestHeaders(['cookie']),
   })
@@ -40,6 +40,7 @@ export function useDashboard() {
     actionPending: 0,
   })
   const scope = computed(() => data.value?.scope ?? { role: 'member', allocatedOnly: true })
+  const refresh = () => refreshData()
 
   return {
     counts,
