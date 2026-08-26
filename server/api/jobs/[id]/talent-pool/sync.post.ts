@@ -11,6 +11,7 @@ import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsResumeAssessment } from '../../../../utils/ai/pdsResumeAssessment'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
 import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
+import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import { extractResumeText } from '../../../../utils/resume-parser'
 import { createRateLimiter } from '../../../../utils/rateLimit'
 import { z } from 'zod'
@@ -55,6 +56,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'], scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
 
   const [jobRecord, matrixRecord, requirementState] = await Promise.all([
     db.query.job.findFirst({
@@ -69,7 +71,7 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
-  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Job not found' })
+  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   if (!jobRecord.description) throw createError({ statusCode: 422, statusMessage: 'Save the Active JD before syncing the AI Candidate Pool.' })
   if (!matrixRecord?.approvedMatrix || !requirementState?.skillMatrixApproved) {
     throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before syncing the AI Candidate Pool.' })
