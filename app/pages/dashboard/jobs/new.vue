@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ArrowLeft, Briefcase, FileText, Loader2, UploadCloud } from 'lucide-vue-next'
+import { ArrowLeft, BriefcaseBusiness, CheckCircle2, FileText, Loader2, Sparkles, UploadCloud } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
-useSeoMeta({ title: 'New Requirement', description: 'Create a recruitment requirement from a JD' })
+useSeoMeta({ title: 'New Requirement', description: 'Create a PDS recruitment requirement from a JD' })
 
 const localePath = useLocalePath()
 const { createJob } = useJobs()
@@ -26,6 +26,11 @@ const uploadedJdName = ref('')
 const profileExtracted = ref(false)
 const parsingJd = ref(false)
 const creating = ref(false)
+
+const hasJd = computed(() => Boolean(form.description.trim()))
+const hasCoreProfile = computed(() => Boolean(form.title.trim()) && Number.isInteger(form.openings) && form.openings > 0)
+const setupReady = computed(() => hasJd.value && hasCoreProfile.value)
+const majorRequirementCount = computed(() => lines(form.majorRequirements).length)
 
 function lines(value: string) {
   return value.split('\n').map(item => item.trim()).filter(Boolean).slice(0, 20)
@@ -52,7 +57,8 @@ async function parseJdWithRetry(file: File) {
       const body = new FormData()
       body.append('file', file)
       return await $fetch('/api/jobs/jd/parse', { method: 'POST', body })
-    } catch (err: any) {
+    }
+    catch (err: any) {
       lastError = err
       if (!isNetworkFailure(err) || attempt === maxAttempts) throw err
       await wait(attempt * 700)
@@ -93,12 +99,14 @@ async function parseJdFile(event: Event) {
     applyRequirementProfile(result.requirementProfile)
     toast.success('JD extracted', {
       message: result.requirementProfile
-        ? 'JD and Requirement Profile were extracted. Review the populated fields before continuing.'
-        : 'JD text was extracted. Review the fields before continuing.',
+        ? 'AI extracted the JD and Requirement Profile. Review the highlighted details before creating the requirement.'
+        : 'JD text was extracted. Complete the Requirement Profile before continuing.',
     })
-  } catch (err: any) {
+  }
+  catch (err: any) {
     toast.error('Could not read JD', { message: err?.data?.statusMessage ?? err?.message ?? 'Upload a readable PDF, DOC or DOCX file.' })
-  } finally {
+  }
+  finally {
     parsingJd.value = false
     input.value = ''
   }
@@ -106,7 +114,7 @@ async function parseJdFile(event: Event) {
 
 async function createRequirement() {
   if (!form.title.trim()) return toast.warning('Job title required', 'Enter the role title before creating the requirement.')
-  if (!form.description.trim()) return toast.warning('JD required', 'Upload a JD or paste the JD before continuing.')
+  if (!form.description.trim()) return toast.warning('JD required', 'Upload, paste or write the JD before continuing.')
   if (!Number.isInteger(form.openings) || form.openings < 1) return toast.warning('Openings required', 'Openings must be at least 1.')
 
   creating.value = true
@@ -135,67 +143,102 @@ async function createRequirement() {
         experienceRequirement: form.experienceRequirement.trim() || null,
         openings: form.openings,
         majorRequirements: lines(form.majorRequirements),
-        assignmentDate: new Date().toISOString(),
         targetClosureDate: dateToIso(form.closureDate),
       },
     })
 
-    toast.success('Requirement created', { message: 'The JD is active. AI Skill Matrix analysis will continue on the next screen.' })
+    toast.success('Requirement created', { message: 'Review the AI Skill Matrix next. Recruiter allocation remains separate in Allocation Management.' })
     await navigateTo(localePath(`/dashboard/jobs/${created.id}/ai-analysis`))
-  } catch (err: any) {
+  }
+  catch (err: any) {
     toast.error('Could not create requirement', { message: err?.data?.statusMessage ?? err?.message ?? 'Please try again.' })
-  } finally { creating.value = false }
+  }
+  finally { creating.value = false }
 }
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-    <div class="mb-5"><NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex items-center gap-1.5 text-sm font-medium text-surface-500 hover:text-surface-800 dark:text-surface-400 dark:hover:text-surface-100"><ArrowLeft class="size-4" /> Jobs</NuxtLink></div>
+  <div class="mx-auto w-full max-w-6xl space-y-6">
+    <NuxtLink :to="localePath('/dashboard/jobs')" class="inline-flex items-center gap-1.5 text-sm font-semibold text-surface-500 no-underline hover:text-brand-700 dark:text-surface-400">
+      <ArrowLeft class="size-4" />All Requirements
+    </NuxtLink>
 
-    <div class="mb-6">
-      <div class="flex items-center gap-2"><Briefcase class="size-5 text-brand-600" /><h1 class="text-xl font-semibold text-surface-900 dark:text-surface-100">New Recruitment Requirement</h1></div>
-      <p class="mt-1 text-sm text-surface-500">Upload the JD first where available. PDS Recruitment Assistant will extract the Requirement Profile for your review.</p>
-    </div>
+    <section class="overflow-hidden rounded-3xl bg-[#102A43] text-white shadow-sm">
+      <div class="px-6 py-7 sm:px-8">
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-[#9FD3F2]">Requirement Setup</p>
+        <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 class="text-3xl font-bold tracking-tight">Create New Requirement</h1>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Start with the JD. PDS Recruitment Assistant can extract the Requirement Profile, after which you review the details and move directly to the AI Skill Matrix.</p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
+            <p class="text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]">Requirement Status</p>
+            <p class="mt-1 font-semibold">Unallocated until assigned</p>
+          </div>
+        </div>
 
-    <form class="space-y-6 rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900 sm:p-6" @submit.prevent="createRequirement">
-      <section class="rounded-xl border border-brand-100 bg-brand-50/40 p-4 dark:border-brand-900 dark:bg-brand-950/20">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 class="text-sm font-semibold">Start with the Job Description</h2><p class="mt-1 text-xs text-surface-500">PDF, DOC or DOCX. The JD and available requirement details will be extracted automatically.</p></div>
+        <div class="mt-6 grid gap-2 sm:grid-cols-4">
+          <div class="rounded-xl border border-white/10 bg-white/10 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]">1. Job Description</p><p class="mt-1 text-sm font-semibold">{{ hasJd ? 'Ready' : 'Required' }}</p></div>
+          <div class="rounded-xl border border-white/10 bg-white/10 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]">2. Requirement Profile</p><p class="mt-1 text-sm font-semibold">{{ hasCoreProfile ? 'Ready to review' : 'Complete details' }}</p></div>
+          <div class="rounded-xl border border-white/10 bg-white/5 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]">3. Skill Matrix</p><p class="mt-1 text-sm font-semibold text-[#D5E6F3]">Next screen</p></div>
+          <div class="rounded-xl border border-white/10 bg-white/5 p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]">4. Allocation</p><p class="mt-1 text-sm font-semibold text-[#D5E6F3]">Managed separately</p></div>
+        </div>
+      </div>
+    </section>
+
+    <form class="space-y-6" @submit.prevent="createRequirement">
+      <section class="rounded-2xl border border-[#CFE0ED] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900 sm:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="flex gap-3">
+            <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#EAF4FB] text-[#1F6FA3]"><FileText class="size-5" /></div>
+            <div><p class="text-xs font-bold uppercase tracking-wide text-[#2E86C1]">Step 1</p><h2 class="mt-1 text-lg font-bold text-[#102A43] dark:text-white">Job Description</h2><p class="mt-1 text-sm text-surface-500">Upload a JD for automatic extraction, or paste/write the complete JD below.</p></div>
+          </div>
           <div>
             <input id="pds-jd-upload" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" :disabled="parsingJd" @change="parseJdFile" />
-            <label for="pds-jd-upload" :class="['inline-flex cursor-pointer items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-700 dark:text-brand-300', parsingJd ? 'pointer-events-none opacity-50' : '']">
+            <label for="pds-jd-upload" :class="['inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#9EC8E2] bg-[#F5FAFD] px-4 py-2.5 text-sm font-bold text-[#1F6FA3] hover:bg-[#EAF4FB] dark:border-brand-800 dark:bg-brand-950/20 dark:text-brand-300', parsingJd ? 'pointer-events-none opacity-50' : '']">
               <Loader2 v-if="parsingJd" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ parsingJd ? 'Reading JD…' : 'Upload JD' }}
             </label>
           </div>
         </div>
-        <div v-if="uploadedJdName" class="mt-3 flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-700 dark:bg-success-950/30 dark:text-success-300"><FileText class="size-4" />{{ uploadedJdName }} extracted successfully.<span v-if="profileExtracted">Requirement Profile populated below.</span></div>
-      </section>
 
-      <section class="space-y-4">
-        <div><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Requirement Profile</h2><p class="mt-1 text-xs text-surface-500">Review AI-extracted details. Correct anything required. Fields not present in the JD remain editable.</p></div>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Job Title <span class="text-danger-500">*</span></span><input v-model="form.title" maxlength="200" placeholder="e.g. Account Manager - Enterprise" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Function</span><input v-model="form.functionName" maxlength="300" placeholder="e.g. Sales" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Hiring Manager</span><input v-model="form.hiringManager" maxlength="300" placeholder="Name / designation" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Location</span><input v-model="form.location" maxlength="500" placeholder="e.g. Hyderabad" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Experience Requirement</span><input v-model="form.experienceRequirement" maxlength="500" placeholder="e.g. 10-15 years" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Seniority</span><select v-model="form.experienceLevel" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900"><option value="junior">Junior</option><option value="mid">Mid-level</option><option value="senior">Senior</option><option value="lead">Lead / Leadership</option></select></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Openings</span><input v-model.number="form.openings" type="number" min="1" max="500" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Closure Date</span><input v-model="form.closureDate" type="date" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /><span class="mt-1 block text-xs text-surface-500">If blank, target closure defaults to 60 days from assignment.</span></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Employment Type</span><select v-model="form.type" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900"><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="internship">Internship</option></select></label>
-          <label class="block"><span class="mb-1.5 block text-sm font-medium">Major Requirements</span><textarea v-model="form.majorRequirements" rows="4" maxlength="5000" placeholder="One major requirement per line" class="w-full rounded-lg border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-900" /></label>
+        <div v-if="uploadedJdName" class="mt-4 flex items-start gap-2 rounded-xl border border-[#B8E2DE] bg-[#F1FAF9] px-4 py-3 text-sm text-[#13756F] dark:border-surface-700 dark:bg-surface-800">
+          <CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-semibold">{{ uploadedJdName }} extracted</p><p class="mt-0.5 text-xs">{{ profileExtracted ? 'AI populated the Requirement Profile below. Review every field before continuing.' : 'JD text is ready. Complete the Requirement Profile below.' }}</p></div>
         </div>
+
+        <textarea v-model="form.description" rows="14" maxlength="100000" placeholder="Upload, paste or write the complete Job Description here..." class="mt-5 w-full rounded-xl border border-surface-300 bg-white px-4 py-3 text-sm leading-6 outline-none focus:border-[#2E86C1] focus:ring-2 focus:ring-[#2E86C1]/10 dark:border-surface-700 dark:bg-surface-950" />
+        <div class="mt-2 flex justify-between text-xs text-surface-400"><span>Only the active JD will be used for AI Skill Matrix generation.</span><span>{{ form.description.length.toLocaleString() }} characters</span></div>
       </section>
 
-      <section class="border-t border-surface-200 pt-5 dark:border-surface-800">
-        <div class="mb-2"><label class="block text-sm font-medium">Active Job Description <span class="text-danger-500">*</span></label><p class="mt-0.5 text-xs text-surface-500">Extracted JD text remains editable. You may also paste/write a JD when no file is available.</p></div>
-        <textarea v-model="form.description" rows="16" maxlength="100000" placeholder="Upload, paste or write the complete JD here..." class="w-full rounded-lg border border-surface-300 bg-white px-4 py-3 text-sm leading-6 dark:border-surface-700 dark:bg-surface-900" />
+      <section class="rounded-2xl border border-[#D7E9E7] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900 sm:p-6">
+        <div class="mb-5 flex items-start gap-3">
+          <div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E9F8F6] text-[#16847F]"><BriefcaseBusiness class="size-5" /></div>
+          <div><p class="text-xs font-bold uppercase tracking-wide text-[#16847F]">Step 2</p><h2 class="mt-1 text-lg font-bold text-[#102A43] dark:text-white">Requirement Profile</h2><p class="mt-1 text-sm text-surface-500">Review AI-extracted information and add any business context that was not stated in the JD.</p></div>
+        </div>
+
+        <div v-if="profileExtracted" class="mb-5 rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] px-4 py-3 text-xs text-[#486581] dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300"><Sparkles class="mr-1 inline size-3.5 text-[#2E86C1]" />These fields were populated from the uploaded JD where evidence was available. Nothing is locked; recruiter review remains authoritative.</div>
+
+        <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <label class="block lg:col-span-2"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Job Title <span class="text-danger-500">*</span></span><input v-model="form.title" maxlength="200" placeholder="e.g. Account Manager - Enterprise" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Function</span><input v-model="form.functionName" maxlength="300" placeholder="e.g. Sales" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Hiring Manager</span><input v-model="form.hiringManager" maxlength="300" placeholder="Name / designation" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Location</span><input v-model="form.location" maxlength="500" placeholder="e.g. Hyderabad" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Employment Type</span><select v-model="form.type" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-950"><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="internship">Internship</option></select></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Experience Requirement</span><input v-model="form.experienceRequirement" maxlength="500" placeholder="e.g. 10-15 years" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Seniority</span><select v-model="form.experienceLevel" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-950"><option value="junior">Junior</option><option value="mid">Mid-level</option><option value="senior">Senior</option><option value="lead">Lead / Leadership</option></select></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Openings <span class="text-danger-500">*</span></span><input v-model.number="form.openings" type="number" min="1" max="500" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /></label>
+          <label class="block"><span class="mb-1.5 block text-sm font-semibold text-surface-700 dark:text-surface-200">Target Closure Date</span><input v-model="form.closureDate" type="date" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-2.5 text-sm dark:border-surface-700 dark:bg-surface-950" /><span class="mt-1 block text-xs text-surface-400">If blank, Allocation Management can set the target when a recruiter is assigned.</span></label>
+        </div>
+
+        <label class="mt-5 block"><span class="mb-1.5 flex items-center justify-between text-sm font-semibold text-surface-700 dark:text-surface-200"><span>Major Requirements</span><span class="text-xs font-normal text-surface-400">{{ majorRequirementCount }}/20</span></span><textarea v-model="form.majorRequirements" rows="6" maxlength="5000" placeholder="One major requirement per line\nExample: Complex enterprise sales cycles\nHigh-value closure ownership\nC-level customer relationships" class="w-full rounded-xl border border-surface-300 bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-brand-500 dark:border-surface-700 dark:bg-surface-950" /><span class="mt-1 block text-xs text-surface-400">These provide business context for later requirement assessment. The approved Skill Matrix remains the scoring authority.</span></label>
       </section>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-surface-200 pt-5 dark:border-surface-800">
-        <p class="text-xs text-surface-500">Next: AI prepares the Skill Matrix for recruiter review and approval.</p>
-        <button type="submit" :disabled="creating || parsingJd" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"><Loader2 v-if="creating" class="size-4 animate-spin" /><Briefcase v-else class="size-4" />{{ creating ? 'Creating…' : 'Create Requirement & Analyse JD' }}</button>
-      </div>
+      <section class="sticky bottom-4 rounded-2xl border border-[#CFE0ED] bg-white/95 p-4 shadow-xl backdrop-blur dark:border-surface-700 dark:bg-surface-900/95 sm:flex sm:items-center sm:justify-between sm:gap-5">
+        <div>
+          <p class="text-sm font-bold text-[#102A43] dark:text-white">Next: Review AI Skill Matrix</p>
+          <p class="mt-1 text-xs text-surface-500">The new requirement stays unallocated until you assign a recruiter through Allocation Management.</p>
+        </div>
+        <button type="submit" :disabled="creating || parsingJd || !setupReady" class="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1F6FA3] px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#185D89] disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0 sm:w-auto"><Loader2 v-if="creating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ creating ? 'Creating Requirement…' : 'Create & Review Skill Matrix' }}</button>
+      </section>
     </form>
   </div>
 </template>
