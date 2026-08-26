@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { application } from '../../../database/schema/app'
 import { member } from '../../../database/schema/auth'
 import { recruitmentApplicationProfile, recruitmentEvidence } from '../../../database/schema/recruitmentWorkflow'
+import { assertApplicationAccess, assertRecruitmentAdmin } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -10,7 +11,10 @@ const bodySchema = z.object({ recruiterUserId: z.string().min(1).nullable() }).s
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
+
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, applicationId)
   const body = await readValidatedBody(event, bodySchema.parse)
 
   const app = await db.query.application.findFirst({
@@ -43,7 +47,7 @@ export default defineEventHandler(async (event) => {
     organizationId: orgId,
     applicationId,
     type: 'assignment_change',
-    summary: body.recruiterUserId ? 'Candidate recruiter assignment updated.' : 'Candidate recruiter assignment removed.',
+    summary: body.recruiterUserId ? 'Candidate recruiter assignment updated by recruitment administration.' : 'Candidate recruiter assignment removed by recruitment administration.',
     payload: { previousRecruiterId: profile.assignedRecruiterId ?? null, recruiterUserId: body.recruiterUserId },
     createdBy: session.user.id,
   })
