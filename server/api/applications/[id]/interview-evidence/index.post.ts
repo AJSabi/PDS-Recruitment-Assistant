@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { application, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
+import { recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
 import { interviewEvidenceSchema } from '../../../../utils/schemas/recruitmentStage'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
+import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -33,13 +34,8 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
   const body = await readValidatedBody(event, interviewEvidenceSchema.parse)
-
-  const app = await db.query.application.findFirst({
-    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
-    columns: { id: true, jobId: true },
-  })
-  if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const profile = await db.query.recruitmentApplicationProfile.findFirst({
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
@@ -87,18 +83,8 @@ export default defineEventHandler(async (event) => {
     updates.requirementVersionAssessed = requirementRevision
   }
 
-  const [updatedProfile] = await db.update(recruitmentApplicationProfile)
-    .set(updates)
-    .where(eq(recruitmentApplicationProfile.id, profile.id))
-    .returning()
-
+  const [updatedProfile] = await db.update(recruitmentApplicationProfile).set(updates).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
   if (body.updateCurrentFit && body.fit) await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
-  return {
-    evidence,
-    profile: updatedProfile,
-    recommendation: body.recommendation ?? null,
-    statusChanged: false,
-    requirementRevision,
-  }
+  return { evidence, profile: updatedProfile, recommendation: body.recommendation ?? null, statusChanged: false, requirementRevision }
 })
