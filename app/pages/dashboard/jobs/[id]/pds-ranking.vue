@@ -19,6 +19,7 @@ const { data: poolData, status: poolStatus, refresh: refreshPool } = useFetch(()
 const batchBusy = ref(false)
 const batchProgress = ref({ done: 0, total: 0 })
 const poolBusy = ref(false)
+const lastPoolSync = ref<any>(null)
 const uploadingResumes = ref(false)
 const promotingMatchId = ref<string | null>(null)
 const resumeInput = ref<HTMLInputElement | null>(null)
@@ -31,6 +32,7 @@ const summary = computed(() => ({
   notYetAssessed: rows.value.filter(row => row.currentFit === 'not_yet_assessed').length,
 }))
 const batchEligible = computed(() => rows.value.filter(row => row.selectedResume && !row.assessed && row.lastStatus === 'resume_received'))
+const deferredAiCount = computed(() => Number(lastPoolSync.value?.deferredForAiBudget ?? 0))
 
 function label(value?: string | null) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -44,8 +46,12 @@ async function syncTalentPool() {
   poolBusy.value = true
   try {
     const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/sync`, { method: 'POST' })
+    lastPoolSync.value = result
     await refreshPool()
-    const message = `${result.visibleMatches ?? 0} candidates at or above ${result.threshold ?? 50}% match.`
+    const deferredText = result.deferredForAiBudget
+      ? ` ${result.deferredForAiBudget} plausible resume${result.deferredForAiBudget === 1 ? '' : 's'} deferred to the next refresh to control AI usage.`
+      : ''
+    const message = `${result.visibleMatches ?? 0} candidates at or above ${result.threshold ?? 50}% match.${deferredText}`
     if (result.failures?.length) toast.warning('AI Candidate Pool updated with exceptions', `${message} ${result.failures.length} resumes need review.`)
     else toast.success('AI Candidate Pool updated', { message })
   } catch (err: any) {
@@ -140,6 +146,11 @@ async function analyzePendingWithAi() {
           <button :disabled="uploadingResumes || poolBusy" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="resumeInput?.click()"><Loader2 v-if="uploadingResumes" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ uploadingResumes ? 'Analysing Resume(s)…' : 'Add Resume(s)' }}</button>
           <button :disabled="poolBusy || uploadingResumes" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="syncTalentPool"><Loader2 v-if="poolBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ poolBusy ? 'Updating Candidate Pool…' : 'Refresh Database Matches' }}</button>
         </div>
+      </div>
+
+      <div v-if="deferredAiCount" class="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800 dark:border-warning-900 dark:bg-warning-950/30 dark:text-warning-200">
+        <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+        <div><p class="font-semibold">AI usage limit reached for this refresh</p><p class="mt-0.5 text-xs">{{ deferredAiCount }} plausible resume{{ deferredAiCount === 1 ? '' : 's' }} remain queued. Refresh Database Matches again when you want the next controlled batch analysed.</p></div>
       </div>
 
       <div v-if="poolStatus === 'pending'" class="py-8 text-center text-surface-400">Loading AI Candidate Pool…</div>
