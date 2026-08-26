@@ -8,6 +8,7 @@ import {
 } from '../../../../database/schema'
 import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -16,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, applicationId)
   const body = await readValidatedBody(event, confirmRecruitmentStageSchema.parse)
 
   const app = await db.query.application.findFirst({
@@ -42,7 +44,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Resume and recruiter-screening stages are evidence-driven and remain governed by their underlying actions.
   if (body.stage === 'resume_received' && !profile.selectedResumeDocumentId) {
     throw createError({
       statusCode: 422,
@@ -85,8 +86,6 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Hiring Manager, HOD and HR interviews happen externally in the current version.
-  // Their Pending/Completed stages are intentionally recruiter-controlled; structured interview evidence can be added later.
   const now = new Date()
   const [updated] = await db.update(recruitmentApplicationProfile).set({
     lastStatus: body.stage,
