@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { member, recruitmentRequirementState } from '../database/schema'
+import { application, member, recruitmentRequirementState } from '../database/schema'
 
 /**
  * PDS requirement visibility policy.
@@ -59,4 +59,22 @@ export async function assertRequirementAccess(orgId: string, userId: string, job
   if (!allowed) {
     throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   }
+}
+
+/**
+ * Resolve an application to its requirement and apply the same allocation rule.
+ * This protects legacy application routes that do not carry a jobId in the URL.
+ */
+export async function assertApplicationAccess(orgId: string, userId: string, applicationId: string) {
+  const row = await db.query.application.findFirst({
+    where: and(eq(application.id, applicationId), eq(application.organizationId, orgId)),
+    columns: { id: true, jobId: true },
+  })
+
+  if (!row) {
+    throw createError({ statusCode: 404, statusMessage: 'Application not found' })
+  }
+
+  await assertRequirementAccess(orgId, userId, row.jobId)
+  return row
 }
