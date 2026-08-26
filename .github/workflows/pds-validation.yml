@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      NODE_ENV: production
       DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
       BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
       BETTER_AUTH_URL: http://localhost:3000
@@ -29,10 +28,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Typecheck
         run: npm run typecheck
 
       - name: Production build
+        env:
+          NODE_ENV: production
         run: npm run build
