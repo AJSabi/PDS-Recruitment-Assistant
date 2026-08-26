@@ -77,7 +77,7 @@ async function generateAiMatrix(auto = false) {
     matrix.value = result.matrix
     approved.value = false
     dirty.value = true
-    toast.success(auto ? 'AI Skill Matrix prepared automatically' : 'AI Skill Matrix generated', { message: 'Review and edit the proposal before approval.' })
+    toast.success(auto ? 'AI Skill Matrix prepared automatically' : 'AI Skill Matrix generated', { message: 'Review and edit the JD-specific proposal before approval.' })
   } catch (err: any) {
     toast.error(auto ? 'Automatic AI Skill Matrix could not run' : 'AI Skill Matrix could not be generated', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isGenerating.value = false }
@@ -144,17 +144,15 @@ function normalizeIds() {
 function validate(approve: boolean): string | null {
   if (!approve) return null
   const count = matrix.value.classifications.length
-  if (count < 4 || count > 5) return 'An approved Skill Matrix must contain 4–5 classifications.'
+  if (count < 4 || count > 5) return 'An approved Skill Matrix must contain 4–5 role-relevant classifications.'
   let mandatory = 0
   for (const c of matrix.value.classifications) {
     if (!c.name.trim()) return 'Every classification needs a name.'
-    if (!c.skills.length) return `${c.name} needs at least one skill.`
+    if (!c.skills.length) return `${c.name} needs at least one assessable skill.`
     if (c.skills.some(s => !s.skill.trim())) return `A skill under ${c.name} is blank.`
-    const m = c.skills.filter(s => s.priority === 'mandatory').length
-    if (m < 2 || m > 3) return `${c.name} must contain 2–3 Mandatory skills before approval.`
-    mandatory += m
+    mandatory += c.skills.filter(s => s.priority === 'mandatory').length
   }
-  if (mandatory < 8 || mandatory > 12) return 'Use 8–12 Mandatory skills overall before approval.'
+  if (mandatory < 1) return 'Mark at least one genuinely role-critical criterion as Mandatory before approval.'
   return null
 }
 
@@ -217,21 +215,21 @@ async function persist(approve: boolean) {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div class="flex items-center gap-2"><Sparkles class="size-5 text-[#16847F]" /><h2 class="font-bold text-[#102A43] dark:text-white">2. AI Skill Matrix</h2></div>
-            <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes assessable evidence criteria. Recruiter review and explicit approval remain mandatory before candidates are matched.</p>
+            <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes JD-specific, assessable evidence criteria. Recruiter review and explicit approval remain mandatory before candidates are matched.</p>
           </div>
           <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><ShieldCheck class="size-3.5" />Approved</span>
           <span v-else class="rounded-full bg-[#FFF7E8] px-3 py-1 text-xs font-bold text-[#976511]">Review required</span>
         </div>
 
         <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Classifications</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ matrix.classifications.length }}</p><p class="text-xs text-surface-400">Target 4–5</p></div>
-          <div class="rounded-xl bg-[#EAF4FB] p-3 dark:bg-brand-950/20"><p class="text-[10px] font-bold uppercase tracking-wide text-[#1F6FA3]">Mandatory</p><p class="mt-1 text-2xl font-black text-[#1F6FA3]">{{ mandatoryCount }}</p><p class="text-xs text-[#6389A7]">Target 8–12 overall</p></div>
-          <div class="rounded-xl bg-[#F4FBFA] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-[#16847F]">Preferred</p><p class="mt-1 text-2xl font-black text-[#16847F]">{{ preferredCount }}</p><p class="text-xs text-surface-400">Supporting evidence</p></div>
-          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Optional</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ optionalCount }}</p><p class="text-xs text-surface-400">Additional evidence</p></div>
+          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Classifications</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ matrix.classifications.length }}</p><p class="text-xs text-surface-400">4–5 role dimensions</p></div>
+          <div class="rounded-xl bg-[#EAF4FB] p-3 dark:bg-brand-950/20"><p class="text-[10px] font-bold uppercase tracking-wide text-[#1F6FA3]">Mandatory</p><p class="mt-1 text-2xl font-black text-[#1F6FA3]">{{ mandatoryCount }}</p><p class="text-xs text-[#6389A7]">Only genuine hiring gates</p></div>
+          <div class="rounded-xl bg-[#F4FBFA] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-[#16847F]">Preferred</p><p class="mt-1 text-2xl font-black text-[#16847F]">{{ preferredCount }}</p><p class="text-xs text-surface-400">Important differentiators</p></div>
+          <div class="rounded-xl bg-[#F6F9FC] p-3 dark:bg-surface-800/60"><p class="text-[10px] font-bold uppercase tracking-wide text-surface-400">Optional</p><p class="mt-1 text-2xl font-black text-[#102A43] dark:text-white">{{ optionalCount }}</p><p class="text-xs text-surface-400">Genuine advantages only</p></div>
         </div>
 
         <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 dark:border-surface-700 dark:bg-surface-800/40">
-          <div><p class="text-sm font-bold text-[#102A43] dark:text-white">Generate from the saved JD</p><p class="mt-1 text-xs text-surface-500">Regeneration replaces the current draft. Manual Override is available only when needed.</p></div>
+          <div><p class="text-sm font-bold text-[#102A43] dark:text-white">Generate from the saved JD</p><p class="mt-1 text-xs text-surface-500">AI derives role-specific hiring evidence from this JD. Regeneration replaces the current draft; Manual Override remains available.</p></div>
           <div class="flex flex-wrap gap-2">
             <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="generateAiMatrix(false)"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
             <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:border-surface-700" @click="createManualMatrix"><WandSparkles class="size-4" />Manual Override</button>
@@ -248,7 +246,7 @@ async function persist(approve: boolean) {
 
       <section v-else class="space-y-4">
         <div class="flex flex-wrap items-end justify-between gap-3">
-          <div><h2 class="text-lg font-bold text-[#102A43] dark:text-white">3. Review classifications and evidence</h2><p class="mt-1 text-sm text-surface-500">Edit AI suggestions where necessary. Mandatory criteria should represent evidence the candidate must genuinely demonstrate.</p></div>
+          <div><h2 class="text-lg font-bold text-[#102A43] dark:text-white">3. Review classifications and evidence</h2><p class="mt-1 text-sm text-surface-500">Edit AI suggestions where necessary. Mandatory means a genuine hiring gate supported by the JD; there is no quota per classification.</p></div>
           <span class="text-xs text-surface-400">{{ totalSkills }} total skills</span>
         </div>
 
@@ -256,16 +254,16 @@ async function persist(approve: boolean) {
           <div class="flex flex-wrap items-center gap-3 border-b border-surface-100 bg-[#F8FBFD] px-5 py-4 dark:border-surface-800 dark:bg-surface-800/40">
             <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#102A43] text-xs font-black text-white">{{ ci + 1 }}</div>
             <input v-model="classification.name" class="min-w-[220px] flex-1 rounded-lg border border-surface-300 bg-white px-3 py-2 font-bold text-[#102A43] dark:border-surface-700 dark:bg-surface-900 dark:text-white" />
-            <span class="rounded-full px-2.5 py-1 text-xs font-bold" :class="classification.skills.filter(s => s.priority === 'mandatory').length >= 2 && classification.skills.filter(s => s.priority === 'mandatory').length <= 3 ? 'bg-[#E9F8F6] text-[#13756F]' : 'bg-warning-50 text-warning-700'">{{ classification.skills.filter(s => s.priority === 'mandatory').length }} Mandatory</span>
+            <span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-xs font-bold text-[#1F6FA3]">{{ classification.skills.filter(s => s.priority === 'mandatory').length }} Mandatory</span>
             <button type="button" class="rounded-lg p-2 text-surface-400 hover:bg-danger-50 hover:text-danger-600" title="Remove classification" @click="removeClassification(ci)"><Trash2 class="size-4" /></button>
           </div>
 
           <div class="space-y-3 p-5">
             <div v-for="(skill, si) in classification.skills" :key="skill.id" class="rounded-xl border border-surface-200 p-3 dark:border-surface-700">
               <div class="grid grid-cols-1 gap-2 md:grid-cols-[1.2fr_150px_1.8fr_36px] md:items-center">
-                <input v-model="skill.skill" placeholder="Skill / requirement" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm font-semibold dark:border-surface-700 dark:bg-surface-900" />
+                <input v-model="skill.skill" placeholder="Specific hiring criterion" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm font-semibold dark:border-surface-700 dark:bg-surface-900" />
                 <select v-model="skill.priority" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm font-semibold dark:border-surface-700 dark:bg-surface-900"><option value="mandatory">Mandatory</option><option value="preferred">Preferred</option><option value="optional">Optional</option></select>
-                <input v-model="skill.rationale" placeholder="Evidence expected / why it matters" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
+                <input v-model="skill.rationale" placeholder="Evidence expected: ownership, scale, outcome, domain…" class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" />
                 <button type="button" class="rounded-lg p-2 text-surface-400 hover:text-danger-500" title="Remove skill" @click="removeSkill(classification, si)"><Trash2 class="size-4" /></button>
               </div>
             </div>
@@ -279,7 +277,7 @@ async function persist(approve: boolean) {
       <section v-if="matrix.classifications.length" class="sticky bottom-4 z-10 rounded-2xl border border-[#CFE0ED] bg-white/95 p-4 shadow-xl backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div class="min-w-0">
-            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval will lock this evidence framework and immediately prepare the AI Candidate Pool.</p></div></div>
+            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval locks this JD-specific evidence framework before candidate matching.</p></div></div>
             <div v-else class="flex items-start gap-2 text-sm text-warning-700"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Review required before approval</p><p class="mt-0.5 text-xs text-surface-500">{{ jdDirty ? 'Save the Active JD before approving the matrix.' : (approvalError || 'Review the current AI proposal before approval.') }}</p></div></div>
           </div>
           <div class="flex shrink-0 flex-wrap gap-2">
