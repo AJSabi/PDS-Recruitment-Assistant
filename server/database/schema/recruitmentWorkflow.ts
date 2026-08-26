@@ -14,6 +14,10 @@ export type RequirementProfile = {
   openings?: number | null
   majorRequirements?: string[]
 }
+export type CandidateInterviewBrief = {
+  round: 'recruiter_screening' | 'hiring_manager' | 'hod' | 'hr'
+  brief: string
+}
 
 export const recruitmentRequirementState = pgTable('recruitment_requirement_state', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -59,6 +63,13 @@ export const recruitmentApplicationProfile = pgTable('recruitment_application_pr
   mandatoryMatch: text('mandatory_match'),
   keyStrength: text('key_strength'),
   mainGap: text('main_gap'),
+  aiCandidateSummary: text('ai_candidate_summary'),
+  aiOverallAssessment: text('ai_overall_assessment'),
+  aiInterviewBriefs: jsonb('ai_interview_briefs').$type<CandidateInterviewBrief[]>().notNull().default([]),
+  aiFinalBrief: text('ai_final_brief'),
+  aiEvidenceConfidence: text('ai_evidence_confidence').$type<'high' | 'medium' | 'limited'>(),
+  aiSummaryStale: boolean('ai_summary_stale').notNull().default(true),
+  aiSummaryUpdatedAt: timestamp('ai_summary_updated_at'),
   requirementVersionAssessed: integer('requirement_version_assessed').notNull().default(0),
   lastUpdatedBy: text('last_updated_by'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
