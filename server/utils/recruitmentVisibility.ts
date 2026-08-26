@@ -16,11 +16,7 @@ export async function getRequirementVisibility(orgId: string, userId: string) {
   const role = membership?.role ?? 'member'
   const canSeeAll = role === 'owner' || role === 'admin'
 
-  return {
-    role,
-    canSeeAll,
-    userId,
-  }
+  return { role, canSeeAll, userId }
 }
 
 export async function getVisibleRequirementIds(orgId: string, userId: string) {
@@ -51,4 +47,16 @@ export async function canAccessRequirement(orgId: string, userId: string, jobId:
   })
 
   return Boolean(allocation)
+}
+
+/**
+ * Use inside every requirement-specific API after authentication.
+ * Returns 404 rather than 403 so recruiters cannot probe the existence of
+ * requirements allocated to other recruiters.
+ */
+export async function assertRequirementAccess(orgId: string, userId: string, jobId: string) {
+  const allowed = await canAccessRequirement(orgId, userId, jobId)
+  if (!allowed) {
+    throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
+  }
 }
