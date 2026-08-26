@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { application, member, recruitmentRequirementState } from '../database/schema'
+import { application, interview, member, recruitmentRequirementState } from '../database/schema'
 
 /**
  * PDS requirement visibility policy.
@@ -76,5 +76,24 @@ export async function assertApplicationAccess(orgId: string, userId: string, app
   }
 
   await assertRequirementAccess(orgId, userId, row.jobId)
+  return row
+}
+
+/**
+ * Resolve a legacy interview to its application and therefore to its allocated
+ * requirement. PDS V1 keeps interviews external, but old Reqcore endpoints are
+ * retained for compatibility and must not bypass recruiter visibility.
+ */
+export async function assertInterviewAccess(orgId: string, userId: string, interviewId: string) {
+  const row = await db.query.interview.findFirst({
+    where: and(eq(interview.id, interviewId), eq(interview.organizationId, orgId)),
+    columns: { id: true, applicationId: true },
+  })
+
+  if (!row) {
+    throw createError({ statusCode: 404, statusMessage: 'Interview not found' })
+  }
+
+  await assertApplicationAccess(orgId, userId, row.applicationId)
   return row
 }
