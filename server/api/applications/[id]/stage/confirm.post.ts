@@ -27,63 +27,25 @@ export default defineEventHandler(async (event) => {
   if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const profile = await db.query.recruitmentApplicationProfile.findFirst({
-    where: and(
-      eq(recruitmentApplicationProfile.applicationId, applicationId),
-      eq(recruitmentApplicationProfile.organizationId, orgId),
-    ),
+    where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-
   if (body.stage === profile.lastStatus) return { profile, changed: false }
 
   const allowed = CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus] ?? []
-  if (!allowed.includes(body.stage)) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: `Cannot confirm stage change from ${profile.lastStatus} to ${body.stage}.`,
-    })
-  }
+  if (!allowed.includes(body.stage)) throw createError({ statusCode: 422, statusMessage: `Cannot confirm stage change from ${profile.lastStatus} to ${body.stage}.` })
 
-  if (body.stage === 'resume_received' && !profile.selectedResumeDocumentId) {
-    throw createError({
-      statusCode: 422,
-      statusMessage: 'Select the resume for this application first. Resume Received is set automatically when a resume is selected.',
-    })
-  }
+  if (body.stage === 'resume_received' && !profile.selectedResumeDocumentId) throw createError({ statusCode: 422, statusMessage: 'Select the resume for this application first. Resume Received is set automatically when a resume is selected.' })
 
   if (body.stage === 'resume_reviewed') {
-    const assessment = await db.query.resumeAssessment.findFirst({
-      where: and(
-        eq(resumeAssessment.applicationId, applicationId),
-        eq(resumeAssessment.organizationId, orgId),
-      ),
-      columns: { id: true },
-    })
-    if (!assessment) {
-      throw createError({
-        statusCode: 422,
-        statusMessage: 'Complete and save the Resume Assessment first. Resume Reviewed is set automatically by that action.',
-      })
-    }
+    const assessment = await db.query.resumeAssessment.findFirst({ where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)), columns: { id: true } })
+    if (!assessment) throw createError({ statusCode: 422, statusMessage: 'Complete and save the Resume Assessment first. Resume Reviewed is set automatically by that action.' })
   }
 
   if (body.stage === 'recruiter_screening_pending' || body.stage === 'recruiter_screening_completed') {
-    const screening = await db.query.recruiterScreeningSession.findFirst({
-      where: and(
-        eq(recruiterScreeningSession.applicationId, applicationId),
-        eq(recruiterScreeningSession.organizationId, orgId),
-      ),
-      columns: { status: true },
-    })
+    const screening = await db.query.recruiterScreeningSession.findFirst({ where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)), columns: { status: true } })
     const requiredStatus = body.stage === 'recruiter_screening_pending' ? 'in_progress' : 'completed'
-    if (!screening || screening.status !== requiredStatus) {
-      throw createError({
-        statusCode: 422,
-        statusMessage: body.stage === 'recruiter_screening_pending'
-          ? 'Start Recruiter Screening first. Screening Pending is set automatically when screening starts.'
-          : 'Complete Recruiter Screening first. Screening Completed is set automatically after the final screening assessment.',
-      })
-    }
+    if (!screening || screening.status !== requiredStatus) throw createError({ statusCode: 422, statusMessage: body.stage === 'recruiter_screening_pending' ? 'Start Recruiter Screening first. Screening Pending is set automatically when screening starts.' : 'Complete Recruiter Screening first. Screening Completed is set automatically after the final screening assessment.' })
   }
 
   const now = new Date()
@@ -92,20 +54,13 @@ export default defineEventHandler(async (event) => {
     statusDate: now,
     nextAction: body.nextAction ?? profile.nextAction,
     lastContactAt: body.contactOccurred ? now : profile.lastContactAt,
+    aiSummaryStale: true,
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
 
   await syncApplicationStatusForRecruitmentStage(orgId, applicationId, body.stage)
-
-  await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    applicationId,
-    type: 'stage_change',
-    summary: body.note ?? `Confirmed recruitment stage: ${body.stage}`,
-    payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage },
-    createdBy: session.user.id,
-  })
+  await db.insert(recruitmentEvidence).values({ organizationId: orgId, applicationId, type: 'stage_change', summary: body.note ?? `Confirmed recruitment stage: ${body.stage}`, payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage }, createdBy: session.user.id })
 
   return { profile: updated, changed: true }
 })
