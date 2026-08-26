@@ -1,203 +1,138 @@
 # PDS Recruitment Assistant - Full Application Audit
 
-Audit type: Static code and architecture audit
+Audit type: Static code, authorization, workflow and UI audit
 Branch: feature/pds-skill-matrix
-Runtime validation: Deferred until consolidated Emergent sync
+Runtime validation: Pending consolidated Emergent sync
 
-## 1. Executive status
+## 1. Current status
 
-The application has moved substantially away from the original generic ATS structure and now has a coherent PDS recruitment model:
+The application now follows the intended PDS recruitment model:
 
-New Requirement -> JD / Requirement Profile -> AI Skill Matrix -> AI Candidate Pool -> Move to Recruitment -> Recruiter Screening -> Hiring Manager -> HOD -> HR -> Offer.
+New Requirement -> JD / Requirement Profile -> AI Skill Matrix -> AI Candidate Pool -> Move to Recruitment -> Recruiter Screening -> Hiring Manager -> HOD -> HR -> Offer / Final Outcome.
 
-The static audit identified three main classes of risk:
+The major static security, ownership, workflow-cost and recruiter-facing UI issues identified during the earlier audit have now been addressed in GitHub. The remaining release gate is consolidated runtime validation: migrations, typecheck/build and end-to-end workflow testing against the preserved database.
 
-1. Legacy Reqcore routes that remained organization-wide even after recruiter allocation was introduced.
-2. PDS workflow endpoints that were permission-protected but did not consistently enforce requirement ownership.
-3. UI and administrative surfaces that still expose generic ATS concepts or organization-level controls more broadly than the intended PDS operating model.
+## 2. Authorization and data visibility - static closure complete
 
-Critical job-level allocation bypasses found during the audit have been fixed. Additional application-child routes remain on the closure list below and should be completed before the consolidated runtime test.
+Current governed model:
 
-## 2. Authorization and data visibility
+- Admin/Owner can see and manage organization-wide recruitment data.
+- Recruiters see only requirements allocated to them through recruitment_requirement_state.owner_user_id.
+- Requirement list, dashboard metrics, requirement detail, Requirement Profile, Skill Matrix, Candidate Pool and Candidate Register are allocation-scoped server-side.
+- Application list/detail and application-child workflow APIs use application-to-requirement access checks.
+- Candidate Journey, Recruiter Screening, Resume Assessment, selected resume, reassessment, evidence, interview evidence, stage progression, legacy scores and legacy AI analysis are allocation-scoped.
+- Legacy interview detail/update/delete/invitation routes use interview-to-application-to-requirement access checks.
+- Job/application comments enforce allocation visibility. Candidate comments remain shared because the Candidate Database is intentionally organization-wide.
+- New Requirement creation, requirement deletion, allocation management, AI configuration, AI usage statistics, organization activity, retention and SSO administration are Admin/Owner-only.
+- Candidate Database keeps candidate identity/resume availability organization-wide but now filters requirement/application history to the current recruiter's visible requirements.
 
-### Fixed
+## 3. Requirement ownership and allocation
 
-- Recruiters see only requirements allocated through recruitment_requirement_state.owner_user_id.
-- Owner/Admin users retain organization-wide requirement visibility.
-- Main Requirements listing is allocation-scoped server-side.
-- Main requirement lookup is allocation-scoped server-side.
-- Dashboard metrics and candidate movement are allocation-scoped for recruiters.
-- Candidate Register is protected by requirement allocation.
-- Requirement Profile read/write is protected by allocation.
-- Skill Matrix read/write/approval and AI generation are protected by allocation.
-- AI Candidate Pool listing, sync and direct resume upload are protected by allocation.
-- Move to Recruitment is protected by allocation.
-- JD generation and requirement mutation are protected by allocation.
-- Candidate intake and batch analysis are protected by allocation.
-- Legacy application list/detail/create/update routes are now allocation-scoped.
-- Legacy interview list/create routes are now allocation-scoped.
-- Candidate Journey/history and confirmed stage movement are allocation-scoped.
-- Organization-wide AI usage/cost statistics are restricted to recruitment Admin/Owner.
-- New Requirement and requirement deletion are restricted to recruitment Admin/Owner at the API layer, not merely hidden in the UI.
-- Manual per-candidate recruiter reassignment is restricted to recruitment Admin/Owner.
-- Candidate recruitment ownership now inherits the requirement owner when a candidate is promoted from the AI Candidate Pool or added through manual intake.
-- Job/application comments are being brought under allocation visibility while candidate-level comments remain organization-wide because the Candidate Database is intentionally shared.
+Requirement ownership is authoritative.
 
-### Still to harden before runtime validation
-
-Application-child endpoints must all use the same assertApplicationAccess rule. Priority review set:
-
-- resume-assessment: get, manual save, AI generate
-- screening: get, generate, start, answer, interpret, complete
-- selected resume endpoints
-- reassessment endpoint
-- recruitment-profile endpoints
-- evidence and interview-evidence endpoints
-- custom application properties and legacy score endpoints
-- legacy application AI analyze endpoint
-
-Legacy interview detail/update/delete/send-invitation routes must use assertInterviewAccess.
-
-Comment create/edit/delete routes must enforce allocation access for job/application targets while preserving shared candidate comments.
-
-Activity-log APIs should be reviewed for recruiter scope or made Admin/Owner-only if they expose organization-wide activity.
-
-## 3. Requirement allocation model
-
-### Current governed model
-
-- Requirement owner is the primary recruiter allocation field.
-- Recruiters can see only their allocated requirements.
-- Admin/Owner can see all requirements.
-- Candidate applications created under a requirement inherit that requirement owner.
-- Requirement allocation management is Admin/Owner-only.
-- Assignment Date and Target Closure Date are managed with a default 60-day closure target.
-
-### Remaining consistency check
-
-When a requirement is reassigned, existing recruitment_application_profile.assigned_recruiter_id records should be synchronized to the new requirement owner. The allocation API should perform this cascade or the application UI should stop treating assignedRecruiterId as an independent ownership field.
+- Candidate/application ownership inherits the requirement owner.
+- Requirement reassignment cascades to existing recruitment application profiles.
+- Independent candidate-level recruiter assignment has been retired from the live workflow.
+- New requirements remain unallocated until Allocation Management assigns a recruiter.
+- Assignment Date is created only when a recruiter is actually allocated.
+- A pre-entered Target Closure Date is preserved across allocation/reallocation unless an administrator explicitly changes it.
+- If no target date exists when a recruiter is first allocated, the allocation API defaults the target to 60 days from assignment.
 
 ## 4. AI Candidate Pool and cost controls
 
-### Fixed
+Implemented controls:
 
-- Historical candidate search uses a lightweight skill-term prefilter before full AI analysis.
+- Historical candidate search uses a lightweight prefilter before full AI analysis.
 - Full AI analysis is capped at 30 attempts per Candidate Pool refresh.
-- Candidates below 50% are hidden from recruiter ranking rather than rejected or deleted from the Candidate Database.
-- Current resume + current requirement revision matches are not re-analysed.
-- Full AI assessments below 50% are now retained as hidden cache records, preventing repeated AI spend on unchanged resumes during later pool refreshes.
-- Direct JD resume uploads remain immediate full AI assessments by design.
-- Promotion into Recruitment reuses the existing AI assessment rather than running resume analysis again.
-- Screening-question failure does not block promotion.
-- AI provider errors are centrally normalized into recruiter-readable messages.
+- Only candidates with final match >=50% are visible in the JD working pool.
+- Below-50 candidates remain in the central Candidate Database and are not rejected or deleted.
+- Below-50 full AI assessments are retained as hidden cache records for both historical-database matching and direct JD uploads, preventing repeat spend for the same resume + requirement revision.
+- Candidate Pool UI surfaces the number of plausible candidates deferred when the 30-analysis budget is reached.
+- Move to Recruitment reuses the stored AI assessment instead of rerunning resume analysis.
+- The initial AI Candidate Summary is also seeded from that existing assessment; promotion does not require an extra summary call.
+- Screening-question generation remains a separate AI action because it creates candidate-specific validation questions.
+- Explicit AI Candidate Summary refreshes are rate-limited and never run simply because a page is opened.
 
-### Still to improve
+## 5. AI Candidate Summary / Final Brief
 
-- Direct JD resume uploads that score below 50% should also preserve the hidden assessment cache instead of deleting the match row. This prevents a later database refresh from paying for the same assessment again.
-- Candidate Pool UI should display deferredForAiBudget when more plausible candidates remain for a later refresh.
-- Consider a small Admin-only AI usage panel showing analysis attempts/tokens/cost once PDS-specific usage logging is confirmed.
-- Verify that all PDS AI calls are included in analysis usage logging; the legacy analysisRun reporting path may not automatically cover every new PDS structured-generation call.
+Migration 1007 adds persistent requirement-specific summary fields to recruitment_application_profile.
 
-## 5. Recruitment workflow integrity
+The feature provides:
 
-### Working model
+- AI Candidate Summary
+- Overall AI Assessment
+- confirmed Final Status
+- Current Fit
+- Evidence Confidence
+- recruiter/Hiring Manager/HOD/HR interview briefs only when evidence exists
+- Final Recruitment Brief for meaningful late/final outcomes
+
+Resume analysis seeds the initial summary without an additional AI call. Recruiter screening completion, interview evidence, stage changes and manual reassessment mark the summary stale. The recruiter explicitly chooses Update AI Summary when newer evidence should be consolidated.
+
+The summary is visible in Recruiter Workspace, Candidate Register and Candidate Database requirement history. Candidate Register CSV includes summary/final brief fields.
+
+AI instructions prohibit invented interview feedback, unsupported candidate claims, protected/sensitive inference and autonomous hiring decisions.
+
+## 6. Recruitment workflow integrity
+
+Normal progression:
 
 Recruiter Screening -> Hiring Manager Pending -> Hiring Manager Completed -> HOD Pending -> HOD Completed -> HR Pending -> HR Completed -> Offer.
 
-- UI exposes one normal next step at a time.
-- Backend validates confirmed stage transitions.
-- Resume and recruiter-screening stages remain evidence-driven.
-- Hiring Manager, HOD and HR interviews are external in V1 and stage movement is manual.
-- Hold for Comparison, Reassess and Not Proceeding are separate exception decisions.
-- Candidate Journey presents recruiter-readable milestones while preserving underlying evidence.
+Exception paths remain Hold for Comparison, Reassess and Not Proceeding.
 
-### Remaining review
+Key controls:
 
-- Confirm every screening mutation endpoint is allocation-scoped.
-- Confirm Hold/Reassess/Not Proceeding endpoints cannot be called for another recruiter's application.
-- Ensure Offer Accepted/Declined endpoints follow the same access rule.
-- Decide whether candidate-level recruiter assignment should remain visible in the UI now that requirement ownership is authoritative.
+- backend validates confirmed stage transitions;
+- Resume Reviewed and Recruiter Screening statuses remain evidence-driven;
+- HM/HOD/HR interview evidence is optional in V1 because interviews happen externally;
+- Offer Accepted / Declined and final lifecycle decisions remain explicit recruiter/admin actions;
+- Candidate Journey retains the auditable history while presenting recruiter-readable milestones.
 
-## 6. Candidate Database
+## 7. Candidate Database
 
-### Intended behavior
+The Candidate Database is intentionally a shared organization-wide talent database.
 
-The Candidate Database is an organization-wide talent database and is intentionally different from requirement visibility.
+Recruiters may see candidate identity, contact details and resume availability across the organization so prior talent can be reused. Requirement/application history, status, recruiter, AI summary and recruitment decisions are returned only for requirements that user is authorized to access. Admin/Owner retains full history.
 
-A recruiter may search the shared candidate database, but should only see recruitment/application detail for requirements they are allowed to access.
+## 8. Recruiter-facing UI and PDS product identity
 
-### Review point
+Completed redesigns:
 
-Candidate detail endpoints can remain organization-wide for profile/resume reuse, but nested application history must not reveal another recruiter's restricted requirement details. Candidate history responses should be filtered or summarized when they contain applications outside the current user's visible requirement set.
+- PDS Recruitment Control Centre / My Recruitment Desk dashboard
+- Requirements page
+- New Requirement flow
+- JD & Skill Matrix setup flow
+- AI Candidate Pool
+- Recruiter Workspace
+- AI Candidate Summary card
+- Candidate Register summary fields
+- Candidate Database summary/history presentation
+- Requirement Allocation Management
+- primary navigation using Requirements / Candidate Database / Allocations / My Account or Settings
 
-## 7. Administrative surfaces and Settings
+Global brand tokens now use the PDS navy/blue/teal direction rather than the original Reqcore cornflower palette. Authenticated dashboard/settings demo and Reqcore deployment banners have been removed.
 
-### Current concern
+Recruiters see My Account rather than full organization Settings. Admin/Owner retains Settings.
 
-The top navigation still exposes the generic Settings entry to recruiters. The settings area contains account settings as well as organization-level modules such as AI configuration, members, SSO, retention and integrations.
+## 9. AI Skill Matrix governance
 
-### Recommended closure
+Current approval rules:
 
-- Admin/Owner: show full Settings.
-- Recruiter: show My Account only.
-- Add explicit Admin/Owner checks to AI configuration create/update/delete/test endpoints even if generic scoring permissions currently block some actions.
-- Review Members, SSO, Retention and organization integration APIs for explicit organization-admin authorization.
+- 4-5 classifications
+- 2-3 Mandatory criteria per classification
+- 8-12 Mandatory criteria overall for approval
+- evidence-based, assessable skill/requirement wording
+- editable AI proposal before explicit approval
+- approved matrix required before Candidate Pool matching
 
-## 8. UI / PDS product consistency
+The current prompt discourages vague labels, generic education/project wording and unsupported skill inference.
 
-### Fixed
+Runtime quality validation of the latest prompt remains pending.
 
-- Dashboard rebuilt as a PDS Recruitment Control Centre / My Recruitment Desk.
-- Dashboard uses the PDS-oriented deep navy, blue and teal visual direction.
-- Primary navigation is PDS-first: Dashboard, Requirements, Candidate Database, Allocations where authorized, Settings.
-- Generic Candidates, Applications, Interviews and AI Analysis modules were removed from primary navigation.
-- Recruiter Workspace prioritizes AI match, priority, strengths/gaps, Skill Analysis and screening.
-- Candidate Journey replaces the technical audit-log presentation.
+## 10. Data model and migrations
 
-### Still visibly generic
-
-- Requirements page still contains legacy wording such as My Jobs / New Job and older multi-colour ATS styling in parts of the page.
-- Several generic settings screens remain visually Reqcore-oriented.
-- Global CSS brand tokens are still based on the original Reqcore cornflower-blue palette, so untouched pages do not fully match the dashboard palette.
-- Old generic ATS pages remain routable even when hidden from navigation.
-- Package metadata and repository documentation still use Reqcore terminology; this is not user-facing but should eventually be cleaned for maintainability.
-
-### Recommended UI pass before launch
-
-Apply the PDS brand palette globally and redesign the Requirements list next. Then clean requirement Settings and any remaining recruiter-visible generic components.
-
-## 9. AI Skill Matrix quality
-
-### Fixed / governed
-
-- 4-5 classifications.
-- Maximum 2-3 Mandatory criteria per classification.
-- Mandatory target generally 8-12 only when the JD genuinely supports it.
-- Skills must be evidence-based and assessable from resume/screening.
-- Prompt discourages generic education, years-of-experience labels, vague leadership labels and generic project terminology from being treated as skills.
-- Strict OpenAI JSON-schema optional-field failures were fixed by using nullable schema fields.
-
-### Runtime validation pending
-
-The latest Skill Matrix quality prompt changes have not yet been synced and visually tested in Emergent.
-
-## 10. AI provider and error handling
-
-### Fixed
-
-- Central analysis-provider resolution.
-- OpenAI, Anthropic, Google and OpenAI-compatible provider support.
-- Encrypted API keys.
-- Common handling for authentication failure, quota exhaustion, rate limits, model errors, structured-response/schema failures and provider availability errors.
-- OpenAI connection was previously validated after API credits were funded.
-
-### Review point
-
-Per-file direct-resume upload errors should remain sanitized; no raw provider payload, key or request content should be surfaced to recruiters.
-
-## 11. Data model and migrations
-
-Known PDS migrations through the current implementation:
+PDS migrations currently registered:
 
 - 0999 Skill Matrix
 - 1000 Recruitment framework
@@ -207,61 +142,50 @@ Known PDS migrations through the current implementation:
 - 1004 Requirement TAT
 - 1005 Talent Pool
 - 1006 Requirement Profile
+- 1007 AI Candidate Summary
 
-No new migration was required for the recent visibility, allocation, dashboard or AI-budget changes.
+The migration journal contains 1007. No database reset or reseed is required or permitted for the consolidated sync.
 
-Database reset/reseed is not required and must not be performed during the eventual sync.
+## 11. Pre-sync QA findings fixed
 
-## 12. Build and runtime status
+The final static pass found and corrected these issues before runtime sync:
 
-Repository scripts provide build, typecheck, unit test and Playwright commands.
+1. Requirement Profile update silently created an Assignment Date even for unallocated requirements. It now preserves null until allocation.
+2. Requirement Profile update silently defaulted Target Closure to +60 days before allocation. The default now occurs at actual allocation when no prior target exists.
+3. Allocation could overwrite or erase a closure target captured earlier. Existing target dates are now preserved unless explicitly changed.
+4. Candidate Database exposed all application history to recruiters despite the shared-candidate/restricted-recruitment model. Recruitment history is now visibility-scoped.
+5. Candidate Database recruiter-name lookup queried all users rather than organization membership. It is now organization-scoped.
+6. Talent-Pool promotion did not seed the new AI Candidate Summary fields, creating an unnecessary extra summary call. Promotion now reuses the paid assessment.
+7. AI Candidate Summary generation had no explicit rate limit. Authorized summary refreshes are now rate-limited.
 
-There is currently no GitHub workflow result validating the latest branch commits. Therefore the following remain runtime gates and must be tested in the consolidated sync:
+## 12. Runtime/build status
 
-1. npm/npx typecheck
-2. production Nuxt build
-3. migration status without reseeding
-4. Admin dashboard
-5. recruiter dashboard with allocated-only requirements
-6. recruiter direct URL denial for another recruiter's requirement/application
-7. Requirement Allocation management
-8. Skill Matrix generation and approval
-9. Candidate Pool sync including AI budget deferral and hidden below-50 cache
-10. direct resume upload
-11. Move to Recruitment
-12. Recruiter Screening
-13. stage progression through Offer
-14. Candidate Database and Candidate Journey
-15. AI Settings connection test
+There is no GitHub CI status validating the latest feature branch. Therefore static QA cannot substitute for runtime validation.
 
-## 13. Priority closure order before consolidated sync
+The consolidated sync must validate, without resetting the preserved database:
 
-P0 - Security / data boundary
+1. migration application through 1007
+2. TypeScript / Nuxt typecheck
+3. production Nuxt build
+4. Admin/Owner login and dashboard
+5. recruiter allocated-only dashboard and Requirements list
+6. direct URL denial to another recruiter's requirement/application/interview
+7. New Requirement creation remains unallocated
+8. Requirement Allocation and +60-day default behavior
+9. JD save, AI Skill Matrix generation and approval
+10. Candidate Pool sync, >=50 visibility, below-50 hidden caching and 30-analysis deferral
+11. direct resume upload and dedupe
+12. Move to Recruitment and inherited summary
+13. Recruiter Screening and candidate-specific questions
+14. HM/HOD/HR evidence and stage progression
+15. AI Candidate Summary stale/update/final brief behavior
+16. Candidate Register
+17. Candidate Database shared profile + restricted recruitment history
+18. Offer/final lifecycle states
+19. AI Settings connection test for Admin/Owner
 
-- Finish assertApplicationAccess across all application-child PDS routes.
-- Finish assertInterviewAccess across legacy interview detail/mutation routes.
-- Harden comment mutation routes.
-- Explicitly protect organization-level AI configuration and admin APIs.
+## 13. Release conclusion
 
-P1 - Workflow / cost
+The static architecture is now in a substantially release-candidate state. The major authorization boundary, requirement ownership, repeat-AI-cost and recruiter-facing product-consistency issues identified during the audit have been closed in code.
 
-- Cascade requirement reassignment to existing application recruiter ownership.
-- Cache direct-upload below-50 assessments.
-- Surface AI-budget deferral in Candidate Pool UI.
-
-P2 - UI consistency
-
-- Rebuild Requirements page using PDS palette and terminology.
-- Make recruiter navigation show My Account instead of full Settings.
-- Move the global brand palette toward the dashboard palette.
-- Continue removal of recruiter-visible legacy Reqcore terminology.
-
-P3 - Runtime verification
-
-Perform one consolidated Emergent sync only after the above static closure work is complete, then run build + focused end-to-end smoke tests without resetting the preserved database.
-
-## 14. Audit conclusion
-
-The core PDS recruitment architecture is sound and the main recruitment path is coherent. The most significant issue discovered by the audit was incomplete propagation of the new recruiter-allocation boundary into older organization-wide and application-child endpoints. The major job-level and legacy application-list bypasses have already been corrected during this audit pass.
-
-The application should not be considered release-ready until the remaining P0 endpoints are closed and the consolidated runtime/build test is completed.
+The application should still not be treated as release-ready until the consolidated runtime migration, typecheck/build and end-to-end smoke test pass successfully. Any runtime issue discovered during that pass should be fixed without reseeding the existing database.
