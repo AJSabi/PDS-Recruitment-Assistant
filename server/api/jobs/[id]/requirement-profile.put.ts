@@ -15,12 +15,6 @@ const bodySchema = z.object({
   targetClosureDate: z.string().datetime().nullish(),
 }).strict()
 
-function addDays(date: Date, days: number) {
-  const result = new Date(date)
-  result.setUTCDate(result.getUTCDate() + days)
-  return result
-}
-
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['update'] })
   const orgId = session.session.activeOrganizationId
@@ -35,10 +29,12 @@ export default defineEventHandler(async (event) => {
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const state = await ensureRequirementState(orgId, jobId)
-  const assignmentDate = body.assignmentDate ? new Date(body.assignmentDate) : (state.assignmentDate ?? new Date())
-  const targetClosureDate = body.targetClosureDate
-    ? new Date(body.targetClosureDate)
-    : (state.targetClosureDate ?? addDays(assignmentDate, 60))
+  const assignmentDate = body.assignmentDate === undefined
+    ? state.assignmentDate
+    : body.assignmentDate ? new Date(body.assignmentDate) : null
+  const targetClosureDate = body.targetClosureDate === undefined
+    ? state.targetClosureDate
+    : body.targetClosureDate ? new Date(body.targetClosureDate) : null
 
   const [updated] = await db.update(recruitmentRequirementState).set({
     requirementProfile: {
