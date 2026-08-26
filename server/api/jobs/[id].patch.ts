@@ -2,12 +2,14 @@ import { eq, and } from 'drizzle-orm'
 import { job } from '../../database/schema'
 import { idParamSchema, updateJobSchema, JOB_STATUS_TRANSITIONS } from '../../utils/schemas/job'
 import { flagRequirementChange } from '../../utils/recruitmentLifecycle'
+import { assertRequirementAccess } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['update'] })
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, idParamSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, id)
   const body = await readValidatedBody(event, updateJobSchema.parse)
 
   const existing = await db.query.job.findFirst({
@@ -15,7 +17,7 @@ export default defineEventHandler(async (event) => {
     columns: { status: true, title: true, slug: true, description: true },
   })
 
-  if (!existing) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!existing) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   if (body.status) {
     const allowed = JOB_STATUS_TRANSITIONS[existing.status] ?? []
@@ -58,7 +60,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: job.updatedAt,
     })
 
-  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const descriptionChanged = body.description !== undefined && (body.description ?? null) !== (existing.description ?? null)
   if (descriptionChanged) {
