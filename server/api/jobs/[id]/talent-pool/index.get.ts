@@ -1,5 +1,6 @@
 import { and, desc, eq, gte } from 'drizzle-orm'
 import { candidate, recruitmentRequirementState, talentPoolMatch } from '../../../../database/schema'
+import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -9,6 +10,7 @@ export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
 
   const requirementState = await db.query.recruitmentRequirementState.findFirst({
     where: and(
