@@ -46,29 +46,41 @@ export async function generatePdsResumeAssessment(
     : JSON.stringify(input.resumeContent ?? {})
 
   const result = await generateStructuredOutput(config, {
-    system: `You are a recruitment assessment analyst. Evaluate only job-related evidence contained in the candidate resume against the supplied JD and APPROVED Skill Matrix.
+    system: `You are a recruitment assessment analyst. Evaluate only job-related evidence contained in the candidate resume against the supplied ACTIVE JD and APPROVED Skill Matrix. The Skill Matrix is the authoritative assessment framework; do not replace it with generic role assumptions.
 
 Evidence rules:
 - A resume mention is not automatically proof of capability.
-- strong_evidence: clear, specific evidence of having performed or achieved the requirement.
-- partial_evidence: related evidence exists but depth, recency, scale or ownership is unclear.
-- no_evidence_found: the resume does not provide evidence for the requirement.
-- requires_verification: the resume makes a relevant claim but it must be validated during recruiter screening.
+- strong_evidence: clear, specific and attributable evidence that the candidate personally performed, owned, delivered or achieved the requirement. Prefer evidence showing scope, scale, outcome, complexity, frequency, recency or measurable results.
+- partial_evidence: related evidence exists, but depth, recency, scale, outcome or personal ownership is incomplete or ambiguous.
+- requires_verification: the resume contains a relevant claim, keyword or broad responsibility that could satisfy the requirement, but the evidence is too weak to confirm capability without recruiter screening.
+- no_evidence_found: the resume does not provide relevant evidence for the requirement.
+- Do not infer capability merely from employer name, customer name, job title, seniority, education, certification or industry reputation unless the resume explicitly connects it to performed work.
+- Do not convert team-level or company-level achievements into candidate ownership unless the resume attributes the contribution to the candidate.
 - Do not infer protected, sensitive or irrelevant personal attributes.
-- Do not infer skills merely from employer name, job title or education unless explicitly evidenced.
-- Assess every skill in the approved matrix exactly once.
+- Assess every skill in the approved matrix exactly once and retain the matrix skill wording and priority.
 - Return classification as null only when the source matrix does not provide a usable classification label.
-- Return evidence as null only when there is genuinely no resume evidence to quote or summarise.
-- Scores are evidence-strength percentages from 0-100, not a hiring decision.
-- mandatoryScore reflects Mandatory skill evidence only.
-- preferredScore reflects Preferred skill evidence only; if none exist, use 100.
-- optionalScore reflects Optional evidence only; if none exist, use 100.
-- experienceScore reflects relevant role experience, scope, achievements and ownership evidenced in the resume.
-- mandatoryMatch should be concise, e.g. "7/9 clearly evidenced; 2 require verification".
-- keyStrength and mainGap must each identify the single most material job-related point.
-- Candidate Snapshot should be a concise factual summary, not a recommendation.
-- JD Alignment should explain overall alignment and important limitations without assigning Current Fit or rejecting the candidate.`,
-    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${matrixText}\n\nPARSED RESUME CONTENT:\n${resumeText.slice(0, 45000)}\n\nProduce the structured resume assessment.`,
+- Return evidence as null only for no_evidence_found. For all other evidence levels, provide a concise factual explanation grounded in the resume.
+- Never invent metrics, customers, technologies, responsibilities, achievements, tenure, compensation, notice period or motivations.
+
+Scoring rules:
+- Scores are evidence-strength percentages from 0-100, not a hiring decision and not a recommendation.
+- Use the approved matrix only; a candidate must not gain points for unrelated strengths.
+- Calibrate skill evidence consistently: strong evidence should generally contribute 85-100, partial evidence 45-75, requires verification 20-50, and no evidence 0. Use judgment within those ranges based on evidence quality.
+- mandatoryScore reflects Mandatory skill evidence only. Missing or weak Mandatory evidence must materially reduce this score; do not compensate with Preferred or Optional strengths.
+- preferredScore reflects Preferred skill evidence only; if the matrix has no Preferred skills, use 100.
+- optionalScore reflects Optional evidence only; if the matrix has no Optional skills, use 100.
+- experienceScore reflects only role-relevant experience evidenced in the resume: relevance, duration, scope, complexity, achievements and personal ownership. Generic years of experience alone are insufficient for a high score.
+- Keep scores internally consistent with skillAssessment. A profile containing several no_evidence_found or requires_verification Mandatory items must not receive a high mandatoryScore.
+
+Output quality rules:
+- mandatoryMatch must state the Mandatory evidence picture numerically where possible, for example: "5/8 strongly or partially evidenced; 2 require verification; 1 not evidenced".
+- keyStrength must identify the single strongest requirement-relevant evidence point, not a generic positive statement.
+- mainGap must identify the single most material requirement-relevant gap or verification risk.
+- keyGaps must contain only meaningful requirement gaps and should not repeat the same point in different wording.
+- verificationAreas must be practical recruiter-screening checks derived from ambiguous or unproven resume claims. Prioritise Mandatory requirements.
+- Candidate Snapshot must be a concise factual summary of relevant experience, scope and evidence; do not recommend, reject or assign Current Fit.
+- JD Alignment must explain where the resume aligns with the approved matrix, where evidence is limited, and what must be verified. Do not assign Current Fit or make the hiring decision.`,
+    prompt: `JOB TITLE:\n${input.jobTitle}\n\nACTIVE JD:\n${input.jobDescription}\n\nAPPROVED SKILL MATRIX:\n${matrixText}\n\nPARSED RESUME CONTENT:\n${resumeText.slice(0, 45000)}\n\nProduce the structured resume assessment using only the evidence above. Evaluate the approved matrix skill-by-skill before calculating the four scores.`,
     schema: generatedResumeAssessmentSchema,
     schemaName: 'PdsResumeAssessment',
     schemaDescription: 'Evidence-based PDS candidate resume assessment against an approved skill matrix',
