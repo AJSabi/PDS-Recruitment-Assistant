@@ -1,5 +1,5 @@
 import { eq, and, desc, inArray } from 'drizzle-orm'
-import { application, candidate, job } from '../../database/schema'
+import { application, candidate, job, recruitmentApplicationProfile } from '../../database/schema'
 import { applicationQuerySchema } from '../../utils/schemas/application'
 import { propertyFiltersArraySchema } from '../../utils/schemas/property'
 import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
@@ -11,8 +11,9 @@ import {
 
 /**
  * GET /api/applications
- * Legacy application list retained for compatibility, but scoped to the same
- * PDS requirement-allocation visibility used by the recruiter workspace.
+ * Application list scoped to PDS requirement allocation. PDS recruitment state is
+ * returned with each application so the requirement pipeline does not need to fall
+ * back to legacy ATS scoring/interview state for recruiter workflow decisions.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
@@ -74,10 +75,24 @@ export default defineEventHandler(async (event) => {
       jobId: application.jobId,
       jobTitle: job.title,
       jobStatus: job.status,
+      recruitmentStatus: recruitmentApplicationProfile.lastStatus,
+      currentFit: recruitmentApplicationProfile.currentFit,
+      provisionalFitScore: recruitmentApplicationProfile.provisionalFitScore,
+      priority: recruitmentApplicationProfile.priority,
+      mandatoryMatch: recruitmentApplicationProfile.mandatoryMatch,
+      keyStrength: recruitmentApplicationProfile.keyStrength,
+      mainGap: recruitmentApplicationProfile.mainGap,
+      nextAction: recruitmentApplicationProfile.nextAction,
+      assignedRecruiterId: recruitmentApplicationProfile.assignedRecruiterId,
+      aiSummaryStale: recruitmentApplicationProfile.aiSummaryStale,
     })
       .from(application)
       .innerJoin(candidate, eq(candidate.id, application.candidateId))
       .innerJoin(job, eq(job.id, application.jobId))
+      .leftJoin(recruitmentApplicationProfile, and(
+        eq(recruitmentApplicationProfile.applicationId, application.id),
+        eq(recruitmentApplicationProfile.organizationId, orgId),
+      ))
       .where(where)
       .orderBy(desc(application.createdAt))
       .limit(query.limit)
