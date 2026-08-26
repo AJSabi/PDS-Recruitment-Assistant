@@ -109,13 +109,7 @@ useSeoMeta({
           <div class="rounded-lg bg-brand-50 p-3 dark:bg-brand-950/30"><p class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-brand-600"><Target class="size-3" />Next Action</p><p class="mt-1 text-sm font-semibold text-brand-700 dark:text-brand-300">{{ profile.nextAction || 'Review candidate' }}</p></div>
         </div>
 
-        <div class="mt-4">
-          <PdsRecruiterAssignment
-            :application-id="applicationId"
-            :assigned-recruiter-id="profile?.assignedRecruiterId"
-            @changed="refreshWorkflow"
-          />
-        </div>
+        <p class="mt-4 text-xs text-surface-400">Recruiter ownership follows the requirement allocation. Reassign the requirement from Allocation Management rather than changing candidates individually.</p>
       </header>
 
       <div class="space-y-6">
