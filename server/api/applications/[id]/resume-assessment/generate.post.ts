@@ -70,7 +70,27 @@ export default defineEventHandler(async (event) => {
   if (!existingScreening) await db.insert(recruiterScreeningSession).values({ organizationId: orgId, applicationId, status: 'not_started', questions, responses: [], validationFocus: [] })
   else if (existingScreening.status !== 'in_progress' && existingScreening.status !== 'completed') await db.update(recruiterScreeningSession).set({ questions, responses: [], status: 'not_started', finalFit: null, recommendedNextStep: null, validationFocus: [], startedAt: null, completedAt: null, updatedAt: now }).where(eq(recruiterScreeningSession.id, existingScreening.id))
 
-  await db.update(recruitmentApplicationProfile).set({ lastStatus: 'resume_reviewed', statusDate: now, resumeBrief: generated.candidateSnapshot, provisionalFitScore: ranking.score, priority: ranking.priority, mandatoryMatch: generated.mandatoryMatch, keyStrength: generated.keyStrength, mainGap: generated.mainGap, requirementVersionAssessed: requirementRevision, nextAction: 'Review AI assessment and start recruiter screening', lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id))
+  await db.update(recruitmentApplicationProfile).set({
+    lastStatus: 'resume_reviewed',
+    statusDate: now,
+    resumeBrief: generated.candidateSnapshot,
+    provisionalFitScore: ranking.score,
+    priority: ranking.priority,
+    mandatoryMatch: generated.mandatoryMatch,
+    keyStrength: generated.keyStrength,
+    mainGap: generated.mainGap,
+    aiCandidateSummary: generated.candidateSnapshot,
+    aiOverallAssessment: generated.jdAlignment,
+    aiInterviewBriefs: [],
+    aiFinalBrief: null,
+    aiEvidenceConfidence: 'limited',
+    aiSummaryStale: false,
+    aiSummaryUpdatedAt: now,
+    requirementVersionAssessed: requirementRevision,
+    nextAction: 'Review AI assessment and start recruiter screening',
+    lastUpdatedBy: session.user.id,
+    updatedAt: now,
+  }).where(eq(recruitmentApplicationProfile.id, profile.id))
   await db.insert(recruitmentEvidence).values({ organizationId: orgId, applicationId, type: 'resume', summary: generated.candidateSnapshot, payload: { event: 'resume_assessed', selectedResumeDocumentId: resume.id, selectedResumeFilename: resume.originalFilename, provisionalFitScore: ranking.score, priority: ranking.priority, mandatoryMatch: generated.mandatoryMatch, requirementRevision, screeningQuestionsGenerated: questions.length, source: 'ai', provider: config.provider, model: config.model }, createdBy: session.user.id })
   await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
