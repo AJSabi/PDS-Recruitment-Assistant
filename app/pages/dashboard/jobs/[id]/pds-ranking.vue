@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound, ShieldCheck, Target, TrendingUp } from 'lucide-vue-next'
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
 const jobId = route.params.id as string
@@ -37,28 +37,27 @@ const deferredAiCount = computed(() => Number(lastPoolSync.value?.deferredForAiB
 function label(value?: string | null) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
-
-async function refreshAll() {
-  await Promise.all([refreshPool(), refresh()])
+function scoreClass(score?: number | null) {
+  if ((score ?? 0) >= 85) return 'bg-[#E9F8F6] text-[#13756F] border-[#B8E2DE]'
+  if ((score ?? 0) >= 70) return 'bg-[#EAF4FB] text-[#1F6FA3] border-[#BED9E9]'
+  if ((score ?? 0) >= 60) return 'bg-[#FFF7E8] text-[#976511] border-[#E8D7B4]'
+  return 'bg-surface-100 text-surface-600 border-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:border-surface-700'
 }
 
+async function refreshAll() { await Promise.all([refreshPool(), refresh()]) }
 async function syncTalentPool() {
   poolBusy.value = true
   try {
     const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/sync`, { method: 'POST' })
     lastPoolSync.value = result
     await refreshPool()
-    const deferredText = result.deferredForAiBudget
-      ? ` ${result.deferredForAiBudget} plausible resume${result.deferredForAiBudget === 1 ? '' : 's'} deferred to the next refresh to control AI usage.`
-      : ''
+    const deferredText = result.deferredForAiBudget ? ` ${result.deferredForAiBudget} plausible resume${result.deferredForAiBudget === 1 ? '' : 's'} deferred to the next refresh to control AI usage.` : ''
     const message = `${result.visibleMatches ?? 0} candidates at or above ${result.threshold ?? 50}% match.${deferredText}`
     if (result.failures?.length) toast.warning('AI Candidate Pool updated with exceptions', `${message} ${result.failures.length} resumes need review.`)
     else toast.success('AI Candidate Pool updated', { message })
-  } catch (err: any) {
-    toast.error('Could not update AI Candidate Pool', { message: err?.data?.statusMessage ?? err?.message })
-  } finally { poolBusy.value = false }
+  } catch (err: any) { toast.error('Could not update AI Candidate Pool', { message: err?.data?.statusMessage ?? err?.message }) }
+  finally { poolBusy.value = false }
 }
-
 async function uploadResumes(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
@@ -72,14 +71,9 @@ async function uploadResumes(event: Event) {
     const summaryText = `${result.matched ?? 0} added to the 50%+ pool; ${result.belowThreshold ?? 0} below threshold; ${result.failed ?? 0} failed.`
     if (result.failed) toast.warning('Resume intake completed with exceptions', summaryText)
     else toast.success(files.length === 1 ? 'Resume analysed' : 'Resumes analysed', { message: summaryText })
-  } catch (err: any) {
-    toast.error('Could not process resume upload', { message: err?.data?.statusMessage ?? err?.message })
-  } finally {
-    uploadingResumes.value = false
-    input.value = ''
-  }
+  } catch (err: any) { toast.error('Could not process resume upload', { message: err?.data?.statusMessage ?? err?.message }) }
+  finally { uploadingResumes.value = false; input.value = '' }
 }
-
 async function promoteMatch(row: any) {
   promotingMatchId.value = row.matchId
   try {
@@ -89,11 +83,9 @@ async function promoteMatch(row: any) {
       message: result.alreadyPromoted ? 'Opening the existing recruitment workflow.' : 'AI Skill Analysis and recruiter screening questions were carried forward.',
     })
     await navigateTo(localePath(`/dashboard/recruitment/${result.applicationId}`))
-  } catch (err: any) {
-    toast.error('Could not move candidate to recruitment', { message: err?.data?.statusMessage ?? err?.message })
-  } finally { promotingMatchId.value = null }
+  } catch (err: any) { toast.error('Could not move candidate to recruitment', { message: err?.data?.statusMessage ?? err?.message }) }
+  finally { promotingMatchId.value = null }
 }
-
 async function analyzePendingWithAi() {
   const candidates = batchEligible.value
   if (!candidates.length) return toast.warning('No candidates ready', 'Select a resume for each candidate and ensure the approved Skill Matrix is available.')
@@ -102,14 +94,9 @@ async function analyzePendingWithAi() {
   let succeeded = 0
   const failures: string[] = []
   for (const candidate of candidates) {
-    try {
-      await $fetch(`/api/applications/${candidate.applicationId}/resume-assessment/generate`, { method: 'POST' })
-      succeeded++
-    } catch (err: any) {
-      failures.push(`${candidate.candidate}: ${err?.data?.statusMessage ?? err?.message ?? 'Analysis failed'}`)
-    } finally {
-      batchProgress.value.done++
-    }
+    try { await $fetch(`/api/applications/${candidate.applicationId}/resume-assessment/generate`, { method: 'POST' }); succeeded++ }
+    catch (err: any) { failures.push(`${candidate.candidate}: ${err?.data?.statusMessage ?? err?.message ?? 'Analysis failed'}`) }
+    finally { batchProgress.value.done++ }
   }
   await refresh()
   batchBusy.value = false
@@ -119,91 +106,78 @@ async function analyzePendingWithAi() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <div class="mb-4 flex flex-wrap items-center gap-2">
+  <div class="mx-auto max-w-7xl space-y-6">
+    <div class="flex flex-wrap items-center gap-2">
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />Pipeline</NuxtLink>
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/ai-analysis`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><FileSearch class="size-4" />JD & Skill Matrix</NuxtLink>
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/pds-register`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><UsersRound class="size-4" />Candidate Register</NuxtLink>
     </div>
 
-    <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <p class="text-xs font-medium uppercase tracking-wide text-surface-400">PDS Recruitment</p>
-        <h1 class="mt-1 text-2xl font-bold">{{ job?.title ?? 'Requirement' }}</h1>
-        <p class="mt-1 text-sm text-surface-500">The AI Candidate Pool searches the resume database and shows only candidates with a final AI match of 50% or more.</p>
-      </div>
-      <button class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm font-medium" @click="refreshAll"><RefreshCw class="size-4" />Refresh</button>
-    </header>
-
-    <section class="mb-8 rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
-      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <section class="overflow-hidden rounded-3xl bg-[#102A43] px-6 py-6 text-white shadow-sm sm:px-8">
+      <div class="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <div class="flex items-center gap-2"><Database class="size-4 text-brand-600" /><h2 class="text-base font-semibold">Live AI Candidate Pool</h2></div>
-          <p class="mt-1 text-sm text-surface-500">Existing database resumes and resumes added directly to this JD feed the same live ranking. Candidates remain outside the active pipeline until you choose to move them forward.</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9FD3F2]">AI Candidate Pool</p>
+          <h1 class="mt-2 text-2xl font-bold">{{ job?.title ?? 'Requirement' }}</h1>
+          <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Only candidates scoring 50% or more against the approved requirement are shown. Use the cards below to compare fit, evidence and risk before moving a candidate into active recruitment.</p>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <input ref="resumeInput" type="file" multiple accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" @change="uploadResumes" />
-          <button :disabled="uploadingResumes || poolBusy" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="resumeInput?.click()"><Loader2 v-if="uploadingResumes" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ uploadingResumes ? 'Analysing Resume(s)…' : 'Add Resume(s)' }}</button>
-          <button :disabled="poolBusy || uploadingResumes" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="syncTalentPool"><Loader2 v-if="poolBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ poolBusy ? 'Updating Candidate Pool…' : 'Refresh Database Matches' }}</button>
-        </div>
-      </div>
-
-      <div v-if="deferredAiCount" class="mb-4 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800 dark:border-warning-900 dark:bg-warning-950/30 dark:text-warning-200">
-        <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-        <div><p class="font-semibold">AI usage limit reached for this refresh</p><p class="mt-0.5 text-xs">{{ deferredAiCount }} plausible resume{{ deferredAiCount === 1 ? '' : 's' }} remain queued. Refresh Database Matches again when you want the next controlled batch analysed.</p></div>
-      </div>
-
-      <div v-if="poolStatus === 'pending'" class="py-8 text-center text-surface-400">Loading AI Candidate Pool…</div>
-      <div v-else class="overflow-x-auto rounded-lg border border-surface-200 dark:border-surface-800">
-        <table class="min-w-full text-sm">
-          <thead class="bg-surface-50 text-left text-xs uppercase tracking-wide text-surface-500 dark:bg-surface-800/60"><tr><th class="px-3 py-3">Rank</th><th class="px-3 py-3">Candidate</th><th class="px-3 py-3">Score</th><th class="px-3 py-3">Priority</th><th class="px-3 py-3">Mandatory Match</th><th class="px-3 py-3">Key Strength</th><th class="px-3 py-3">Main Gap</th><th class="px-3 py-3">Action</th></tr></thead>
-          <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-            <tr v-for="row in poolRows" :key="row.matchId" class="hover:bg-surface-50 dark:hover:bg-surface-800/30">
-              <td class="px-3 py-3 font-semibold">{{ row.rank }}</td>
-              <td class="px-3 py-3 min-w-[220px]"><div class="font-semibold">{{ row.firstName }} {{ row.lastName }}</div><div class="text-xs text-surface-400">{{ row.email }}</div><div class="mt-1 text-[11px] text-surface-400">{{ row.source === 'jd_upload' ? 'Added to this JD' : 'Existing database' }}</div></td>
-              <td class="px-3 py-3 text-base font-bold">{{ row.score }}%</td>
-              <td class="px-3 py-3 font-semibold">{{ row.priority ?? '—' }}</td>
-              <td class="px-3 py-3 min-w-[150px]">{{ row.mandatoryMatch ?? '—' }}</td>
-              <td class="px-3 py-3 min-w-[200px]">{{ row.keyStrength ?? '—' }}</td>
-              <td class="px-3 py-3 min-w-[200px]">{{ row.mainGap ?? '—' }}</td>
-              <td class="px-3 py-3 whitespace-nowrap">
-                <NuxtLink v-if="row.promotedApplicationId" :to="localePath(`/dashboard/recruitment/${row.promotedApplicationId}`)" class="inline-flex items-center gap-1.5 rounded-lg border border-success-300 px-3 py-1.5 text-xs font-semibold text-success-700"><CheckCircle2 class="size-3.5" />In Recruitment</NuxtLink>
-                <button v-else :disabled="Boolean(promotingMatchId)" class="inline-flex items-center gap-1.5 rounded-lg bg-success-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" @click="promoteMatch(row)"><Loader2 v-if="promotingMatchId === row.matchId" class="size-3.5 animate-spin" /><UserPlus v-else class="size-3.5" />Move to Recruitment</button>
-              </td>
-            </tr>
-            <tr v-if="!poolRows.length"><td colspan="8" class="px-4 py-8 text-center text-surface-400">No candidates currently meet the 50% AI match threshold.</td></tr>
-          </tbody>
-        </table>
+        <button class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15" @click="refreshAll"><RefreshCw class="size-4" />Refresh View</button>
       </div>
     </section>
 
-    <section>
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h2 class="text-base font-semibold">Active Recruitment Pipeline</h2><p class="mt-1 text-sm text-surface-500">Only candidates selected for recruiter action appear here.</p></div>
-        <button :disabled="batchBusy || !batchEligible.length" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-40" @click="analyzePendingWithAi"><Loader2 v-if="batchBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ batchBusy ? `Analyzing ${batchProgress.done}/${batchProgress.total}` : `Analyze Pending (${batchEligible.length})` }}</button>
+    <section class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div><div class="flex items-center gap-2"><Database class="size-5 text-brand-600" /><h2 class="font-bold text-[#102A43] dark:text-white">Live Candidate Matches</h2></div><p class="mt-1 max-w-2xl text-sm text-surface-500">Search the central database or add resumes directly to this requirement. Candidates stay outside the pipeline until you explicitly move them forward.</p></div>
+        <div class="flex flex-wrap gap-2">
+          <input ref="resumeInput" type="file" multiple accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" @change="uploadResumes" />
+          <button :disabled="uploadingResumes || poolBusy" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 px-4 py-2.5 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="resumeInput?.click()"><Loader2 v-if="uploadingResumes" class="size-4 animate-spin" /><UploadCloud v-else class="size-4" />{{ uploadingResumes ? 'Analysing…' : 'Add Resume(s)' }}</button>
+          <button :disabled="poolBusy || uploadingResumes" class="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" @click="syncTalentPool"><Loader2 v-if="poolBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ poolBusy ? 'Updating…' : 'Refresh Database Matches' }}</button>
+        </div>
       </div>
 
+      <div v-if="deferredAiCount" class="mt-4 flex items-start gap-2 rounded-xl border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800 dark:border-warning-900 dark:bg-warning-950/30 dark:text-warning-200"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-semibold">AI batch limit reached</p><p class="mt-0.5 text-xs">{{ deferredAiCount }} plausible resume{{ deferredAiCount === 1 ? '' : 's' }} remain queued for the next controlled refresh.</p></div></div>
+
+      <div v-if="poolStatus === 'pending'" class="py-10 text-center text-surface-400">Loading AI Candidate Pool…</div>
+      <div v-else-if="!poolRows.length" class="mt-5 rounded-2xl border border-dashed border-surface-300 bg-surface-50 px-5 py-10 text-center dark:border-surface-700 dark:bg-surface-800/30"><ShieldCheck class="mx-auto size-7 text-brand-500" /><p class="mt-3 font-semibold text-surface-800 dark:text-white">No candidates currently meet the 50% threshold</p><p class="mt-1 text-sm text-surface-500">Add resumes or refresh database matches after the approved Skill Matrix is ready.</p></div>
+      <div v-else class="mt-5 grid gap-4 lg:grid-cols-2">
+        <article v-for="row in poolRows" :key="row.matchId" class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="flex size-8 items-center justify-center rounded-full bg-[#102A43] text-xs font-bold text-white">#{{ row.rank }}</span><h3 class="truncate text-lg font-bold text-[#102A43] dark:text-white">{{ row.firstName }} {{ row.lastName }}</h3></div><p class="mt-1 truncate text-sm text-surface-500">{{ row.email }}</p><p class="mt-1 text-[11px] font-medium uppercase tracking-wide text-surface-400">{{ row.source === 'jd_upload' ? 'Added to this requirement' : 'Existing candidate database' }}</p></div>
+            <div class="shrink-0 rounded-2xl border px-4 py-3 text-center" :class="scoreClass(row.score)"><p class="text-[10px] font-bold uppercase tracking-wide">AI Match</p><p class="mt-1 text-2xl font-black">{{ row.score }}%</p><p class="text-xs font-bold">{{ row.priority ?? '—' }}</p></div>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-3">
+            <div class="rounded-xl bg-[#F7FBFE] p-3 dark:bg-surface-800/50"><p class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-[#1F6FA3]"><ShieldCheck class="size-3" />Mandatory Match</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ row.mandatoryMatch ?? '—' }}</p></div>
+            <div class="rounded-xl bg-[#F1FAF8] p-3 dark:bg-surface-800/50"><p class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-[#16847F]"><TrendingUp class="size-3" />Key Strength</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ row.keyStrength ?? '—' }}</p></div>
+            <div class="rounded-xl bg-[#FFF9EC] p-3 dark:bg-surface-800/50"><p class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-[#976511]"><Target class="size-3" />Main Gap</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ row.mainGap ?? '—' }}</p></div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-surface-100 pt-4 dark:border-surface-800">
+            <p class="text-xs text-surface-400">Review evidence, then decide whether to activate recruitment.</p>
+            <NuxtLink v-if="row.promotedApplicationId" :to="localePath(`/dashboard/recruitment/${row.promotedApplicationId}`)" class="inline-flex items-center gap-1.5 rounded-xl border border-success-300 px-3 py-2 text-xs font-semibold text-success-700 no-underline"><CheckCircle2 class="size-3.5" />Open Recruitment</NuxtLink>
+            <button v-else :disabled="Boolean(promotingMatchId)" class="inline-flex items-center gap-1.5 rounded-xl bg-[#16847F] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" @click="promoteMatch(row)"><Loader2 v-if="promotingMatchId === row.matchId" class="size-3.5 animate-spin" /><UserPlus v-else class="size-3.5" />Move to Recruitment</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+      <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-bold text-[#102A43] dark:text-white">Active Recruitment Pipeline</h2><p class="mt-1 text-sm text-surface-500">Candidates you have already selected for recruiter action.</p></div><button :disabled="batchBusy || !batchEligible.length" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-40" @click="analyzePendingWithAi"><Loader2 v-if="batchBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ batchBusy ? `Analyzing ${batchProgress.done}/${batchProgress.total}` : `Analyze Pending (${batchEligible.length})` }}</button></div>
       <div v-if="status === 'pending'" class="py-10 text-center text-surface-400">Loading active recruitment…</div>
       <template v-else>
-        <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div class="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900"><div class="flex items-center gap-2 text-surface-500"><UsersRound class="size-4" /><span class="text-xs font-medium uppercase tracking-wide">Active Candidates</span></div><p class="mt-2 text-2xl font-bold">{{ summary.total }}</p></div>
-          <div class="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900"><div class="flex items-center gap-2 text-success-600"><CheckCircle2 class="size-4" /><span class="text-xs font-medium uppercase tracking-wide">Resume Assessed</span></div><p class="mt-2 text-2xl font-bold">{{ summary.assessed }}</p></div>
-          <div class="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900"><div class="flex items-center gap-2 text-surface-500"><ClipboardList class="size-4" /><span class="text-xs font-medium uppercase tracking-wide">Not Yet Assessed</span></div><p class="mt-2 text-2xl font-bold">{{ summary.notYetAssessed }}</p></div>
-          <div class="rounded-xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900"><div class="flex items-center gap-2 text-warning-600"><AlertTriangle class="size-4" /><span class="text-xs font-medium uppercase tracking-wide">Reassessment Required</span></div><p class="mt-2 text-2xl font-bold">{{ summary.needsReassessment }}</p></div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-xl bg-[#F7FBFE] p-4"><p class="text-xs font-semibold text-surface-500">Active Candidates</p><p class="mt-1 text-2xl font-bold text-[#102A43]">{{ summary.total }}</p></div>
+          <div class="rounded-xl bg-[#F1FAF8] p-4"><p class="text-xs font-semibold text-surface-500">Resume Assessed</p><p class="mt-1 text-2xl font-bold text-[#16847F]">{{ summary.assessed }}</p></div>
+          <div class="rounded-xl bg-surface-50 p-4"><p class="text-xs font-semibold text-surface-500">Not Yet Assessed</p><p class="mt-1 text-2xl font-bold text-surface-800">{{ summary.notYetAssessed }}</p></div>
+          <div class="rounded-xl bg-[#FFF9EC] p-4"><p class="text-xs font-semibold text-surface-500">Reassessment Required</p><p class="mt-1 text-2xl font-bold text-[#976511]">{{ summary.needsReassessment }}</p></div>
         </div>
-
-        <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white dark:border-surface-800 dark:bg-surface-900">
-          <table class="min-w-full text-sm">
-            <thead class="bg-surface-50 text-left text-xs uppercase tracking-wide text-surface-500 dark:bg-surface-800/60"><tr><th class="px-4 py-3">Rank</th><th class="px-4 py-3">Candidate</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Score</th><th class="px-4 py-3">Current Fit</th><th class="px-4 py-3">Recruitment Status</th><th class="px-4 py-3">Next Action</th><th class="px-4 py-3">Main Gap</th></tr></thead>
-            <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
-              <tr v-for="row in rows" :key="row.applicationId" class="hover:bg-surface-50 dark:hover:bg-surface-800/30">
-                <td class="px-4 py-3 font-semibold">{{ row.rank }}</td>
-                <td class="px-4 py-3 min-w-[220px]"><NuxtLink :to="localePath(`/dashboard/recruitment/${row.applicationId}`)" class="inline-flex items-center gap-1.5 font-semibold text-brand-600 hover:underline"><ClipboardList class="size-3.5" />{{ row.candidate }}</NuxtLink><div class="text-xs text-surface-400">{{ row.email }}</div><div v-if="row.needsReassessment" class="mt-1 text-xs font-semibold text-warning-600">Requirement changed — reassessment required</div><div v-else-if="row.selectedResume && !row.assessed" class="mt-1 text-xs text-brand-600">Ready for AI resume analysis</div></td>
-                <td class="px-4 py-3 font-semibold">{{ row.priority ?? '—' }}</td><td class="px-4 py-3">{{ row.provisionalFitScore != null ? `${row.provisionalFitScore}%` : '—' }}</td><td class="px-4 py-3 min-w-[150px]">{{ label(row.currentFit) }}</td><td class="px-4 py-3 min-w-[170px]">{{ label(row.lastStatus) }}</td><td class="px-4 py-3 min-w-[250px] font-medium text-surface-700 dark:text-surface-200">{{ row.nextAction ?? 'Open recruitment workflow' }}</td><td class="px-4 py-3 min-w-[200px]">{{ row.mainGap ?? '—' }}</td>
-              </tr>
-              <tr v-if="!rows.length"><td colspan="8" class="px-4 py-10 text-center text-surface-400">No candidates are currently in the active recruitment pipeline.</td></tr>
-            </tbody>
-          </table>
+        <div class="mt-4 space-y-3">
+          <NuxtLink v-for="row in rows" :key="row.applicationId" :to="localePath(`/dashboard/recruitment/${row.applicationId}`)" class="grid gap-3 rounded-xl border border-surface-200 p-4 no-underline hover:border-brand-300 hover:bg-[#F7FBFE] md:grid-cols-[1.2fr_.7fr_.8fr_1.3fr] dark:border-surface-800 dark:hover:bg-surface-800/30">
+            <div><p class="font-semibold text-surface-900 dark:text-white">{{ row.candidate }}</p><p class="text-xs text-surface-400">{{ row.email }}</p><p v-if="row.needsReassessment" class="mt-1 text-xs font-semibold text-warning-600">Requirement changed — reassessment required</p></div>
+            <div><p class="text-[10px] uppercase tracking-wide text-surface-400">Priority / Score</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ row.priority ?? '—' }} · {{ row.provisionalFitScore != null ? `${row.provisionalFitScore}%` : '—' }}</p></div>
+            <div><p class="text-[10px] uppercase tracking-wide text-surface-400">Stage</p><p class="mt-1 text-sm font-semibold text-surface-800 dark:text-white">{{ label(row.lastStatus) }}</p></div>
+            <div><p class="text-[10px] uppercase tracking-wide text-surface-400">Next Action</p><p class="mt-1 text-sm font-medium text-[#1F6FA3]">{{ row.nextAction ?? 'Open recruitment workflow' }}</p></div>
+          </NuxtLink>
+          <div v-if="!rows.length" class="rounded-xl border border-dashed border-surface-300 px-4 py-8 text-center text-sm text-surface-400">No candidates are currently in the active recruitment pipeline.</div>
         </div>
       </template>
     </section>
