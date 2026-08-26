@@ -13,10 +13,7 @@ export default defineEventHandler(async (event) => {
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
 
-  const requirement = await db.query.job.findFirst({
-    where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
-    columns: { id: true, title: true, status: true },
-  })
+  const requirement = await db.query.job.findFirst({ where: and(eq(job.id, jobId), eq(job.organizationId, orgId)), columns: { id: true, title: true, status: true } })
   if (!requirement) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const rows = await db.select({
@@ -37,6 +34,9 @@ export default defineEventHandler(async (event) => {
     nextAction: recruitmentApplicationProfile.nextAction,
     priority: recruitmentApplicationProfile.priority,
     provisionalFitScore: recruitmentApplicationProfile.provisionalFitScore,
+    aiCandidateSummary: recruitmentApplicationProfile.aiCandidateSummary,
+    aiFinalBrief: recruitmentApplicationProfile.aiFinalBrief,
+    aiSummaryStale: recruitmentApplicationProfile.aiSummaryStale,
     assessmentLocked: recruitmentApplicationProfile.assessmentLocked,
     requirementVersionAssessed: recruitmentApplicationProfile.requirementVersionAssessed,
     lastUpdatedById: recruitmentApplicationProfile.lastUpdatedBy,
@@ -45,10 +45,7 @@ export default defineEventHandler(async (event) => {
   })
     .from(application)
     .innerJoin(candidate, eq(candidate.id, application.candidateId))
-    .leftJoin(recruitmentApplicationProfile, and(
-      eq(recruitmentApplicationProfile.applicationId, application.id),
-      eq(recruitmentApplicationProfile.organizationId, orgId),
-    ))
+    .leftJoin(recruitmentApplicationProfile, and(eq(recruitmentApplicationProfile.applicationId, application.id), eq(recruitmentApplicationProfile.organizationId, orgId)))
     .leftJoin(user, eq(user.id, recruitmentApplicationProfile.lastUpdatedBy))
     .where(and(eq(application.organizationId, orgId), eq(application.jobId, jobId)))
 
@@ -58,6 +55,7 @@ export default defineEventHandler(async (event) => {
     currentFit: row.currentFit ?? 'not_yet_assessed',
     lastStatus: row.lastStatus ?? 'candidate_added',
     nextAction: row.nextAction ?? 'Upload or verify the latest resume.',
+    aiCandidateSummary: row.aiCandidateSummary ?? row.resumeBrief ?? null,
     lastUpdatedBy: row.lastUpdatedByName ?? (row.lastUpdatedById ? 'User' : null),
   }))
 
