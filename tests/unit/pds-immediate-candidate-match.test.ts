@@ -25,6 +25,14 @@ describe('PDS immediate candidate match workflow', () => {
     expect(source).toContain('reusedAssessment = true')
   })
 
+  it('does not regress a candidate who is already progressing through recruitment', () => {
+    const source = readSource('server/api/applications/[id]/quick-match.post.ts')
+    expect(source).toContain("allowedNewAssessmentStatuses = new Set(['candidate_added', 'resume_received', 'reassess'])")
+    expect(source).toContain("profile.lastStatus === 'resume_reviewed'")
+    expect(source).toContain('profile.selectedResumeDocumentId === latestResume.id')
+    expect(source).toContain('already progressing in recruitment')
+  })
+
   it('persists the score even below the working Candidate Pool threshold', () => {
     const source = readSource('server/api/applications/[id]/quick-match.post.ts')
     expect(source).toContain('db.insert(talentPoolMatch)')
