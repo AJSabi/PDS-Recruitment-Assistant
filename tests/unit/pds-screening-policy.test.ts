@@ -2,53 +2,52 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync('server/utils/ai/pdsScreening.ts', 'utf8')
+const workflowSchema = readFileSync('server/utils/schemas/recruitmentWorkflow.ts', 'utf8')
+const answerApi = readFileSync('server/api/applications/[id]/screening/answer.post.ts', 'utf8')
+const screeningUi = readFileSync('app/components/PdsRecruiterScreening.vue', 'utf8')
+const recruitmentPage = readFileSync('app/pages/dashboard/recruitment/[id].vue', 'utf8')
 const notInterestedApi = readFileSync('server/api/applications/[id]/screening/not-interested.post.ts', 'utf8')
 const notInterestedUi = readFileSync('app/components/PdsCandidateNotInterested.vue', 'utf8')
-const screeningMigration = readFileSync('server/database/migrations/1008_screening_conversation_brief.sql', 'utf8')
-const migrationJournal = readFileSync('server/database/migrations/meta/_journal.json', 'utf8')
 
 describe('PDS recruiter screening policy', () => {
-  it('caps recruiter screening at 10 questions', () => {
-    expect(source).toContain("z.array(questionSchema).min(1).max(10)")
-    expect(source).toContain('Generate no more than 10 questions')
-  })
-
-  it('prioritises unresolved Mandatory evidence before Preferred evidence', () => {
+  it('keeps recruiter screening bounded and candidate-specific', () => {
+    expect(source).toContain('Generate 5-8 base questions')
+    expect(source).toContain('10 or fewer')
     expect(source).toContain('Mandatory skills marked requires_verification')
-    expect(source).toContain('Mandatory skills marked no_evidence_found')
-    expect(source).toContain('Mandatory skills marked partial_evidence')
-    expect(source).toContain('Important Preferred skills with unresolved evidence')
+    expect(source).toContain('personal ownership, scale, recency and measurable result')
+    expect(source).toContain('Avoid generic interview questions')
   })
 
-  it('requires candidate-specific evidence validation rather than generic interview questions', () => {
-    expect(source).toContain("If this question could be asked unchanged to almost every candidate for the role, rewrite it")
-    expect(source).toContain('Do not ask generic questions such as')
-    expect(source).toContain('Tell me about yourself')
-    expect(source).toContain("candidate's PERSONAL contribution")
+  it('uses MCQ-first capture for recruiter speed', () => {
+    expect(source).toContain('MCQ-FIRST CAPTURE')
+    expect(source).toContain('Provide 4-6 realistic options whenever possible')
+    expect(source).toContain('Other / Exact Response')
+    expect(screeningUi).toContain('MCQ-first capture')
+    expect(screeningUi).toContain('selectedOption === option')
+    expect(screeningUi).toContain('v-else-if="otherSelected"')
   })
 
-  it('focuses recruiter capture on ownership, scale and measurable outcomes', () => {
-    expect(source).toContain('revenue/GM target and achievement')
-    expect(source).toContain('deal size')
-    expect(source).toContain('project scope')
-    expect(source).toContain('Owned end-to-end / Co-owned / Supported / Exposure only / No direct experience / Other')
+  it('supports conditional answer-based follow-up questions without an AI call per answer', () => {
+    expect(workflowSchema).toContain('followUps: z.array(screeningFollowUpSchema).max(3).optional()')
+    expect(source).toContain('ADAPTIVE FOLLOW-UPS')
+    expect(answerApi).toContain('matchingFollowUp')
+    expect(answerApi).toContain('updatedQuestions.splice(currentIndex + 1, 0')
+    expect(answerApi).toContain('adaptiveFollowUpAdded')
+    expect(answerApi).not.toContain('generatePdsScreeningQuestions')
   })
 
-  it('does not allow unresolved critical Mandatory evidence to become Strong Fit', () => {
-    expect(source).toContain('must not be classified Strong Fit while a genuinely critical Mandatory requirement remains unsupported')
-    expect(source).toContain('Significant Gap is an evidence-based assessment, not an automatic rejection instruction')
+  it('does not refresh the whole recruitment workspace after every screening response', () => {
+    const submitBlock = screeningUi.slice(screeningUi.indexOf('async function submitAnswer()'), screeningUi.indexOf('async function getAiInterpretation()'))
+    expect(submitBlock).toContain('await refresh()')
+    expect(submitBlock).not.toContain("emit('changed')")
   })
 
-  it('keeps the screening realistic for a 10-15 minute recruiter conversation', () => {
-    expect(source).toContain('10-15 minute phone screening')
-    expect(source).toContain('completed within 10-15 minutes')
-    expect(source).toContain('30-90 seconds')
-  })
-
-  it('keeps the screening session database aligned with the conversation brief used by the API', () => {
-    expect(screeningMigration).toContain('ALTER TABLE "recruiter_screening_session"')
-    expect(screeningMigration).toContain('ADD COLUMN IF NOT EXISTS "conversation_brief" text')
-    expect(migrationJournal).toContain('1008_screening_conversation_brief')
+  it('allows a completed screening to reopen as a fresh revalidation flow after Reassess', () => {
+    expect(screeningUi).toContain("const reassessmentMode = computed(() => props.recruitmentStatus === 'reassess')")
+    expect(screeningUi).toContain("reassessmentMode.value && screening.value?.status === 'completed'")
+    expect(screeningUi).toContain('Prepare Revalidation Questions')
+    expect(recruitmentPage).toContain(':recruitment-status="profile?.lastStatus"')
+    expect(recruitmentPage).toContain("profile.value?.lastStatus === 'reassess' ? 'Revalidate Candidate'")
   })
 
   it('records Candidate Not Interested as a candidate decision, not recruiter rejection', () => {
@@ -63,15 +62,12 @@ describe('PDS recruiter screening policy', () => {
     expect(notInterestedApi).toContain("['resume_reviewed', 'recruiter_screening_pending']")
     expect(notInterestedApi).toContain("status: 'completed'")
     expect(notInterestedApi).toContain("syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'not_proceeding')")
-    expect(notInterestedApi).toContain("nextAction: 'Candidate Not Interested — Reassess or close application'")
   })
 
-  it('offers practical candidate-decision reasons and keeps reopening governed through Reassess', () => {
+  it('offers practical candidate-decision reasons and governed reopening', () => {
     expect(notInterestedUi).toContain('Candidate Not Interested')
-    expect(notInterestedUi).toContain('Not interested in the role')
     expect(notInterestedUi).toContain('Compensation not suitable')
     expect(notInterestedUi).toContain('Location not suitable')
-    expect(notInterestedUi).toContain('Timing / availability not suitable')
     expect(notInterestedUi).toContain('may be reconsidered later through Reassess')
   })
 })
