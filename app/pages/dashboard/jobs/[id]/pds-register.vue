@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, ClipboardList, Download, FileSearch, RefreshCw, Search } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, ClipboardList, Download, FileSearch, RefreshCw, Search, PhoneCall } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
@@ -20,6 +20,17 @@ function label(value?: string | null) {
 
 function formatDate(value?: string | Date | null) {
   return value ? new Date(value).toLocaleDateString() : '—'
+}
+
+function screeningActionLabel(status?: string | null) {
+  if (status === 'resume_reviewed') return 'Start Recruiter Screening'
+  if (status === 'recruiter_screening_pending') return 'Continue Recruiter Screening'
+  if (status === 'hold_for_comparison' || status === 'reassess') return 'Open Recruiter Screening'
+  return 'Open Recruitment'
+}
+
+function screeningActionPrimary(status?: string | null) {
+  return ['resume_reviewed', 'recruiter_screening_pending', 'hold_for_comparison', 'reassess'].includes(status ?? '')
 }
 
 const filtered = computed(() => {
@@ -100,7 +111,7 @@ function exportCsv() {
         <div class="overflow-x-auto rounded-xl border border-surface-200 bg-white dark:border-surface-800 dark:bg-surface-900">
           <table class="min-w-full text-sm">
             <thead class="bg-surface-50 text-left text-xs uppercase tracking-wide text-surface-500 dark:bg-surface-800/60">
-              <tr><th class="px-4 py-3">Candidate & AI Summary</th><th class="px-4 py-3">Phone</th><th class="px-4 py-3">Last Contact</th><th class="px-4 py-3">Current Fit</th><th class="px-4 py-3">Final Status</th><th class="px-4 py-3">Status Date</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Next Action</th><th class="px-4 py-3">Last Updated By</th></tr>
+              <tr><th class="px-4 py-3">Candidate & AI Summary</th><th class="px-4 py-3">Phone</th><th class="px-4 py-3">Last Contact</th><th class="px-4 py-3">Current Fit</th><th class="px-4 py-3">Final Status</th><th class="px-4 py-3">Status Date</th><th class="px-4 py-3">Priority</th><th class="px-4 py-3">Next Action</th><th class="px-4 py-3">Last Updated By</th><th class="px-4 py-3">Action</th></tr>
             </thead>
             <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
               <tr v-for="row in filtered" :key="row.applicationId" class="hover:bg-surface-50 dark:hover:bg-surface-800/30">
@@ -113,8 +124,11 @@ function exportCsv() {
                 <td class="px-4 py-3 font-semibold">{{ row.priority ?? '—' }}</td>
                 <td class="px-4 py-3 min-w-[260px]">{{ row.nextAction }}</td>
                 <td class="px-4 py-3 min-w-[150px]">{{ row.lastUpdatedBy ?? '—' }}</td>
+                <td class="px-4 py-3 min-w-[190px]">
+                  <NuxtLink :to="localePath(`/dashboard/recruitment/${row.applicationId}#recruiter-screening`)" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold no-underline" :class="screeningActionPrimary(row.lastStatus) ? 'bg-[#16847F] text-white' : 'border border-surface-300 text-surface-600 dark:border-surface-700 dark:text-surface-300'"><PhoneCall class="size-3.5" />{{ screeningActionLabel(row.lastStatus) }}</NuxtLink>
+                </td>
               </tr>
-              <tr v-if="!filtered.length"><td colspan="9" class="px-4 py-10 text-center text-surface-400">No candidates match the current search.</td></tr>
+              <tr v-if="!filtered.length"><td colspan="10" class="px-4 py-10 text-center text-surface-400">No candidates match the current search.</td></tr>
             </tbody>
           </table>
         </div>
