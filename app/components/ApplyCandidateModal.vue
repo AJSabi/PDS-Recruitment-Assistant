@@ -118,20 +118,17 @@ async function attachCandidate(body: Record<string, unknown>) {
         applyError.value = `Candidate is linked to this requirement, but the resume upload failed: ${uploadErr?.data?.statusMessage ?? uploadErr?.message ?? 'Unknown upload error'}`
         return
       }
+    }
 
-      try {
-        matchResult.value = await calculateImmediateMatch(result.applicationId)
-        toast.success(`AI Match: ${matchResult.value.score}%`, {
-          message: 'This is AI decision support only. The recruiter can validate or override the interpretation through Recruiter Screening.',
-        })
-      } catch (matchErr: any) {
-        const message = matchErr?.data?.statusMessage ?? matchErr?.message ?? 'AI matching could not be completed.'
-        matchResult.value = { unavailable: true, message }
-        toast.warning('Candidate added; match unavailable', `${message} The candidate remains saved and can still be reviewed manually.`)
-      }
-    } else {
-      matchResult.value = { unavailable: true, message: 'Add a resume to calculate the AI match percentage.' }
-      toast.success('Candidate added to requirement', { message: 'Add a resume to calculate the AI match percentage.' })
+    try {
+      matchResult.value = await calculateImmediateMatch(result.applicationId)
+      toast.success(`AI Match: ${matchResult.value.score}%`, {
+        message: 'This is AI decision support only. The recruiter can validate or override the interpretation through Recruiter Screening.',
+      })
+    } catch (matchErr: any) {
+      const message = matchErr?.data?.statusMessage ?? matchErr?.message ?? 'AI matching could not be completed.'
+      matchResult.value = { unavailable: true, message }
+      toast.warning('Candidate added; match unavailable', `${message} The candidate remains saved and can still be reviewed manually.`)
     }
   } catch (err: any) {
     if (handlePreviewReadOnlyError(err)) return
@@ -165,7 +162,7 @@ async function createCandidate() {
       <div class="absolute inset-0 bg-black/50" @click="finishAndClose" />
       <div class="relative mx-4 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-surface-900">
         <div class="flex items-center justify-between border-b border-surface-200 px-5 py-4 dark:border-surface-800">
-          <div class="flex items-center gap-2"><UserPlus class="size-5 text-brand-600" /><div><h3 class="text-lg font-semibold text-surface-900 dark:text-surface-50">Add Candidate to Requirement</h3><p class="mt-0.5 text-xs text-surface-500">Upload a resume, add the candidate and get an immediate AI match against the approved JD & Skill Matrix.</p></div></div>
+          <div class="flex items-center gap-2"><UserPlus class="size-5 text-brand-600" /><div><h3 class="text-lg font-semibold text-surface-900 dark:text-surface-50">Add Candidate to Requirement</h3><p class="mt-0.5 text-xs text-surface-500">Add the candidate and calculate an immediate AI match from the newest readable resume already on file or a newly uploaded resume.</p></div></div>
           <button type="button" class="text-surface-400 hover:text-surface-600" @click="finishAndClose"><X class="size-5" /></button>
         </div>
 
@@ -233,9 +230,9 @@ async function createCandidate() {
               <div v-if="searchStatus === 'pending'" class="py-8 text-center text-sm text-surface-400">Searching…</div>
               <div v-else-if="candidates.length === 0" class="py-8 text-center text-sm text-surface-400">No candidates found.</div>
               <div v-else class="space-y-1"><button v-for="c in candidates" :key="c.id" type="button" class="flex w-full items-center justify-between rounded-lg px-3 py-3 text-left" :class="selectedExistingCandidateId === c.id ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-surface-50'" @click="selectedExistingCandidateId = c.id; resetError()"><div class="min-w-0"><p class="truncate text-sm font-medium">{{ formatCandidateName(c) }}</p><p class="truncate text-xs text-surface-400">{{ c.email }}</p></div><span class="text-xs font-semibold text-brand-600">{{ selectedExistingCandidateId === c.id ? 'Selected' : 'Select' }}</span></button></div>
-              <div v-if="selectedExistingCandidate" class="mt-4 rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4"><p class="text-sm font-semibold text-[#102A43]">Selected: {{ formatCandidateName(selectedExistingCandidate) }}</p><label class="mt-3 block text-sm font-medium">Add a newer resume <span class="font-normal text-surface-400">(optional)</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label><span v-if="resumeFile" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><FileText class="size-3.5" />{{ resumeFile.name }}</span></div>
+              <div v-if="selectedExistingCandidate" class="mt-4 rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4"><p class="text-sm font-semibold text-[#102A43]">Selected: {{ formatCandidateName(selectedExistingCandidate) }}</p><p class="mt-1 text-xs text-surface-500">The newest readable resume already in the Candidate Database will be used for the immediate match. Upload a newer resume only when you want to replace it.</p><label class="mt-3 block text-sm font-medium">Add a newer resume <span class="font-normal text-surface-400">(optional)</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label><span v-if="resumeFile" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><FileText class="size-3.5" />{{ resumeFile.name }}</span></div>
             </div>
-            <div class="flex justify-end gap-2 border-t border-surface-200 px-5 py-4"><button type="button" :disabled="isApplying" class="rounded-lg border border-surface-300 px-4 py-2 text-sm" @click="emit('close')">Cancel</button><button type="button" :disabled="isApplying || !selectedExistingCandidateId" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : (resumeFile ? 'Add & Calculate Match' : 'Add to Requirement') }}</button></div>
+            <div class="flex justify-end gap-2 border-t border-surface-200 px-5 py-4"><button type="button" :disabled="isApplying" class="rounded-lg border border-surface-300 px-4 py-2 text-sm" @click="emit('close')">Cancel</button><button type="button" :disabled="isApplying || !selectedExistingCandidateId" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button></div>
           </template>
         </template>
       </div>
