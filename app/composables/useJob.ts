@@ -17,6 +17,17 @@ export function useJob(id: MaybeRefOrGetter<string>) {
     },
   )
 
+  async function refreshRequirementCaches() {
+    await refreshNuxtData([
+      'jobs:all',
+      'jobs:draft',
+      'jobs:open',
+      'jobs:closed',
+      'jobs:archived',
+      'pds-topbar-jobs',
+    ])
+  }
+
   /** Update job fields (partial) and refresh both detail and list caches */
   async function updateJob(payload: Partial<{
     title: string
@@ -43,7 +54,7 @@ export function useJob(id: MaybeRefOrGetter<string>) {
         body: payload,
       })
       await refresh()
-      await refreshNuxtData('jobs')
+      await refreshRequirementCaches()
       return updated
     } catch (error) {
       handlePreviewReadOnlyError(error)
@@ -59,7 +70,7 @@ export function useJob(id: MaybeRefOrGetter<string>) {
       handlePreviewReadOnlyError(error)
       throw error
     }
-    await refreshNuxtData('jobs')
+    await refreshRequirementCaches()
     await navigateTo(localePath('/dashboard/jobs'))
   }
 
