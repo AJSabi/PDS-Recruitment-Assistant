@@ -50,7 +50,11 @@ const labels: Record<string, string> = {
 }
 
 const currentStatus = computed(() => props.profile?.lastStatus ?? '')
-const primaryStage = computed(() => primaryNextStage[currentStatus.value] ?? null)
+const recruiterDecisionRequired = computed(() => currentStatus.value === 'recruiter_screening_completed' && props.profile?.nextAction === 'Recruiter Decision Required')
+const primaryStage = computed(() => {
+  if (currentStatus.value === 'recruiter_screening_completed' && props.profile?.nextAction !== 'Proceed to Hiring Manager Round') return null
+  return primaryNextStage[currentStatus.value] ?? null
+})
 const canHold = computed(() => [
   'resume_reviewed',
   'recruiter_screening_pending',
@@ -68,7 +72,10 @@ const canStop = computed(() => !['closed', 'joined'].includes(currentStatus.valu
 
 const stageGuidance = computed(() => {
   switch (currentStatus.value) {
-    case 'recruiter_screening_completed': return 'Recruiter Screening is complete. Move the candidate to the Hiring Manager Round when ready.'
+    case 'recruiter_screening_completed':
+      return recruiterDecisionRequired.value
+        ? 'Recruiter Screening is complete, but the final next step requires recruiter confirmation. Confirm Proceed to Hiring Manager or choose another decision below.'
+        : 'Recruiter Screening is complete. Move the candidate to the Hiring Manager Round when ready.'
     case 'hiring_manager_round_pending': return 'After the external Hiring Manager discussion is completed, confirm completion here.'
     case 'hiring_manager_round_completed': return 'Hiring Manager Round is complete. Move the candidate to the HOD Round.'
     case 'hod_round_pending': return 'After the external HOD discussion is completed, confirm completion here.'
@@ -150,6 +157,12 @@ async function startReassess() {
         </label>
         <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(primaryStage)">
           {{ labels[primaryStage] ?? primaryStage }}
+        </button>
+      </div>
+
+      <div v-else-if="recruiterDecisionRequired" class="mt-4">
+        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage('hiring_manager_round_pending')">
+          Confirm Recruiter Decision: Proceed to Hiring Manager
         </button>
       </div>
 
