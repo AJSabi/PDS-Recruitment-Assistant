@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Briefcase, ClipboardList, FileSearch, Target, ShieldCheck, TrendingUp, AlertTriangle, Route, Mail, Sparkles } from 'lucide-vue-next'
+import { ArrowLeft, Briefcase, ClipboardList, FileSearch, Target, ShieldCheck, TrendingUp, AlertTriangle, Route, Mail, Sparkles, PhoneCall } from 'lucide-vue-next'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 
@@ -15,9 +15,11 @@ const { data: profileData, refresh: refreshProfile } = useFetch(() => `/api/appl
 
 const profile = computed<any>(() => profileData.value?.profile ?? null)
 const screeningEnabled = computed(() => ['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.value?.lastStatus ?? ''))
+const screeningActionVisible = computed(() => ['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.value?.lastStatus ?? ''))
+const screeningActionLabel = computed(() => profile.value?.lastStatus === 'recruiter_screening_pending' ? 'Continue Recruiter Screening' : 'Start Recruiter Screening')
 
 const stageLabels: Record<string, string> = {
-  candidate_added: 'Candidate Added', resume_received: 'Resume Received', resume_reviewed: 'Ready for Recruiter Screening', recruiter_screening_pending: 'Recruiter Screening Pending', recruiter_screening_completed: 'Recruiter Screening Completed', hiring_manager_round_pending: 'Hiring Manager Round Pending', hiring_manager_round_completed: 'Hiring Manager Round Completed', hod_round_pending: 'HOD Round Pending', hod_round_completed: 'HOD Round Completed', hr_round_pending: 'HR Round Pending', hr_round_completed: 'HR Round Completed', hold_for_comparison: 'Hold for Comparison', reassess: 'Reassessment Required', not_proceeding: 'Not Proceeding', offer_stage: 'Offer Stage', offer_accepted: 'Offer Accepted', offer_declined: 'Offer Declined', joined: 'Joined', closed: 'Closed',
+  candidate_added: 'Candidate Added', resume_received: 'Resume Received', resume_reviewed: 'Ready for Recruiter Screening', recruiter_screening_pending: 'Recruiter Screening Pending', recruiter_screening_completed: 'Recruiter Screening Completed', hiring_manager_round_pending: 'Hiring Manager Round Pending', hiring_manager_round_completed: 'Hiring Manager Round Completed', hod_round_pending: 'HOD Pending', hod_round_completed: 'HOD Completed', hr_round_pending: 'HR Pending', hr_round_completed: 'HR Completed', hold_for_comparison: 'Hold for Comparison', reassess: 'Reassessment Required', not_proceeding: 'Not Proceeding', offer_stage: 'Offer Stage', offer_accepted: 'Offer Accepted', offer_declined: 'Offer Declined', joined: 'Joined', closed: 'Closed',
 }
 const fitLabels: Record<string, string> = {
   not_yet_assessed: 'Not Yet Assessed', strong_fit: 'Strong Fit', potential_fit: 'Potential Fit', borderline_requires_validation: 'Borderline / Requires Validation', significant_gap: 'Significant Gap',
@@ -30,6 +32,9 @@ function scoreClass(score?: number | null) {
 }
 
 async function refreshWorkflow() { await Promise.all([refreshApplication(), refreshProfile()]) }
+function openRecruiterScreening() {
+  document.getElementById('recruiter-screening')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 useSeoMeta({
   title: computed(() => application.value ? `Recruitment — ${application.value.candidate.firstName} ${application.value.candidate.lastName}` : 'Recruitment Application'),
@@ -42,6 +47,7 @@ useSeoMeta({
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/pds-ranking`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />AI Candidate Pool</NuxtLink>
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/ai-analysis`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><FileSearch class="size-4" />JD & Skill Matrix</NuxtLink>
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/pds-register`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ClipboardList class="size-4" />Candidate Register</NuxtLink>
+      <button v-if="screeningActionVisible" type="button" data-testid="start-recruiter-screening" class="ml-auto inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white shadow-sm" @click="openRecruiterScreening"><PhoneCall class="size-4" />{{ screeningActionLabel }}</button>
     </div>
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading recruitment workspace…</div>
