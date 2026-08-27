@@ -55,7 +55,8 @@ const primaryStage = computed(() => {
   if (currentStatus.value === 'recruiter_screening_completed' && props.profile?.nextAction !== 'Proceed to Hiring Manager Round') return null
   return primaryNextStage[currentStatus.value] ?? null
 })
-const canHold = computed(() => [
+
+const holdAllowedStatuses = new Set([
   'resume_reviewed',
   'recruiter_screening_pending',
   'recruiter_screening_completed',
@@ -66,9 +67,41 @@ const canHold = computed(() => [
   'hr_round_pending',
   'hr_round_completed',
   'offer_stage',
-].includes(currentStatus.value))
-const canReassess = computed(() => !['candidate_added', 'closed', 'joined'].includes(currentStatus.value))
-const canStop = computed(() => !['closed', 'joined'].includes(currentStatus.value))
+])
+const reassessAllowedStatuses = new Set([
+  'resume_reviewed',
+  'recruiter_screening_pending',
+  'recruiter_screening_completed',
+  'hiring_manager_round_pending',
+  'hiring_manager_round_completed',
+  'hod_round_pending',
+  'hod_round_completed',
+  'hr_round_pending',
+  'hr_round_completed',
+  'hold_for_comparison',
+  'not_proceeding',
+  'offer_declined',
+])
+const notProceedingAllowedStatuses = new Set([
+  'candidate_added',
+  'resume_received',
+  'resume_reviewed',
+  'recruiter_screening_pending',
+  'recruiter_screening_completed',
+  'hiring_manager_round_pending',
+  'hiring_manager_round_completed',
+  'hod_round_pending',
+  'hod_round_completed',
+  'hr_round_pending',
+  'hr_round_completed',
+  'hold_for_comparison',
+  'reassess',
+])
+
+const canHold = computed(() => holdAllowedStatuses.has(currentStatus.value))
+const canReassess = computed(() => reassessAllowedStatuses.has(currentStatus.value))
+const canStop = computed(() => notProceedingAllowedStatuses.has(currentStatus.value))
+const canCloseTerminalOutcome = computed(() => ['offer_declined', 'not_proceeding'].includes(currentStatus.value))
 
 const stageGuidance = computed(() => {
   switch (currentStatus.value) {
@@ -84,8 +117,12 @@ const stageGuidance = computed(() => {
     case 'hr_round_completed': return 'HR Round is complete. When approved, manually move the candidate to Offer Stage.'
     case 'hold_for_comparison': return 'Candidate is on hold. Resume the appropriate workflow stage after the comparison decision, or choose Reassess / Not Proceeding.'
     case 'reassess': return 'Complete the reassessment workflow above before advancing the candidate.'
-    case 'offer_stage': return 'Record the offer outcome when known.'
-    case 'offer_accepted': return 'Confirm Joined after the candidate has actually joined.'
+    case 'not_proceeding': return 'Recruitment has stopped for this application. Reassess if circumstances change, or close the application.'
+    case 'offer_stage': return 'Record the actual offer outcome manually. Choose Offer Accepted or Offer Declined; the application cannot skip directly to Joined or Closed.'
+    case 'offer_accepted': return 'Offer has been accepted. Confirm Joined only after the candidate actually joins. If the candidate withdraws before joining, record Offer Declined.'
+    case 'offer_declined': return 'Offer has been declined. Reassess only if recruitment is reopened; otherwise close the application.'
+    case 'joined': return 'Candidate has joined. Close the application when recruitment administration is complete.'
+    case 'closed': return 'This recruitment application is closed.'
     default: return 'Complete the current workflow action shown above before advancing the candidate.'
   }
 })
@@ -143,7 +180,7 @@ async function startReassess() {
   <section class="rounded-xl border border-surface-200 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
     <div class="mb-4">
       <h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Stage Progression</h2>
-      <p class="mt-1 text-xs text-surface-500">Recruiter Screening is completed inside the application. Hiring Manager, HOD and HR rounds happen manually outside the application; the recruiter only records each stage movement here.</p>
+      <p class="mt-1 text-xs text-surface-500">Recruiter Screening is completed inside the application. Hiring Manager, HOD and HR rounds happen manually outside the application; the recruiter only records each stage movement here. Offer outcomes, joining and closure are also recruiter-confirmed.</p>
     </div>
 
     <div class="rounded-lg bg-surface-50 p-4 dark:bg-surface-800/50">
@@ -170,6 +207,10 @@ async function startReassess() {
         <button :disabled="busy" class="rounded-lg bg-success-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage('offer_accepted')">Offer Accepted</button>
         <button :disabled="busy" class="rounded-lg border border-danger-300 px-4 py-2 text-sm font-semibold text-danger-700 disabled:opacity-50" @click="confirmStage('offer_declined', true)">Offer Declined</button>
       </div>
+
+      <div v-if="canCloseTerminalOutcome" class="mt-4">
+        <button :disabled="busy" class="rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold text-surface-700 disabled:opacity-50" @click="confirmStage('closed')">Close Application</button>
+      </div>
     </div>
 
     <details v-if="canHold || canReassess || canStop" class="mt-4 rounded-lg border border-surface-200 p-4 dark:border-surface-800">
@@ -189,7 +230,7 @@ async function startReassess() {
 
     <div v-if="showReassess" class="mt-4 rounded-lg border border-warning-200 bg-warning-50 p-4 dark:border-warning-800 dark:bg-warning-950/20">
       <label class="block text-xs font-medium text-surface-700 dark:text-surface-200">Reason for reassessment</label>
-      <textarea v-model="reassessSummary" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="New resume, requirement change, contradictory evidence, interview feedback, etc." />
+      <textarea v-model="reassessSummary" rows="3" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="New resume, requirement change, contradictory evidence, or other reason" />
       <div class="mt-3 flex justify-end gap-2">
         <button class="rounded-lg border border-surface-300 px-3 py-1.5 text-xs font-medium" @click="showReassess = false">Cancel</button>
         <button :disabled="busy" class="rounded-lg bg-warning-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" @click="startReassess">Confirm Reassess</button>
