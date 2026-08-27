@@ -18,7 +18,6 @@ import {
 
 const route = useRoute()
 const localePath = useLocalePath()
-const getRouteBaseName = useRouteBaseName()
 const { data: session } = await authClient.useSession(useFetch)
 const { isDark, toggle: toggleColorMode } = useColorMode()
 const isSigningOut = ref(false)
@@ -61,15 +60,17 @@ function isActiveRoute(to: string, exact = false) {
   return exact ? route.path === localized : route.path === localized || route.path.startsWith(`${localized}/`)
 }
 
+// Derive the active requirement directly from the reactive route instead of
+// relying on route-name hydration. This keeps the job sub-nav available on the
+// first client-side navigation after creating/opening a requirement.
 const activeJobId = computed(() => {
-  const baseName = getRouteBaseName(route)
-  if (typeof baseName !== 'string' || !baseName.startsWith('dashboard-jobs-id')) return null
   const idParam = route.params.id
-  if (typeof idParam !== 'string' || idParam === 'new') return null
-  return idParam
+  if (typeof idParam !== 'string' || !idParam || idParam === 'new') return null
+  const jobsBase = localePath('/dashboard/jobs')
+  return route.path.startsWith(`${jobsBase}/`) ? idParam : null
 })
 
-const { data: jobsData } = useFetch('/api/jobs', {
+const { data: jobsData, refresh: refreshTopbarJobs } = useFetch('/api/jobs', {
   key: 'pds-topbar-jobs',
   query: { limit: 100 },
   headers: useRequestHeaders(['cookie']),
@@ -79,6 +80,10 @@ const activeJob = computed<any>(() => {
   if (!activeJobId.value) return null
   return (jobsData.value?.data ?? []).find((item: any) => item.id === activeJobId.value) ?? null
 })
+
+watch(activeJobId, async (jobId) => {
+  if (jobId && !activeJob.value) await refreshTopbarJobs()
+}, { immediate: true })
 
 const jobTabs = computed(() => {
   if (!activeJobId.value) return []
