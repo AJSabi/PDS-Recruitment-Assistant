@@ -10,6 +10,16 @@ describe('PDS immediate candidate match workflow', () => {
     expect(modal).not.toContain('/talent-pool/sync')
   })
 
+  it('uses an existing candidates stored resume when no newer resume is uploaded', () => {
+    const modal = readSource('app/components/ApplyCandidateModal.vue')
+    const quickMatchPosition = modal.indexOf('matchResult.value = await calculateImmediateMatch(result.applicationId)')
+    const uploadGuardPosition = modal.indexOf('if (resumeFile.value)')
+    expect(uploadGuardPosition).toBeGreaterThanOrEqual(0)
+    expect(quickMatchPosition).toBeGreaterThan(uploadGuardPosition)
+    expect(modal).toContain('The newest readable resume already in the Candidate Database will be used for the immediate match.')
+    expect(modal).toContain("'Add & Calculate Match'")
+  })
+
   it('requires the approved JD and Skill Matrix before calculating the percentage', () => {
     const source = readSource('server/api/applications/[id]/quick-match.post.ts')
     expect(source).toContain('skillMatrixApproved')
@@ -33,11 +43,17 @@ describe('PDS immediate candidate match workflow', () => {
     expect(source).toContain('already progressing in recruitment')
   })
 
-  it('persists the score even below the working Candidate Pool threshold', () => {
+  it('persists the score even below the working Candidate Pool threshold without showing an active application in the Pool', () => {
     const source = readSource('server/api/applications/[id]/quick-match.post.ts')
     expect(source).toContain('db.insert(talentPoolMatch)')
     expect(source).toContain('provisionalFitScore: ranking.score')
-    expect(source).toContain('visibleInCandidatePool: ranking.score >= 50')
+    expect(source).toContain('visibleInCandidatePool: false')
+  })
+
+  it('keeps the legacy application status synchronized when Reassess returns to resume review', () => {
+    const source = readSource('server/api/applications/[id]/quick-match.post.ts')
+    expect(source).toContain('syncApplicationStatusForRecruitmentStage')
+    expect(source).toContain("syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'resume_reviewed')")
   })
 
   it('keeps Current Fit human-controlled and offers recruiter validation instead of auto rejection', () => {
