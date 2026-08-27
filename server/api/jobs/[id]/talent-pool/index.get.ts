@@ -1,5 +1,5 @@
-import { and, desc, eq, gte } from 'drizzle-orm'
-import { candidate, recruitmentRequirementState, talentPoolMatch } from '../../../../database/schema'
+import { and, desc, eq, gte, isNull } from 'drizzle-orm'
+import { application, candidate, recruitmentRequirementState, talentPoolMatch } from '../../../../database/schema'
 import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -52,11 +52,18 @@ export default defineEventHandler(async (event) => {
     assessedAt: talentPoolMatch.assessedAt,
   }).from(talentPoolMatch)
     .innerJoin(candidate, eq(candidate.id, talentPoolMatch.candidateId))
+    .leftJoin(application, and(
+      eq(application.organizationId, orgId),
+      eq(application.jobId, jobId),
+      eq(application.candidateId, talentPoolMatch.candidateId),
+    ))
     .where(and(
       eq(talentPoolMatch.organizationId, orgId),
       eq(talentPoolMatch.jobId, jobId),
       eq(talentPoolMatch.requirementVersion, requirementState.revision),
       gte(talentPoolMatch.score, FINAL_POOL_THRESHOLD),
+      isNull(talentPoolMatch.promotedApplicationId),
+      isNull(application.id),
     ))
     .orderBy(desc(talentPoolMatch.score), desc(talentPoolMatch.assessedAt))
 
