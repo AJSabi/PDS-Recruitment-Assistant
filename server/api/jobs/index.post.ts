@@ -1,4 +1,4 @@
-import { job, jobQuestion, scoringCriterion } from '../../database/schema'
+import { job, jobQuestion, recruitmentRequirementState, scoringCriterion } from '../../database/schema'
 import { createJobWizardSchema } from '../../utils/schemas/job'
 import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
@@ -59,6 +59,14 @@ export default defineEventHandler(async (event) => {
     })
 
     if (!createdJob) throw createError({ statusCode: 500, statusMessage: 'Failed to create requirement' })
+
+    // Every PDS requirement gets its lifecycle state in the same transaction.
+    // It intentionally starts unallocated: owner, assignment date and closure timing
+    // remain null until Allocation Management or the requirement profile supplies them.
+    await tx.insert(recruitmentRequirementState).values({
+      organizationId: orgId,
+      jobId,
+    })
 
     if (body.questions.length) {
       await tx.insert(jobQuestion).values(body.questions.map((question, index) => ({
