@@ -16,7 +16,7 @@ describe('PDS immediate candidate match workflow', () => {
     const uploadGuardPosition = modal.indexOf('if (resumeFile.value)')
     expect(uploadGuardPosition).toBeGreaterThanOrEqual(0)
     expect(quickMatchPosition).toBeGreaterThan(uploadGuardPosition)
-    expect(modal).toContain('The newest readable resume already in the Candidate Database will be used for the immediate match.')
+    expect(modal).toContain('The newest readable stored resume is used automatically for the immediate match.')
     expect(modal).toContain("'Add & Calculate Match'")
   })
 
@@ -62,7 +62,7 @@ describe('PDS immediate candidate match workflow', () => {
     expect(source).not.toContain('currentFit: ranking')
     expect(source).toContain('currentFit: profile.currentFit')
     expect(source).toContain('humanValidationAvailable: true')
-    expect(modal).toContain('Validate via Recruiter Screening')
+    expect(modal).toContain('Start Recruiter Screening')
     expect(modal).toContain('The percentage is AI decision support, not a rejection decision.')
   })
 
