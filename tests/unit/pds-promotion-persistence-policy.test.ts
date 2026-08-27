@@ -35,12 +35,13 @@ describe('PDS Move to Recruitment reuse policy', () => {
 })
 
 describe('PDS Recruiter Screening persistence policy', () => {
-  it('persists each answer before returning the next question', () => {
+  it('persists each answer and any matching follow-up before returning the next question', () => {
     const source = readSource('server/api/applications/[id]/screening/answer.post.ts')
 
     expect(source).toContain('const updatedResponses: ScreeningResponse[] = [...responses')
-    expect(source).toContain('db.update(recruiterScreeningSession).set({ responses: updatedResponses')
-    expect(source).toContain('currentQuestion: questions[answered] ?? null')
+    expect(source).toContain('.set({ responses: updatedResponses, questions: updatedQuestions, updatedAt: now })')
+    expect(source).toContain('const nextQuestion = updatedQuestions.find')
+    expect(source).toContain('adaptiveFollowUpAdded')
   })
 
   it('prevents skipping ahead or completing an incomplete screening', () => {
