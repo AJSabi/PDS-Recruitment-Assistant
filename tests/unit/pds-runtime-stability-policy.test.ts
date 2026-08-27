@@ -34,11 +34,11 @@ describe('PDS runtime stability safeguards', () => {
     expect(topbar).toContain("id: 'requirement-settings'")
   })
 
-  it('mounts requirement action teleports only after client hydration', () => {
+  it('mounts requirement action teleports only inside a client hydration boundary', () => {
     const actions = source('app/components/JobSubNavActions.vue')
-    expect(actions).toContain('const isMounted = ref(false)')
-    expect(actions).toContain('onMounted(() => { isMounted.value = true })')
-    expect(actions).toContain('<Teleport v-if="isMounted" to="#job-sub-nav-actions">')
+    expect(actions).toContain('<ClientOnly>')
+    expect(actions).toContain('<Teleport to="#job-sub-nav-actions">')
+    expect(actions).toContain('</ClientOnly>')
   })
 
   it('never generates a Skill Matrix merely by opening or refreshing the page', () => {
