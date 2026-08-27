@@ -12,6 +12,7 @@ import {
 import { loadAiConfig } from '../../../utils/ai/loadConfig'
 import { generatePdsResumeAssessment } from '../../../utils/ai/pdsResumeAssessment'
 import type { SupportedProvider } from '../../../utils/ai/provider'
+import { syncApplicationStatusForRecruitmentStage } from '../../../utils/recruitmentApplicationStatus'
 import { calculateProvisionalFit } from '../../../utils/recruitmentScoring'
 import { assertApplicationAccess } from '../../../utils/recruitmentVisibility'
 import { createRateLimiter } from '../../../utils/rateLimit'
@@ -205,6 +206,7 @@ export default defineEventHandler(async (event) => {
     lastUpdatedBy: session.user.id,
     updatedAt: now,
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
+  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'resume_reviewed')
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -234,7 +236,7 @@ export default defineEventHandler(async (event) => {
     mainGap: generated.mainGap,
     candidateSnapshot: generated.candidateSnapshot,
     jdAlignment: generated.jdAlignment,
-    visibleInCandidatePool: ranking.score >= 50,
+    visibleInCandidatePool: false,
     threshold: 50,
     reusedAssessment,
     currentFit: profile.currentFit,
