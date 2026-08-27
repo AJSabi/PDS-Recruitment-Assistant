@@ -43,6 +43,8 @@ describe('PDS recruitment stage integrity', () => {
     expect(source).toContain('lastStatus: finalStatus')
     expect(source).toContain('syncApplicationStatusForRecruitmentStage(orgId, applicationId, finalStatus)')
     expect(source).toContain('resultingStage: finalStatus')
+    expect(source).toContain("hold_for_comparison: 'Resume Hiring Manager Round'")
+    expect(source).toContain("holdResumeStage: 'hiring_manager_round_pending'")
   })
 
   it('requires an explicit recruiter decision before HM when screening asks for recruiter judgement', () => {
@@ -67,6 +69,28 @@ describe('PDS recruitment stage integrity', () => {
     expect(lifecycle).toContain('Mark Hiring Manager Round Completed')
     expect(lifecycle).toContain('Mark HOD Round Completed')
     expect(lifecycle).toContain('Mark HR Round Completed')
+  })
+
+  it('resumes held candidates only at the workflow point captured when Hold was recorded', () => {
+    const stageApi = readSource('server/api/applications/[id]/stage/confirm.post.ts')
+    const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
+
+    expect(stageApi).toContain('holdResumeActionBySource')
+    expect(stageApi).toContain('holdResumeStageByAction')
+    expect(stageApi).toContain("profile.lastStatus === 'hold_for_comparison'")
+    expect(stageApi).toContain('body.stage !== expectedResumeStage')
+    expect(stageApi).toContain('holdResumeStage: holdResume.stage')
+    expect(stageApi).not.toContain("resume_reviewed: { stage: 'recruiter_screening_pending'")
+    expect(lifecycle).toContain('holdResumeStageByAction')
+    expect(lifecycle).toContain("currentStatus === 'hold_for_comparison' && holdResumeStage")
+    expect(lifecycle).not.toContain("const holdAllowedStatuses = new Set([\n  'resume_reviewed'")
+  })
+
+  it('keeps Not Proceeding and Offer Declined reopenable only through Reassess, while Closed remains terminal', () => {
+    expect(CONFIRMED_STAGE_TRANSITIONS.not_proceeding).toEqual(expect.arrayContaining(['reassess', 'closed']))
+    expect(CONFIRMED_STAGE_TRANSITIONS.not_proceeding).not.toContain('hiring_manager_round_pending')
+    expect(CONFIRMED_STAGE_TRANSITIONS.offer_declined).toEqual(expect.arrayContaining(['reassess', 'closed']))
+    expect(CONFIRMED_STAGE_TRANSITIONS.closed).toEqual([])
   })
 
   it('shows only exception decisions that the current backend stage permits', () => {
