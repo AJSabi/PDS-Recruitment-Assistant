@@ -33,6 +33,17 @@ describe('PDS pre-sync audit hardening', () => {
     expect(pkg.scripts['start:railway']).not.toContain('db:reseed')
   })
 
+  it('routes the main requirement pipeline to the governed PDS Recruitment Workspace', () => {
+    const pipeline = readSource('app/pages/dashboard/jobs/[id]/index.vue')
+    const bridge = readSource('app/components/ScoreBreakdown.vue')
+    expect(pipeline).toContain('/dashboard/recruitment/${selected.id}#recruiter-screening')
+    expect(bridge).toContain('/dashboard/recruitment/${applicationId}#recruiter-screening')
+    expect(pipeline).not.toContain('/dashboard/applications/${selected.id}#recruiter-screening')
+    expect(bridge).not.toContain('/dashboard/applications/${applicationId}#recruiter-screening')
+    expect(pipeline).toContain('Hiring Manager, HOD and HR interviews happen outside the application')
+    expect(pipeline).not.toContain('capture Hiring Manager/HOD/HR evidence')
+  })
+
   it('keeps AI summary generation explicit, access-controlled and rate-limited', () => {
     const source = readSource('server/api/applications/[id]/candidate-summary/generate.post.ts')
     expect(source).toContain('assertApplicationAccess')
