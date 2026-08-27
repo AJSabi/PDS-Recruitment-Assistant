@@ -17,6 +17,16 @@ describe('PDS pre-sync audit hardening', () => {
     expect(allocation).toContain('if (!visibility.canSeeAll)')
   })
 
+  it('keeps assignment, target closure and closure timing administrator-governed', () => {
+    const timing = readSource('server/api/jobs/[id]/requirement-timing.put.ts')
+    const profile = readSource('server/api/jobs/[id]/requirement-profile.put.ts')
+    expect(timing).toContain('assertRecruitmentAdmin')
+    expect(timing).toContain('await assertRecruitmentAdmin(orgId, session.user.id)')
+    expect(profile).toContain('const visibility = await getRequirementVisibility(orgId, session.user.id)')
+    expect(profile).toContain('const assignmentDate = visibility.canSeeAll')
+    expect(profile).toContain('const targetClosureDate = visibility.canSeeAll')
+  })
+
   it('does not seed application data from a production startup command', () => {
     const pkg = JSON.parse(readSource('package.json'))
     expect(pkg.scripts['start:railway']).not.toContain('db:seed')
