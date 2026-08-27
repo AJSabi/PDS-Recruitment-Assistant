@@ -39,28 +39,22 @@ describe('PDS recruitment stage integrity', () => {
     expect(lifecycle).toContain("confirmStage('hiring_manager_round_pending')")
   })
 
-  it('requires round-specific evidence before HM, HOD or HR can be marked completed', () => {
-    const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
+  it('keeps HM, HOD and HR interviews external while recruiters manually move stages', () => {
+    const stageApi = readSource('server/api/applications/[id]/stage/confirm.post.ts')
+    const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
 
-    expect(source).toContain("hiring_manager_round_completed: 'hiring_manager_interview'")
-    expect(source).toContain("hod_round_completed: 'hod_interview'")
-    expect(source).toContain("hr_round_completed: 'hr_interview'")
-    expect(source).toContain('requiredEvidenceForCompletedStage[body.stage]')
-    expect(source).toContain('eq(recruitmentEvidence.type, requiredEvidenceType)')
-    expect(source).toContain('Record ${roundLabel} interview evidence before marking this round completed.')
+    expect(stageApi).toContain('HM, HOD and HR discussions happen outside the application')
+    expect(stageApi).not.toContain('requiredEvidenceForCompletedStage')
+    expect(stageApi).not.toContain('Record ${roundLabel} interview evidence before marking this round completed.')
+    expect(stageApi).toContain('manualStageMovement: true')
+    expect(lifecycle).toContain('Hiring Manager, HOD and HR rounds happen manually outside the application')
+    expect(lifecycle).toContain('the recruiter only records each stage movement here')
+    expect(lifecycle).toContain('Mark Hiring Manager Round Completed')
+    expect(lifecycle).toContain('Mark HOD Round Completed')
+    expect(lifecycle).toContain('Mark HR Round Completed')
   })
 
-  it('binds interview evidence to the active HM, HOD or HR round', () => {
-    const source = readSource('server/api/applications/[id]/interview-evidence/index.post.ts')
-
-    expect(source).toContain("hiring_manager_round_pending: 'hiring_manager'")
-    expect(source).toContain("hod_round_pending: 'hod'")
-    expect(source).toContain("hr_round_pending: 'hr'")
-    expect(source).toContain('expectedInterviewTypeByStatus[profile.lastStatus]')
-    expect(source).toContain('body.interviewType !== expectedInterviewType')
-  })
-
-  it('keeps stage changes human-confirmed, access-controlled and auditable', () => {
+  it('keeps stage changes human-confirmed, sequential, access-controlled and auditable', () => {
     const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
 
     expect(source).toContain('assertApplicationAccess')
