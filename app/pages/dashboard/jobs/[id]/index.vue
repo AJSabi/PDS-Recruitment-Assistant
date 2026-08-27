@@ -98,7 +98,7 @@ useSeoMeta({ title: computed(() => jobData.value ? `Recruitment Pipeline — ${j
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div class="flex items-center gap-2"><Briefcase class="size-4 text-[#2E86C1]" /><h1 class="text-lg font-bold text-[#102A43] dark:text-white">PDS Recruitment Pipeline</h1></div>
-            <p class="mt-1 text-xs text-surface-500">{{ jobData.title }} · Manual recruiter calls and interview rounds are recorded here; scheduling is intentionally outside V1.</p>
+            <p class="mt-1 text-xs text-surface-500">{{ jobData.title }} · Recruiter Screening is recorded in the application; Hiring Manager, HOD and HR rounds happen externally and are moved manually by the recruiter.</p>
           </div>
           <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/pds-ranking`)" class="inline-flex items-center gap-1.5 rounded-lg border border-[#9FC7DF] px-3 py-2 text-xs font-semibold text-[#1F6FA3]">AI Candidate Pool <ArrowRight class="size-3.5" /></NuxtLink>
         </div>
@@ -135,7 +135,7 @@ useSeoMeta({ title: computed(() => jobData.value ? `Recruitment Pipeline — ${j
                   <h2 class="text-xl font-bold text-[#102A43] dark:text-white">{{ formatPersonName(selected.candidateFirstName, selected.candidateLastName) }}</h2>
                   <a :href="`mailto:${selected.candidateEmail}`" class="mt-1 inline-flex items-center gap-1.5 text-sm text-brand-600 hover:underline"><Mail class="size-3.5" />{{ selected.candidateEmail }}</a>
                 </div>
-                <NuxtLink :to="localePath(`/dashboard/applications/${selected.id}#recruiter-screening`)" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white"><BrainCircuit class="size-4" />Open Recruitment Workspace</NuxtLink>
+                <NuxtLink :to="localePath(`/dashboard/recruitment/${selected.id}#recruiter-screening`)" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white"><BrainCircuit class="size-4" />Open Recruitment Workspace</NuxtLink>
               </div>
 
               <div class="mt-4 grid gap-3 sm:grid-cols-4">
@@ -152,8 +152,8 @@ useSeoMeta({ title: computed(() => jobData.value ? `Recruitment Pipeline — ${j
 
             <section class="rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 dark:border-surface-700 dark:bg-surface-900">
               <h3 class="text-sm font-semibold text-[#102A43] dark:text-white">Manual recruiter and interview process</h3>
-              <p class="mt-1 text-xs leading-5 text-surface-500">There is no interview scheduler in the PDS V1 workflow. Open the Recruitment Workspace to prepare/edit recruiter screening questions, record the direct candidate call, capture Hiring Manager/HOD/HR evidence, and progress the candidate through the controlled stages.</p>
-              <NuxtLink :to="localePath(`/dashboard/applications/${selected.id}#recruiter-screening`)" class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#16847F] hover:underline">Prepare Recruiter Screening <ArrowRight class="size-3.5" /></NuxtLink>
+              <p class="mt-1 text-xs leading-5 text-surface-500">There is no interview scheduler in the PDS V1 workflow. Open the Recruitment Workspace to prepare/edit Recruiter Screening questions and record the direct candidate call. Hiring Manager, HOD and HR interviews happen outside the application; the recruiter only records the corresponding stage movement.</p>
+              <NuxtLink :to="localePath(`/dashboard/recruitment/${selected.id}#recruiter-screening`)" class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#16847F] hover:underline">Open Recruitment Workspace <ArrowRight class="size-3.5" /></NuxtLink>
             </section>
           </div>
         </main>
