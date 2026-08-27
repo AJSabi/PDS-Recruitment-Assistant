@@ -11,7 +11,7 @@ type Skill = { id: string; skill: string; priority: Priority; rationale?: string
 type Classification = { id: string; name: string; skills: Skill[] }
 type Matrix = { classifications: Classification[] }
 
-const { data, status: matrixFetchStatus, refresh } = useFetch(() => `/api/jobs/${jobId}/skill-matrix`, {
+const { data, status: matrixFetchStatus, error: matrixError, refresh } = useFetch(() => `/api/jobs/${jobId}/skill-matrix`, {
   key: `skill-matrix-${jobId}`,
   headers: useRequestHeaders(['cookie']),
 })
@@ -24,7 +24,6 @@ const isSavingJd = ref(false)
 const isSaving = ref(false)
 const isGenerating = ref(false)
 const dirty = ref(false)
-const autoGenerationAttempted = ref(false)
 
 watch(job, (value: any) => {
   if (!value) return
@@ -49,27 +48,17 @@ const preferredCount = computed(() => matrix.value.classifications.flatMap(c => 
 const optionalCount = computed(() => matrix.value.classifications.flatMap(c => c.skills).filter(s => s.priority === 'optional').length)
 const approvalError = computed(() => validate(true))
 const approvalReady = computed(() => Boolean(savedJd.value.trim()) && !jdDirty.value && !approvalError.value)
-const placeholderMatrix = computed(() => {
-  if (!matrix.value.classifications.length) return true
-  return matrix.value.classifications.every((c, index) => {
-    const placeholderName = !c.name.trim() || c.name.trim() === `Classification ${index + 1}` || /^Classification \d+$/.test(c.name.trim())
-    const noRealSkills = !c.skills.length || c.skills.every(s => !s.skill?.trim())
-    return placeholderName && noRealSkills
-  })
-})
 
 function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 80) || crypto.randomUUID()
 }
 
-async function generateAiMatrix(auto = false) {
+async function generateAiMatrix() {
   if (jdDirty.value || !savedJd.value.trim()) {
-    if (!auto) toast.warning('Save Active JD first', 'AI must analyse the saved Active JD.')
+    toast.warning('Save Active JD first', 'AI must analyse the saved Active JD.')
     return
   }
-  if (!auto && matrix.value.classifications.length && !confirm('Replace the current Skill Matrix draft with a new AI proposal?')) return
-  if (auto && approved.value) return
-  if (auto && !placeholderMatrix.value) return
+  if (matrix.value.classifications.length && !confirm('Replace the current Skill Matrix draft with a new AI proposal?')) return
 
   isGenerating.value = true
   try {
@@ -77,9 +66,9 @@ async function generateAiMatrix(auto = false) {
     matrix.value = result.matrix
     approved.value = false
     dirty.value = true
-    toast.success(auto ? 'AI Skill Matrix prepared automatically' : 'AI Skill Matrix generated', { message: 'Review and edit the JD-specific proposal before approval.' })
+    toast.success('AI Skill Matrix generated', { message: 'Review and edit the JD-specific proposal before approval.' })
   } catch (err: any) {
-    toast.error(auto ? 'Automatic AI Skill Matrix could not run' : 'AI Skill Matrix could not be generated', { message: err?.data?.statusMessage ?? err?.message })
+    toast.error('AI Skill Matrix could not be generated', { message: err?.data?.statusMessage ?? err?.message ?? 'Generation failed.' })
   } finally { isGenerating.value = false }
 }
 
@@ -91,22 +80,11 @@ async function saveActiveJd() {
     await updateJob({ description: jd } as any)
     jdDraft.value = jd
     savedJd.value = jd
-    toast.success('Active JD saved')
-    if (!approved.value && placeholderMatrix.value) await generateAiMatrix(true)
+    toast.success('Active JD saved', { message: 'Use Generate with AI when you are ready to spend an AI call on the Skill Matrix.' })
   } catch (err: any) {
     toast.error('Could not save JD', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isSavingJd.value = false }
 }
-
-watch(
-  () => [savedJd.value, matrixFetchStatus.value, approved.value, placeholderMatrix.value] as const,
-  async ([jd, status, isApproved, placeholder]) => {
-    if (autoGenerationAttempted.value || !jd?.trim() || status === 'pending' || isApproved || !placeholder) return
-    autoGenerationAttempted.value = true
-    await generateAiMatrix(true)
-  },
-  { immediate: true },
-)
 
 function createManualMatrix() {
   if (!savedJd.value.trim()) return toast.warning('Save Active JD first', 'Save the JD before creating the Skill Matrix.')
@@ -190,7 +168,10 @@ async function persist(approve: boolean) {
     <JobSubNavActions :job-id="jobId" />
 
     <div v-if="jobFetchStatus === 'pending' || matrixFetchStatus === 'pending'" class="rounded-2xl border border-surface-200 bg-white py-12 text-center text-surface-400 dark:border-surface-800 dark:bg-surface-900">Loading JD and Skill Matrix…</div>
-    <div v-else-if="jobError" class="rounded-2xl border border-danger-200 bg-danger-50 p-4 text-danger-700">Failed to load requirement.</div>
+    <div v-else-if="jobError || matrixError" class="rounded-2xl border border-danger-200 bg-danger-50 p-4 text-danger-700">
+      <p class="font-semibold">JD & Skill Matrix could not be loaded.</p>
+      <p class="mt-1 text-sm">{{ jobError?.data?.statusMessage ?? matrixError?.data?.statusMessage ?? 'Please retry. If this continues, the requirement API needs attention.' }}</p>
+    </div>
 
     <template v-else-if="job">
       <section class="rounded-2xl border border-[#CFE0ED] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
@@ -207,7 +188,7 @@ async function persist(approve: boolean) {
 
         <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p class="text-xs text-surface-500"><strong>{{ job.title }}</strong><span v-if="job.location"> · {{ job.location }}</span></p>
-          <button type="button" :disabled="isSavingJd || isGenerating || !jdDraft.trim() || !jdDirty" class="inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="saveActiveJd"><Loader2 v-if="isSavingJd || isGenerating" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isGenerating ? 'Preparing AI Matrix…' : 'Save Active JD' }}</button>
+          <button type="button" :disabled="isSavingJd || !jdDraft.trim() || !jdDirty" class="inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="saveActiveJd"><Loader2 v-if="isSavingJd" class="size-4 animate-spin" /><Save v-else class="size-4" />{{ isSavingJd ? 'Saving…' : 'Save Active JD' }}</button>
         </div>
       </section>
 
@@ -215,7 +196,7 @@ async function persist(approve: boolean) {
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div class="flex items-center gap-2"><Sparkles class="size-5 text-[#16847F]" /><h2 class="font-bold text-[#102A43] dark:text-white">2. AI Skill Matrix</h2></div>
-            <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes JD-specific, assessable evidence criteria. Recruiter review and explicit approval remain mandatory before candidates are matched.</p>
+            <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes JD-specific, assessable evidence criteria. It runs only when you explicitly click Generate with AI. Recruiter review and approval remain mandatory.</p>
           </div>
           <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><ShieldCheck class="size-3.5" />Approved</span>
           <span v-else class="rounded-full bg-[#FFF7E8] px-3 py-1 text-xs font-bold text-[#976511]">Review required</span>
@@ -229,9 +210,9 @@ async function persist(approve: boolean) {
         </div>
 
         <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 dark:border-surface-700 dark:bg-surface-800/40">
-          <div><p class="text-sm font-bold text-[#102A43] dark:text-white">Generate from the saved JD</p><p class="mt-1 text-xs text-surface-500">AI derives role-specific hiring evidence from this JD. Regeneration replaces the current draft; Manual Override remains available.</p></div>
+          <div><p class="text-sm font-bold text-[#102A43] dark:text-white">Generate from the saved JD</p><p class="mt-1 text-xs text-surface-500">This is an explicit AI action. Regeneration replaces the current draft; Manual Override remains available.</p></div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="generateAiMatrix(false)"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
+            <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="generateAiMatrix"><Loader2 v-if="isGenerating" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isGenerating ? 'Generating…' : (matrix.classifications.length ? 'Regenerate with AI' : 'Generate with AI') }}</button>
             <button type="button" :disabled="isGenerating || jdDirty || !savedJd.trim()" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:border-surface-700" @click="createManualMatrix"><WandSparkles class="size-4" />Manual Override</button>
           </div>
         </div>
@@ -241,7 +222,7 @@ async function persist(approve: boolean) {
         <Loader2 v-if="isGenerating" class="mx-auto mb-3 size-6 animate-spin text-[#2E86C1]" />
         <Sparkles v-else class="mx-auto mb-3 size-6 text-[#2E86C1]" />
         <h2 class="font-bold text-[#102A43] dark:text-white">{{ isGenerating ? 'AI is preparing the Skill Matrix' : 'No Skill Matrix yet' }}</h2>
-        <p class="mx-auto mt-1 max-w-xl text-sm text-surface-500">{{ isGenerating ? 'The saved JD is being converted into role-relevant, evidence-based classifications and skills.' : 'Save the Active JD. AI will prepare the first Skill Matrix automatically.' }}</p>
+        <p class="mx-auto mt-1 max-w-xl text-sm text-surface-500">{{ isGenerating ? 'The saved JD is being converted into role-relevant, evidence-based classifications and skills.' : 'Save the Active JD, then click Generate with AI or use Manual Override. Opening or refreshing this page will not spend AI credits.' }}</p>
       </div>
 
       <section v-else class="space-y-4">
