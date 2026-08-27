@@ -61,7 +61,7 @@ const screeningAvailable = computed(() => [
             <p class="mt-1 max-w-xl text-xs leading-5 text-surface-500">This requirement uses the approved PDS Skill Matrix. The old generic scoring-criteria engine is not used for this recruitment workflow.</p>
           </div>
         </div>
-        <NuxtLink :to="localePath(`/dashboard/applications/${applicationId}#recruiter-screening`)" class="inline-flex items-center gap-1.5 rounded-lg bg-[#2E86C1] px-3 py-2 text-xs font-semibold text-white">
+        <NuxtLink :to="localePath(`/dashboard/recruitment/${applicationId}#recruiter-screening`)" class="inline-flex items-center gap-1.5 rounded-lg bg-[#2E86C1] px-3 py-2 text-xs font-semibold text-white">
           {{ screeningAvailable ? 'Open Recruiter Screening' : 'Open Recruitment Workflow' }} <ArrowRight class="size-3.5" />
         </NuxtLink>
       </div>
@@ -79,7 +79,7 @@ const screeningAvailable = computed(() => [
         <span v-else-if="profile.lastStatus === 'resume_received'">Resume is selected. Complete the PDS Skill Assessment to prepare recruiter-call questions.</span>
         <span v-else-if="profile.lastStatus === 'resume_reviewed'">Resume assessment is ready. Prepare the recruiter call and review the questions before calling.</span>
         <span v-else-if="profile.lastStatus === 'recruiter_screening_pending'">Recruiter call is in progress. Record responses and adjust unanswered questions as needed.</span>
-        <span v-else>Continue the recorded PDS recruitment stage from the full application page.</span>
+        <span v-else>Continue the recorded PDS recruitment stage from the Recruitment Workspace.</span>
       </div>
     </template>
     <div v-else class="flex items-center gap-2 py-3 text-sm text-surface-500"><Clock3 class="size-4" />Recruitment profile is not available yet.</div>
