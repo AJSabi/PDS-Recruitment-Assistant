@@ -10,6 +10,8 @@ const toast = useToast()
 const { track } = useTrack()
 const localePath = useLocalePath()
 const { handlePreviewReadOnlyError } = usePreviewReadOnly()
+const isMounted = ref(false)
+onMounted(() => { isMounted.value = true })
 
 const { job, updateJob, deleteJob, refresh: refreshJob } = useJob(props.jobId)
 
@@ -117,7 +119,7 @@ function openPropertyEditor(scope: 'org' | 'job') {
 </script>
 
 <template>
-  <Teleport to="#job-sub-nav-actions">
+  <Teleport v-if="isMounted" to="#job-sub-nav-actions">
     <div class="flex items-center gap-2">
       <button
         class="hidden sm:inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-surface-200 dark:border-surface-700/80 px-2.5 py-1 text-[11px] font-medium text-surface-600 dark:text-surface-300 hover:bg-white hover:border-surface-300 dark:hover:bg-surface-800 dark:hover:border-surface-600 transition-all duration-150"
