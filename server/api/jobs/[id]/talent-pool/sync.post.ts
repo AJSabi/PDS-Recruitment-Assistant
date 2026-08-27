@@ -20,7 +20,9 @@ const paramsSchema = z.object({ id: z.string().min(1) })
 const limiter = createRateLimiter({ windowMs: 60_000, maxRequests: 4, message: 'Talent pool sync is already running too frequently. Please wait before retrying.' })
 const FINAL_POOL_THRESHOLD = 50
 const LIGHTWEIGHT_PREFILTER_THRESHOLD = 25
-const MAX_FULL_AI_ANALYSES_PER_SYNC = 30
+// Keep each user-triggered refresh short enough to stay inside the preview/proxy request window.
+// Plausible candidates beyond this limit remain deferred for the next explicit refresh.
+const MAX_FULL_AI_ANALYSES_PER_SYNC = 3
 
 type MatrixSkill = { skill?: string; priority?: 'mandatory' | 'preferred' | 'optional' }
 type MatrixClassification = { skills?: MatrixSkill[] }
