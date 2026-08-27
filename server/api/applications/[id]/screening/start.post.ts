@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { recruiterScreeningSession, recruitmentApplicationProfile } from '../../../../database/schema'
+import { recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
 import { startScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
@@ -29,6 +29,28 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   let screening
   if (existing) {
+    const priorResponses = Array.isArray(existing.responses) ? existing.responses : []
+    if (priorResponses.length) {
+      await db.insert(recruitmentEvidence).values({
+        organizationId: orgId,
+        applicationId,
+        type: 'recruiter_screening',
+        summary: 'Prior recruiter screening preserved before reassessment restart.',
+        payload: {
+          snapshotReason: 'pre_restart_snapshot',
+          priorStatus: existing.status,
+          priorQuestions: existing.questions ?? [],
+          priorResponses,
+          priorFinalFit: existing.finalFit ?? null,
+          priorRecommendedNextStep: existing.recommendedNextStep ?? null,
+          priorConversationBrief: existing.conversationBrief ?? null,
+          priorValidationFocus: existing.validationFocus ?? [],
+          priorStartedAt: existing.startedAt?.toISOString?.() ?? existing.startedAt ?? null,
+          priorCompletedAt: existing.completedAt?.toISOString?.() ?? existing.completedAt ?? null,
+        },
+        createdBy: session.user.id,
+      })
+    }
     ;[screening] = await db.update(recruiterScreeningSession).set({ questions: body.questions, responses: [], status: 'in_progress', finalFit: null, recommendedNextStep: null, validationFocus: [], startedAt: now, completedAt: null, updatedAt: now }).where(eq(recruiterScreeningSession.id, existing.id)).returning()
   } else {
     ;[screening] = await db.insert(recruiterScreeningSession).values({ organizationId: orgId, applicationId, status: 'in_progress', questions: body.questions, responses: [], validationFocus: [], startedAt: now }).returning()
