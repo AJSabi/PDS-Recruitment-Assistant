@@ -19,6 +19,26 @@ describe('PDS recruitment stage integrity', () => {
     expect(CONFIRMED_STAGE_TRANSITIONS.closed).toEqual([])
   })
 
+  it('honors Hold and Reassess as actual screening outcomes instead of silently offering HM', () => {
+    const source = readSource('server/api/applications/[id]/screening/complete.post.ts')
+
+    expect(source).toContain("if (decision === 'hold_for_comparison') return 'hold_for_comparison'")
+    expect(source).toContain("if (decision === 'reassess') return 'reassess'")
+    expect(source).toContain('const finalStatus = completionStageForDecision(body.recommendedNextStep)')
+    expect(source).toContain('lastStatus: finalStatus')
+    expect(source).toContain('syncApplicationStatusForRecruitmentStage(orgId, applicationId, finalStatus)')
+    expect(source).toContain('resultingStage: finalStatus')
+  })
+
+  it('requires an explicit recruiter decision before HM when screening asks for recruiter judgement', () => {
+    const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
+
+    expect(lifecycle).toContain("props.profile?.nextAction === 'Recruiter Decision Required'")
+    expect(lifecycle).toContain("props.profile?.nextAction !== 'Proceed to Hiring Manager Round'")
+    expect(lifecycle).toContain('Confirm Recruiter Decision: Proceed to Hiring Manager')
+    expect(lifecycle).toContain("confirmStage('hiring_manager_round_pending')")
+  })
+
   it('requires round-specific evidence before HM, HOD or HR can be marked completed', () => {
     const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
 
