@@ -13,10 +13,25 @@ describe('PDS recruitment stage integrity', () => {
     expect(CONFIRMED_STAGE_TRANSITIONS.hod_round_completed).toContain('hr_round_pending')
     expect(CONFIRMED_STAGE_TRANSITIONS.hr_round_pending).toContain('hr_round_completed')
     expect(CONFIRMED_STAGE_TRANSITIONS.hr_round_completed).toContain('offer_stage')
+  })
+
+  it('keeps offer outcome, joining and closure recruiter-confirmed and sequential', () => {
     expect(CONFIRMED_STAGE_TRANSITIONS.offer_stage).toEqual(expect.arrayContaining(['offer_accepted', 'offer_declined']))
+    expect(CONFIRMED_STAGE_TRANSITIONS.offer_stage).not.toContain('joined')
+    expect(CONFIRMED_STAGE_TRANSITIONS.offer_stage).not.toContain('closed')
     expect(CONFIRMED_STAGE_TRANSITIONS.offer_accepted).toContain('joined')
+    expect(CONFIRMED_STAGE_TRANSITIONS.offer_accepted).not.toContain('closed')
+    expect(CONFIRMED_STAGE_TRANSITIONS.offer_declined).toEqual(expect.arrayContaining(['reassess', 'closed']))
     expect(CONFIRMED_STAGE_TRANSITIONS.joined).toContain('closed')
     expect(CONFIRMED_STAGE_TRANSITIONS.closed).toEqual([])
+
+    const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
+    expect(lifecycle).toContain('Offer Accepted')
+    expect(lifecycle).toContain('Offer Declined')
+    expect(lifecycle).toContain("offer_accepted: 'joined'")
+    expect(lifecycle).toContain("joined: 'closed'")
+    expect(lifecycle).toContain("['offer_declined', 'not_proceeding']")
+    expect(lifecycle).toContain('the application cannot skip directly to Joined or Closed')
   })
 
   it('honors Hold and Reassess as actual screening outcomes instead of silently offering HM', () => {
@@ -54,11 +69,22 @@ describe('PDS recruitment stage integrity', () => {
     expect(lifecycle).toContain('Mark HR Round Completed')
   })
 
+  it('shows only exception decisions that the current backend stage permits', () => {
+    const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
+
+    expect(lifecycle).toContain('holdAllowedStatuses')
+    expect(lifecycle).toContain('reassessAllowedStatuses')
+    expect(lifecycle).toContain('notProceedingAllowedStatuses')
+    expect(lifecycle).toContain('canCloseTerminalOutcome')
+  })
+
   it('keeps stage changes human-confirmed, sequential, access-controlled and auditable', () => {
     const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
 
     expect(source).toContain('assertApplicationAccess')
     expect(source).toContain('CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus]')
+    expect(source).toContain('stagesRequiringDecisionNote')
+    expect(source).toContain('defaultNextActionByStage')
     expect(source).toContain("type: 'stage_change'")
     expect(source).toContain("event: 'stage_confirmed'")
     expect(source).toContain('aiSummaryStale: true')
