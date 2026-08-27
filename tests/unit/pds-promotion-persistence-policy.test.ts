@@ -51,13 +51,16 @@ describe('PDS Recruiter Screening persistence policy', () => {
     expect(completeSource).toContain('Complete all screening questions before final assessment.')
   })
 
-  it('stores completed screening evidence and marks the AI Candidate Summary stale for explicit refresh', () => {
+  it('stores completed screening evidence, preserves the decision outcome, and marks the AI Candidate Summary stale', () => {
     const source = readSource('server/api/applications/[id]/screening/complete.post.ts')
 
-    expect(source).toContain("lastStatus: 'recruiter_screening_completed'")
+    expect(source).toContain('const finalStatus = completionStageForDecision(body.recommendedNextStep)')
+    expect(source).toContain('lastStatus: finalStatus')
     expect(source).toContain('aiSummaryStale: true')
     expect(source).toContain("type: 'recruiter_screening'")
-    expect(source).toContain('responses, requirementRevision')
+    expect(source).toContain('resultingStage: finalStatus')
+    expect(source).toContain('responses,')
+    expect(source).toContain('requirementRevision,')
   })
 
   it('protects screening read/write paths with application-level access checks', () => {
