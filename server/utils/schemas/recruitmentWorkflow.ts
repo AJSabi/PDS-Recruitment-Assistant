@@ -7,7 +7,6 @@ export const candidatePrioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
 export const evidenceTypeSchema = z.enum(['resume', 'recruiter_screening', 'hiring_manager_interview', 'hod_interview', 'hr_interview', 'interview', 'manual_reassessment', 'requirement_change', 'stage_change', 'assignment_change'])
 export const screeningNextStepSchema = z.enum(['proceed_to_hiring_manager_round', 'hold_for_comparison', 'reassess', 'recruiter_decision_required'])
 
-/** Safe recruiter-editable profile metadata. Fit, stage, locks and ranking are changed only by governed workflow endpoints. */
 export const updateRecruitmentProfileSchema = z.object({
   lastContactAt: z.coerce.date().nullish(),
   resumeBrief: z.string().trim().max(2000).nullish(),
@@ -21,11 +20,19 @@ export const createEvidenceSchema = z.object({
   payload: z.record(z.string(), z.unknown()).nullish(),
 }).strict()
 
+const screeningFollowUpSchema = z.object({
+  whenOption: z.string().trim().min(1).max(500),
+  question: z.string().trim().min(1).max(1000),
+  options: z.array(z.string().trim().min(1).max(500)).max(7).optional(),
+  verificationArea: z.string().trim().max(500).optional(),
+})
+
 export const screeningQuestionSchema = z.object({
   id: z.string().min(1).max(100),
   question: z.string().trim().min(1).max(1000),
   options: z.array(z.string().trim().min(1).max(500)).max(7).optional(),
   verificationArea: z.string().trim().max(500).optional(),
+  followUps: z.array(screeningFollowUpSchema).max(3).optional(),
 })
 
 export const screeningResponseSchema = z.object({
