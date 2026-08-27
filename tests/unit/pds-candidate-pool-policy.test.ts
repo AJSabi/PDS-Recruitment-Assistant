@@ -46,6 +46,15 @@ describe('PDS Candidate Pool visibility and authorization policy', () => {
     expect(source).toContain('.orderBy(desc(talentPoolMatch.score)')
   })
 
+  it('keeps active Recruitment applications out of the working AI Candidate Pool', () => {
+    const listSource = readSource('server/api/jobs/[id]/talent-pool/index.get.ts')
+    const syncSource = readSource('server/api/jobs/[id]/talent-pool/sync.post.ts')
+    expect(listSource).toContain('isNull(talentPoolMatch.promotedApplicationId)')
+    expect(listSource).toContain('isNull(application.id)')
+    expect(syncSource).toContain('existingApplicationCandidateIds')
+    expect(syncSource).toContain('skippedExistingApplication++')
+  })
+
   it('requires requirement-level access before Candidate Pool data is read or synced', () => {
     const listSource = readSource('server/api/jobs/[id]/talent-pool/index.get.ts')
     const syncSource = readSource('server/api/jobs/[id]/talent-pool/sync.post.ts')
