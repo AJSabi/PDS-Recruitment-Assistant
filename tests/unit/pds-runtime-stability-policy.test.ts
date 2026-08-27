@@ -24,11 +24,21 @@ describe('PDS runtime stability safeguards', () => {
     expect(createJob).toContain('jobId,')
   })
 
-  it('derives requirement tabs directly from the reactive route rather than route-name hydration', () => {
+  it('derives requirement tabs directly from the reactive route and exposes stable browser selectors', () => {
     const topbar = source('app/components/AppTopBar.vue')
     expect(topbar).toContain('route.params.id')
     expect(topbar).toContain("route.path.startsWith(`${jobsBase}/`)")
     expect(topbar).not.toContain('useRouteBaseName')
+    expect(topbar).toContain('data-testid="requirement-tab-ribbon"')
+    expect(topbar).toContain(':data-testid="`requirement-tab-${tab.id}`"')
+    expect(topbar).toContain("id: 'requirement-settings'")
+  })
+
+  it('mounts requirement action teleports only after client hydration', () => {
+    const actions = source('app/components/JobSubNavActions.vue')
+    expect(actions).toContain('const isMounted = ref(false)')
+    expect(actions).toContain('onMounted(() => { isMounted.value = true })')
+    expect(actions).toContain('<Teleport v-if="isMounted" to="#job-sub-nav-actions">')
   })
 
   it('never generates a Skill Matrix merely by opening or refreshing the page', () => {
@@ -52,5 +62,23 @@ describe('PDS runtime stability safeguards', () => {
     expect(actions).not.toContain('Score All Candidates')
     expect(actions).not.toContain('/analyze-all')
     expect(actions).not.toContain('bulk_scoring_started')
+  })
+
+  it('provides a lightweight health endpoint with database connectivity and process uptime', () => {
+    const health = source('server/api/health.get.ts')
+    expect(health).toContain('SELECT 1 as ok')
+    expect(health).toContain('process.uptime()')
+    expect(health).toContain('databaseLatencyMs')
+    expect(health).toContain('setResponseStatus(event, 503)')
+  })
+
+  it('retries only transient database startup failures before failing migration startup', () => {
+    const migrations = source('server/plugins/migrations.ts')
+    expect(migrations).toContain('STARTUP_RETRY_DELAYS_MS = [2_000, 4_000]')
+    expect(migrations).toContain('isTransientDatabaseError')
+    expect(migrations).toContain("'ECONNREFUSED'")
+    expect(migrations).toContain("'57P03'")
+    expect(migrations).toContain('await wait(retryDelay)')
+    expect(migrations).toContain('throw error')
   })
 })
