@@ -43,7 +43,7 @@ describe('PDS recruitment stage integrity', () => {
     const stageApi = readSource('server/api/applications/[id]/stage/confirm.post.ts')
     const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
 
-    expect(stageApi).toContain('HM, HOD and HR discussions happen outside the application')
+    expect(stageApi).toContain('Hiring Manager, HOD and HR discussions happen outside the application')
     expect(stageApi).not.toContain('requiredEvidenceForCompletedStage')
     expect(stageApi).not.toContain('Record ${roundLabel} interview evidence before marking this round completed.')
     expect(stageApi).toContain('manualStageMovement: true')
