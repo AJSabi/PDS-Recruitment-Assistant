@@ -14,7 +14,7 @@ describe('PDS recruiter screening policy', () => {
     expect(source).toContain('Generate 5-8 base questions')
     expect(source).toContain('10 or fewer')
     expect(source).toContain('Mandatory skills marked requires_verification')
-    expect(source).toContain('personal ownership, scale, recency and measurable result')
+    expect(source).toContain('Ask for PERSONAL contribution, ownership, scale, recency and measurable result')
     expect(source).toContain('Avoid generic interview questions')
   })
 
