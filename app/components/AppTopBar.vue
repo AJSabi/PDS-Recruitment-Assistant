@@ -86,11 +86,11 @@ const jobTabs = computed(() => {
   if (!activeJobId.value) return []
   const base = `/dashboard/jobs/${activeJobId.value}`
   return [
-    { label: 'Pipeline', to: base },
-    { label: 'JD & Skill Matrix', to: `${base}/ai-analysis` },
-    { label: 'AI Candidate Pool', to: `${base}/pds-ranking` },
-    { label: 'Candidate Register', to: `${base}/pds-register` },
-    { label: 'Settings', to: `${base}/settings` },
+    { id: 'pipeline', label: 'Pipeline', to: base },
+    { id: 'jd-skill-matrix', label: 'JD & Skill Matrix', to: `${base}/ai-analysis` },
+    { id: 'ai-candidate-pool', label: 'AI Candidate Pool', to: `${base}/pds-ranking` },
+    { id: 'candidate-register', label: 'Candidate Register', to: `${base}/pds-register` },
+    { id: 'requirement-settings', label: 'Settings', to: `${base}/settings` },
   ]
 })
 
@@ -130,10 +130,10 @@ watch(() => route.path, () => {
 
     <div v-if="activeJobId" class="border-b border-[#D9E6EF] bg-[#F7FBFE]/95 dark:border-surface-800 dark:bg-surface-950/95">
       <div class="flex h-11 items-center gap-3 overflow-x-auto px-4 lg:px-6">
-        <a :href="localePath('/dashboard/jobs')" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-[#102A43] dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</a>
+        <a :href="localePath('/dashboard/jobs')" data-testid="requirement-tab-all" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-[#102A43] dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</a>
         <span class="hidden max-w-52 truncate text-sm font-semibold text-[#102A43] sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requirement' }}</span>
-        <nav class="flex items-center gap-1">
-          <a v-for="tab in jobTabs" :key="tab.to" :href="localePath(tab.to)" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-[#1F6FA3] dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</a>
+        <nav class="flex items-center gap-1" data-testid="requirement-tab-ribbon">
+          <a v-for="tab in jobTabs" :key="tab.to" :href="localePath(tab.to)" :data-testid="`requirement-tab-${tab.id}`" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-[#1F6FA3] dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</a>
         </nav>
         <div id="job-sub-nav-actions" class="ml-auto flex items-center gap-2" />
       </div>
