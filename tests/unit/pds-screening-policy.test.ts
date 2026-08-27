@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 const source = readFileSync('server/utils/ai/pdsScreening.ts', 'utf8')
 const notInterestedApi = readFileSync('server/api/applications/[id]/screening/not-interested.post.ts', 'utf8')
 const notInterestedUi = readFileSync('app/components/PdsCandidateNotInterested.vue', 'utf8')
+const screeningMigration = readFileSync('server/database/migrations/1008_screening_conversation_brief.sql', 'utf8')
+const migrationJournal = readFileSync('server/database/migrations/meta/_journal.json', 'utf8')
 
 describe('PDS recruiter screening policy', () => {
   it('caps recruiter screening at 10 questions', () => {
@@ -41,6 +43,12 @@ describe('PDS recruiter screening policy', () => {
     expect(source).toContain('10-15 minute phone screening')
     expect(source).toContain('completed within 10-15 minutes')
     expect(source).toContain('30-90 seconds')
+  })
+
+  it('keeps the screening session database aligned with the conversation brief used by the API', () => {
+    expect(screeningMigration).toContain('ALTER TABLE "recruiter_screening_session"')
+    expect(screeningMigration).toContain('ADD COLUMN IF NOT EXISTS "conversation_brief" text')
+    expect(migrationJournal).toContain('1008_screening_conversation_brief')
   })
 
   it('records Candidate Not Interested as a candidate decision, not recruiter rejection', () => {
