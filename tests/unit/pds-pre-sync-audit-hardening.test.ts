@@ -47,6 +47,25 @@ describe('PDS pre-sync audit hardening', () => {
     expect(pipeline).not.toContain('capture Hiring Manager/HOD/HR evidence')
   })
 
+  it('keeps HM, HOD and HR progression manual and not evidence-gated in V1', () => {
+    const stage = readSource('server/api/applications/[id]/stage/confirm.post.ts')
+    expect(stage).toContain('Hiring Manager, HOD and HR discussions happen outside the application in V1.')
+    expect(stage).toContain('The recruiter manually confirms each sequential stage here.')
+    expect(stage).not.toContain('PdsInterviewEvidence')
+  })
+
+  it('keeps default AI configuration changes recruitment-admin only', () => {
+    const source = readSource('server/api/ai-config/[id]/set-default.post.ts')
+    expect(source).toContain('assertRecruitmentAdmin')
+    expect(source).toContain('await assertRecruitmentAdmin(orgId, session.user.id)')
+  })
+
+  it('keeps requirement sub-nav actions client-only to avoid teleport hydration mismatch', () => {
+    const source = readSource('app/components/JobSubNavActions.vue')
+    expect(source).toContain('<ClientOnly>')
+    expect(source).toContain('<Teleport to="#job-sub-nav-actions">')
+  })
+
   it('keeps AI summary generation explicit, access-controlled and rate-limited', () => {
     const source = readSource('server/api/applications/[id]/candidate-summary/generate.post.ts')
     expect(source).toContain('assertApplicationAccess')
