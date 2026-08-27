@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import {
+  application,
   candidate,
   document,
   job,
@@ -60,7 +61,7 @@ export default defineEventHandler(async (event) => {
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
 
-  const [jobRecord, matrixRecord, requirementState] = await Promise.all([
+  const [jobRecord, matrixRecord, requirementState, existingApplications] = await Promise.all([
     db.query.job.findFirst({
       where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
       columns: { id: true, title: true, description: true },
@@ -71,6 +72,10 @@ export default defineEventHandler(async (event) => {
     db.query.recruitmentRequirementState.findFirst({
       where: and(eq(recruitmentRequirementState.jobId, jobId), eq(recruitmentRequirementState.organizationId, orgId)),
     }),
+    db.select({ candidateId: application.candidateId }).from(application).where(and(
+      eq(application.organizationId, orgId),
+      eq(application.jobId, jobId),
+    )),
   ])
 
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
@@ -79,6 +84,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before syncing the AI Candidate Pool.' })
   }
 
+  const existingApplicationCandidateIds = new Set(existingApplications.map(row => row.candidateId))
   const resumeRows = await db.select({
     candidateId: candidate.id,
     documentId: document.id,
@@ -112,6 +118,7 @@ export default defineEventHandler(async (event) => {
 
   const requirementVersion = requirementState.revision
   let considered = 0
+  let skippedExistingApplication = 0
   let skippedCurrent = 0
   let skippedPrefilter = 0
   let deferredForAiBudget = 0
@@ -123,6 +130,11 @@ export default defineEventHandler(async (event) => {
 
   for (const [candidateId, resume] of latestResumeByCandidate) {
     considered++
+    if (existingApplicationCandidateIds.has(candidateId)) {
+      skippedExistingApplication++
+      continue
+    }
+
     const existing = await db.query.talentPoolMatch.findFirst({
       where: and(
         eq(talentPoolMatch.organizationId, orgId),
@@ -219,6 +231,7 @@ export default defineEventHandler(async (event) => {
     aiAttempts,
     visibleMatches,
     belowThreshold,
+    skippedExistingApplication,
     skippedCurrent,
     skippedPrefilter,
     deferredForAiBudget,
