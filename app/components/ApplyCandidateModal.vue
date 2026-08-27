@@ -94,8 +94,8 @@ function finishAndClose() {
 async function openRecruiterScreening() {
   const applicationId = completedPayload.value?.applicationId
   if (!applicationId) return
-  emit('created', completedPayload.value ?? undefined)
-  await navigateTo(localePath(`/dashboard/recruitment/${applicationId}`))
+  await refreshNuxtData(`pipeline-apps-${props.jobId}`)
+  await navigateTo(localePath(`/dashboard/recruitment/${applicationId}#recruiter-screening`))
 }
 
 async function attachCandidate(body: Record<string, unknown>) {
@@ -189,7 +189,7 @@ async function createCandidate() {
           </div>
           <div class="mt-5 flex flex-wrap justify-end gap-2 border-t border-surface-100 pt-4">
             <button type="button" class="rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium" @click="finishAndClose">Done</button>
-            <button v-if="completedPayload?.applicationId" type="button" class="rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white" @click="openRecruiterScreening">Validate via Recruiter Screening</button>
+            <button v-if="completedPayload?.applicationId" type="button" class="rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white" @click="openRecruiterScreening">Start Recruiter Screening</button>
           </div>
         </div>
 
@@ -219,21 +219,22 @@ async function createCandidate() {
               </div>
               <label class="block text-sm font-medium">Email <span class="text-danger-500">*</span><input v-model="newCandidate.email" :disabled="isApplying" type="email" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
               <label class="block text-sm font-medium">Phone<input v-model="newCandidate.phone" :disabled="isApplying" type="tel" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
-              <label class="block text-sm font-medium">Recruiter note <span class="font-normal text-surface-400">(optional)</span><textarea v-model="newCandidate.notes" :disabled="isApplying" rows="3" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
-              <div class="flex justify-end gap-2 border-t border-surface-100 pt-4"><button type="button" :disabled="isApplying" class="rounded-lg border border-surface-300 px-4 py-2 text-sm" @click="emit('close')">Cancel</button><button type="submit" :disabled="isApplying || isParsingResume" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : (resumeFile ? 'Add & Calculate Match' : 'Add to Requirement') }}</button></div>
+              <label class="block text-sm font-medium">Recruiter note <span class="font-normal text-surface-400">(optional)</span><textarea v-model="newCandidate.notes" :disabled="isApplying" rows="2" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              <button :disabled="isApplying || isParsingResume" type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
             </form>
           </div>
 
-          <template v-else>
-            <div class="px-5 pt-4"><div class="relative"><Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-surface-400" /><input v-model="searchInput" type="text" placeholder="Search Candidate Database by name or email…" class="w-full rounded-lg border border-surface-200 py-2.5 pl-10 pr-3 text-sm" /></div></div>
-            <div class="flex-1 overflow-y-auto px-5 py-3">
-              <div v-if="searchStatus === 'pending'" class="py-8 text-center text-sm text-surface-400">Searching…</div>
-              <div v-else-if="candidates.length === 0" class="py-8 text-center text-sm text-surface-400">No candidates found.</div>
-              <div v-else class="space-y-1"><button v-for="c in candidates" :key="c.id" type="button" class="flex w-full items-center justify-between rounded-lg px-3 py-3 text-left" :class="selectedExistingCandidateId === c.id ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-surface-50'" @click="selectedExistingCandidateId = c.id; resetError()"><div class="min-w-0"><p class="truncate text-sm font-medium">{{ formatCandidateName(c) }}</p><p class="truncate text-xs text-surface-400">{{ c.email }}</p></div><span class="text-xs font-semibold text-brand-600">{{ selectedExistingCandidateId === c.id ? 'Selected' : 'Select' }}</span></button></div>
-              <div v-if="selectedExistingCandidate" class="mt-4 rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4"><p class="text-sm font-semibold text-[#102A43]">Selected: {{ formatCandidateName(selectedExistingCandidate) }}</p><p class="mt-1 text-xs text-surface-500">The newest readable resume already in the Candidate Database will be used for the immediate match. Upload a newer resume only when you want to replace it.</p><label class="mt-3 block text-sm font-medium">Add a newer resume <span class="font-normal text-surface-400">(optional)</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label><span v-if="resumeFile" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><FileText class="size-3.5" />{{ resumeFile.name }}</span></div>
+          <div v-else class="overflow-y-auto px-5 py-5">
+            <div class="mb-4 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 text-sm"><p class="font-semibold text-[#102A43]">Attach an existing Candidate Database record</p><p class="mt-1 text-xs leading-5 text-surface-500">The newest readable stored resume is used automatically for the immediate match. Upload a new resume only when you want to replace it with a newer version.</p></div>
+            <div class="flex items-center rounded-lg border border-surface-300 px-3"><Search class="size-4 text-surface-400" /><input v-model="searchInput" class="w-full px-2 py-2.5 text-sm outline-none" placeholder="Search by name or email" /></div>
+            <div class="mt-3 max-h-56 overflow-y-auto rounded-lg border border-surface-200">
+              <button v-for="candidate in candidates" :key="candidate.id" type="button" class="flex w-full items-start justify-between gap-3 border-b border-surface-100 px-3 py-3 text-left last:border-0" :class="selectedExistingCandidateId === candidate.id ? 'bg-brand-50' : 'hover:bg-surface-50'" @click="selectedExistingCandidateId = candidate.id"><div><p class="text-sm font-semibold">{{ formatCandidateName(candidate) }}</p><p class="text-xs text-surface-500">{{ candidate.email }}</p></div><span v-if="selectedExistingCandidateId === candidate.id" class="text-xs font-semibold text-brand-600">Selected</span></button>
+              <div v-if="searchStatus === 'pending'" class="p-4 text-center text-xs text-surface-400">Searching…</div>
+              <div v-else-if="!candidates.length" class="p-4 text-center text-xs text-surface-400">No candidates found.</div>
             </div>
-            <div class="flex justify-end gap-2 border-t border-surface-200 px-5 py-4"><button type="button" :disabled="isApplying" class="rounded-lg border border-surface-300 px-4 py-2 text-sm" @click="emit('close')">Cancel</button><button type="button" :disabled="isApplying || !selectedExistingCandidateId" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button></div>
-          </template>
+            <label class="mt-4 block rounded-xl border border-dashed border-surface-300 p-4 text-sm"><span class="font-semibold">Optional newer resume</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label>
+            <button :disabled="isApplying || !selectedExistingCandidate" type="button" class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
+          </div>
         </template>
       </div>
     </div>
