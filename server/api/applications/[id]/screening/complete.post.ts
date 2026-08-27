@@ -14,7 +14,7 @@ type ScreeningCompletionStage = 'recruiter_screening_completed' | 'hold_for_comp
 
 const nextActionLabels: Record<string, string> = {
   proceed_to_hiring_manager_round: 'Proceed to Hiring Manager Round',
-  hold_for_comparison: 'Hold for Comparison',
+  hold_for_comparison: 'Resume Hiring Manager Round',
   reassess: 'Reassess',
   recruiter_decision_required: 'Recruiter Decision Required',
 }
@@ -83,6 +83,7 @@ export default defineEventHandler(async (event) => {
       finalFit: body.finalFit,
       recommendedNextStep: body.recommendedNextStep,
       resultingStage: finalStatus,
+      ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
       validationFocus: body.validationFocus,
       responses,
       requirementRevision,
