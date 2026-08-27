@@ -16,7 +16,7 @@ const { data: profileData, refresh: refreshProfile } = useFetch(() => `/api/appl
 const profile = computed<any>(() => profileData.value?.profile ?? null)
 const screeningEnabled = computed(() => ['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.value?.lastStatus ?? ''))
 const screeningActionVisible = computed(() => ['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.value?.lastStatus ?? ''))
-const screeningActionLabel = computed(() => profile.value?.lastStatus === 'recruiter_screening_pending' ? 'Continue Recruiter Screening' : 'Start Recruiter Screening')
+const screeningActionLabel = computed(() => profile.value?.lastStatus === 'recruiter_screening_pending' ? 'Continue Recruiter Screening' : profile.value?.lastStatus === 'reassess' ? 'Revalidate Candidate' : 'Start Recruiter Screening')
 
 const stageLabels: Record<string, string> = {
   candidate_added: 'Candidate Added', resume_received: 'Resume Received', resume_reviewed: 'Ready for Recruiter Screening', recruiter_screening_pending: 'Recruiter Screening Pending', recruiter_screening_completed: 'Recruiter Screening Completed', hiring_manager_round_pending: 'Hiring Manager Round Pending', hiring_manager_round_completed: 'Hiring Manager Round Completed', hod_round_pending: 'HOD Pending', hod_round_completed: 'HOD Completed', hr_round_pending: 'HR Pending', hr_round_completed: 'HR Completed', hold_for_comparison: 'Hold for Comparison', reassess: 'Reassessment Required', not_proceeding: 'Not Proceeding', offer_stage: 'Offer Stage', offer_accepted: 'Offer Accepted', offer_declined: 'Offer Declined', joined: 'Joined', closed: 'Closed',
@@ -47,7 +47,6 @@ useSeoMeta({
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/pds-ranking`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />AI Candidate Pool</NuxtLink>
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/ai-analysis`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><FileSearch class="size-4" />JD & Skill Matrix</NuxtLink>
       <NuxtLink v-if="application?.job.id" :to="localePath(`/dashboard/jobs/${application.job.id}/pds-register`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ClipboardList class="size-4" />Candidate Register</NuxtLink>
-      <button v-if="screeningActionVisible" type="button" data-testid="start-recruiter-screening" class="ml-auto inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white shadow-sm" @click="openRecruiterScreening"><PhoneCall class="size-4" />{{ screeningActionLabel }}</button>
     </div>
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading recruitment workspace…</div>
@@ -65,11 +64,11 @@ useSeoMeta({
             <div v-if="profile?.provisionalFitScore != null" class="rounded-2xl border px-5 py-4 text-center" :class="scoreClass(profile.provisionalFitScore)"><p class="text-[10px] font-bold uppercase tracking-wide">AI Resume Match</p><p class="mt-1 text-3xl font-black">{{ profile.provisionalFitScore }}%</p><p class="text-sm font-bold">{{ profile.priority ?? '—' }}</p></div>
           </div>
 
-          <div v-if="profile" class="mt-6 grid gap-3 md:grid-cols-[1fr_1fr_1fr_1.25fr]">
+          <div v-if="profile" class="mt-6 grid gap-3 md:grid-cols-[1fr_1fr_1fr_1.35fr]">
             <div class="rounded-2xl border border-white/10 bg-white/5 p-4"><p class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]"><Route class="size-3" />Current Stage</p><p class="mt-2 text-sm font-semibold">{{ stageLabels[profile.lastStatus] ?? profile.lastStatus }}</p></div>
             <div class="rounded-2xl border border-white/10 bg-white/5 p-4"><p class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]"><ShieldCheck class="size-3" />Current Fit</p><p class="mt-2 text-sm font-semibold">{{ fitLabels[profile.currentFit] ?? profile.currentFit }}</p></div>
             <div class="rounded-2xl border border-white/10 bg-white/5 p-4"><p class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#9FD3F2]"><TrendingUp class="size-3" />Key Strength</p><p class="mt-2 text-sm font-semibold">{{ profile.keyStrength || 'Not assessed yet' }}</p></div>
-            <div class="rounded-2xl border border-[#52B7D8]/30 bg-[#2E86C1]/20 p-4"><p class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#CDEEFF]"><Target class="size-3" />Next Action</p><p class="mt-2 text-sm font-bold text-white">{{ profile.nextAction || 'Review candidate' }}</p></div>
+            <div class="rounded-2xl border border-[#52B7D8]/30 bg-[#2E86C1]/20 p-4"><p class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-[#CDEEFF]"><Target class="size-3" />Next Action</p><p class="mt-2 text-sm font-bold text-white">{{ profile.nextAction || 'Review candidate' }}</p><button v-if="screeningActionVisible" type="button" data-testid="start-recruiter-screening" class="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-3 py-2 text-xs font-bold text-white shadow-sm" @click="openRecruiterScreening"><PhoneCall class="size-3.5" />{{ screeningActionLabel }}</button></div>
           </div>
         </div>
       </section>
@@ -80,13 +79,12 @@ useSeoMeta({
       </section>
 
       <PdsCandidateSummary :application-id="applicationId" />
-
       <div class="rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] px-4 py-3 text-xs text-[#486581] dark:border-surface-800 dark:bg-surface-900 dark:text-surface-400"><Sparkles class="mr-1 inline size-3.5" />Recruiter ownership follows the requirement allocation. Reassignment is managed centrally from Requirement Allocations.</div>
 
       <div class="space-y-6">
         <PdsResumeAssessmentPanel :application-id="applicationId" :selected-resume-document-id="profile?.selectedResumeDocumentId" :recruitment-status="profile?.lastStatus" @saved="refreshWorkflow" />
         <PdsCandidateNotInterested :application-id="applicationId" :status="profile?.lastStatus" @changed="refreshWorkflow" />
-        <PdsRecruiterScreening :application-id="applicationId" :enabled="screeningEnabled" @changed="refreshWorkflow" />
+        <PdsRecruiterScreening :application-id="applicationId" :enabled="screeningEnabled" :recruitment-status="profile?.lastStatus" @changed="refreshWorkflow" />
         <PdsApplicationRecruitmentPanel :application-id="applicationId" :documents="application.candidate.documents ?? []" @changed="refreshWorkflow" />
         <PdsRecruitmentLifecycle :application-id="applicationId" :profile="profile" @changed="refreshWorkflow" />
         <PdsCandidateHistory :application-id="applicationId" />
