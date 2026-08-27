@@ -29,10 +29,25 @@ describe('PDS candidate sourcing policy', () => {
     expect(pool).toContain('Refresh Database Matches')
   })
 
-  it('keeps direct candidate intake on the one-candidate quick-match flow', () => {
+  it('keeps direct candidate intake on the one-candidate quick-match flow and navigates before the modal can unmount', () => {
     const modal = source('app/components/ApplyCandidateModal.vue')
     expect(modal).toContain('/quick-match')
     expect(modal).not.toContain('/talent-pool/sync')
-    expect(modal).toContain('Validate via Recruiter Screening')
+    expect(modal).toContain('Start Recruiter Screening')
+    expect(modal).toContain('/dashboard/recruitment/${applicationId}#recruiter-screening')
+    const functionStart = modal.indexOf('async function openRecruiterScreening()')
+    const functionEnd = modal.indexOf('async function attachCandidate', functionStart)
+    const handoff = modal.slice(functionStart, functionEnd)
+    expect(handoff).not.toContain("emit('created'")
+  })
+
+  it('keeps recruiter screening discoverable after the add-candidate modal is gone', () => {
+    const workspace = source('app/pages/dashboard/recruitment/[id].vue')
+    const register = source('app/pages/dashboard/jobs/[id]/pds-register.vue')
+    expect(workspace).toContain('data-testid="start-recruiter-screening"')
+    expect(workspace).toContain('Start Recruiter Screening')
+    expect(workspace).toContain('Continue Recruiter Screening')
+    expect(register).toContain('Start Recruiter Screening')
+    expect(register).toContain('/dashboard/recruitment/${row.applicationId}#recruiter-screening')
   })
 })
