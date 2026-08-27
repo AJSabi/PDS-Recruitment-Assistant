@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserPlus, Pencil, Trash2, MoreHorizontal, Brain, Settings2 } from 'lucide-vue-next'
+import { UserPlus, Pencil, Trash2, MoreHorizontal, Settings2 } from 'lucide-vue-next'
 import { JOB_STATUS_TRANSITIONS } from '~~/shared/status-transitions'
 
 const props = defineProps<{
@@ -12,10 +12,6 @@ const localePath = useLocalePath()
 const { handlePreviewReadOnlyError } = usePreviewReadOnly()
 
 const { job, updateJob, deleteJob, refresh: refreshJob } = useJob(props.jobId)
-
-// ─────────────────────────────────────────────
-// Job status transitions
-// ─────────────────────────────────────────────
 
 const jobTransitionLabels: Record<string, string> = {
   draft: 'Revert to Draft',
@@ -38,7 +34,6 @@ const allowedJobTransitions = computed(() => {
 
 const primaryJobTransition = computed(() => allowedJobTransitions.value[0] ?? null)
 const secondaryJobTransitions = computed(() => allowedJobTransitions.value.slice(1))
-
 const isJobTransitioning = ref(false)
 
 async function handleJobTransition(newStatus: string) {
@@ -56,10 +51,6 @@ async function handleJobTransition(newStatus: string) {
   }
 }
 
-// ─────────────────────────────────────────────
-// Delete
-// ─────────────────────────────────────────────
-
 const isDeleting = ref(false)
 const showDeleteConfirm = ref(false)
 
@@ -76,79 +67,12 @@ async function handleDelete() {
   }
 }
 
-// ─────────────────────────────────────────────
-// Add candidate modal
-// ─────────────────────────────────────────────
-
 const showApplyModal = ref(false)
 
 function handleCandidateApplied() {
   showApplyModal.value = false
   refreshNuxtData(`pipeline-apps-${props.jobId}`)
 }
-
-// ─────────────────────────────────────────────
-// Bulk AI scoring
-// ─────────────────────────────────────────────
-
-const isScoringAll = ref(false)
-const scoringProgress = ref({ done: 0, total: 0 })
-
-async function scoreAllCandidates() {
-  isScoringAll.value = true
-  scoringProgress.value = { done: 0, total: 0 }
-  showMoreMenu.value = false
-  try {
-    const { applicationIds } = await $fetch(`/api/jobs/${props.jobId}/analyze-all`, {
-      method: 'POST',
-    })
-    scoringProgress.value.total = applicationIds.length
-    track('bulk_scoring_started', { job_id: props.jobId, candidate_count: applicationIds.length })
-    if (applicationIds.length === 0) {
-      toast.info('All candidates scored', 'Every candidate already has a score.')
-      return
-    }
-
-    let failed = 0
-    for (const appId of applicationIds) {
-      try {
-        await $fetch(`/api/applications/${appId}/analyze`, {
-          method: 'POST',
-        })
-      } catch {
-        failed++
-      }
-      scoringProgress.value.done++
-    }
-    await refreshNuxtData(`pipeline-apps-${props.jobId}`)
-    if (failed === 0) {
-      toast.success('Scoring complete', `${applicationIds.length} candidate${applicationIds.length === 1 ? '' : 's'} scored successfully.`)
-    } else {
-      toast.warning('Scoring partially complete', `${applicationIds.length - failed} scored, ${failed} failed (missing resume or criteria).`)
-    }
-  } catch (err: any) {
-    const statusMessage = err?.data?.statusMessage ?? ''
-    if (statusMessage.includes('AI provider not configured') || statusMessage.includes('No scoring criteria')) {
-      toast.add({
-        type: 'warning',
-        title: 'Cannot score candidates',
-        message: statusMessage,
-        link: statusMessage.includes('AI provider')
-          ? { label: 'Go to AI Settings', href: '/dashboard/settings/ai' }
-          : undefined,
-        duration: 8000,
-      })
-    } else {
-      toast.error('Scoring failed', { message: statusMessage || 'An unexpected error occurred.', statusCode: err?.data?.statusCode })
-    }
-  } finally {
-    isScoringAll.value = false
-  }
-}
-
-// ─────────────────────────────────────────────
-// More menu
-// ─────────────────────────────────────────────
 
 const showMoreMenu = ref(false)
 const moreMenuRef = ref<HTMLElement | null>(null)
@@ -183,10 +107,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-// ─────────────────────────────────────────────
-// Property schema editor (per-job)
-// ─────────────────────────────────────────────
-
 const showPropertyEditor = ref(false)
 const propertyEditorScope = ref<'org' | 'job'>('job')
 function openPropertyEditor(scope: 'org' | 'job') {
@@ -197,10 +117,8 @@ function openPropertyEditor(scope: 'org' | 'job') {
 </script>
 
 <template>
-  <!-- Quick actions teleported to sub-nav bar -->
   <Teleport to="#job-sub-nav-actions">
     <div class="flex items-center gap-2">
-      <!-- Add Candidate -->
       <button
         class="hidden sm:inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-surface-200 dark:border-surface-700/80 px-2.5 py-1 text-[11px] font-medium text-surface-600 dark:text-surface-300 hover:bg-white hover:border-surface-300 dark:hover:bg-surface-800 dark:hover:border-surface-600 transition-all duration-150"
         @click="showApplyModal = true"
@@ -209,7 +127,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
         Add Candidate
       </button>
 
-      <!-- Primary job action (e.g., Publish) -->
       <button
         v-if="primaryJobTransition"
         :disabled="isJobTransitioning"
@@ -220,7 +137,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
         {{ jobTransitionLabels[primaryJobTransition] ?? primaryJobTransition }}
       </button>
 
-      <!-- More menu -->
       <div ref="moreMenuRef">
         <button
           class="inline-flex cursor-pointer items-center justify-center rounded-md border border-surface-200 dark:border-surface-700/80 p-1 text-surface-500 hover:bg-white hover:text-surface-700 dark:hover:bg-surface-800 dark:hover:text-surface-300 transition-all duration-150"
@@ -259,14 +175,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
                 Add Candidate
               </button>
               <div class="border-t border-surface-100 dark:border-surface-800 my-1.5 mx-2" />
-              <button
-                :disabled="isScoringAll"
-                class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800/80 transition-colors disabled:opacity-50"
-                @click="scoreAllCandidates()"
-              >
-                <Brain class="size-3.5 text-surface-400" />
-                {{ isScoringAll ? `Scoring ${scoringProgress.done}/${scoringProgress.total}…` : 'Score All Candidates' }}
-              </button>
               <button
                 class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800/80 transition-colors"
                 @click="openPropertyEditor('job')"
@@ -308,7 +216,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
     </div>
   </Teleport>
 
-  <!-- Property schema editor (per-job application properties) -->
   <PropertySchemaEditor
     :open="showPropertyEditor"
     entity-type="application"
@@ -316,7 +223,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
     @close="showPropertyEditor = false"
   />
 
-  <!-- Delete Job Confirm -->
   <Teleport to="body">
     <div v-if="showDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center">
       <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showDeleteConfirm = false" />
@@ -345,7 +251,6 @@ function openPropertyEditor(scope: 'org' | 'job') {
     </div>
   </Teleport>
 
-  <!-- Apply Candidate Modal -->
   <ApplyCandidateModal
     v-if="showApplyModal"
     :job-id="jobId"
