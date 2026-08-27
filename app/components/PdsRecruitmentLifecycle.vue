@@ -67,7 +67,6 @@ const primaryStage = computed(() => {
 })
 
 const holdAllowedStatuses = new Set([
-  'resume_reviewed',
   'recruiter_screening_pending',
   'recruiter_screening_completed',
   'hiring_manager_round_pending',
@@ -144,19 +143,13 @@ async function confirmStage(stage: string, requireNote = false) {
     showReassess.value = true
     return
   }
-  if (requireNote && !stageNote.value.trim()) {
-    return toast.warning('Comment required', 'Add a short reason before recording this decision.')
-  }
+  if (requireNote && !stageNote.value.trim()) return toast.warning('Comment required', 'Add a short reason before recording this decision.')
 
   busy.value = true
   try {
     await $fetch(`/api/applications/${props.applicationId}/stage/confirm`, {
       method: 'POST',
-      body: {
-        stage,
-        note: stageNote.value.trim() || null,
-        contactOccurred: false,
-      },
+      body: { stage, note: stageNote.value.trim() || null, contactOccurred: false },
     })
     stageNote.value = ''
     toast.success(labels[stage] ?? props.profile?.nextAction ?? 'Recruitment stage updated')
@@ -204,21 +197,15 @@ async function startReassess() {
           <span class="text-xs font-medium text-surface-600 dark:text-surface-300">Round comment <span class="font-normal text-surface-400">(optional)</span></span>
           <textarea v-model="stageNote" rows="2" class="mt-1 w-full rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-900" placeholder="Optional note or outcome summary" />
         </label>
-        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(primaryStage)">
-          {{ labels[primaryStage] ?? primaryStage }}
-        </button>
+        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(primaryStage)">{{ labels[primaryStage] ?? primaryStage }}</button>
       </div>
 
       <div v-else-if="recruiterDecisionRequired" class="mt-4">
-        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage('hiring_manager_round_pending')">
-          Confirm Recruiter Decision: Proceed to Hiring Manager
-        </button>
+        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage('hiring_manager_round_pending')">Confirm Recruiter Decision: Proceed to Hiring Manager</button>
       </div>
 
       <div v-if="currentStatus === 'hold_for_comparison' && holdResumeStage" class="mt-4">
-        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(holdResumeStage)">
-          {{ profile?.nextAction }}
-        </button>
+        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(holdResumeStage)">{{ profile?.nextAction }}</button>
       </div>
 
       <div v-if="currentStatus === 'offer_stage'" class="mt-4 flex flex-wrap gap-2">
