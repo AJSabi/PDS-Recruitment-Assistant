@@ -19,6 +19,7 @@ import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 const limiter = createRateLimiter({ windowMs: 60_000, maxRequests: 10, message: 'Too many AI candidate match requests. Please wait before retrying.' })
+const allowedNewAssessmentStatuses = new Set(['candidate_added', 'resume_received', 'reassess'])
 
 export default defineEventHandler(async (event) => {
   await limiter(event)
@@ -63,6 +64,20 @@ export default defineEventHandler(async (event) => {
       eq(talentPoolMatch.candidateId, app.candidateId),
     ),
   })
+
+  const reusableCurrentAssessment = Boolean(
+    profile.lastStatus === 'resume_reviewed'
+    && profile.selectedResumeDocumentId === latestResume.id
+    && existingMatch?.resumeDocumentId === latestResume.id
+    && existingMatch.requirementVersion === requirementRevision
+    && existingMatch.assessedAt,
+  )
+  if (!allowedNewAssessmentStatuses.has(profile.lastStatus) && !reusableCurrentAssessment) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This candidate is already progressing in recruitment. Open the Recruitment Workspace and use Reassess before replacing the assessed resume or recalculating the AI match.',
+    })
+  }
 
   let generated: any
   let ranking: { score: number; priority: 'P1' | 'P2' | 'P3' | 'P4' }
