@@ -31,6 +31,7 @@ export default defineEventHandler(async (event) => {
     applicationScope.push(inArray(application.jobId, visibleRequirementIds))
   }
 
+  const activeRequirementCondition = sql`${job.status} in ('draft','open')`
   const nowDate = new Date()
   const sevenDaysDate = new Date(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000)
   const now = nowDate.toISOString().slice(0, 10)
@@ -49,7 +50,7 @@ export default defineEventHandler(async (event) => {
     dueSoonRows,
     actionPendingRows,
   ] = await Promise.all([
-    db.$count(job, and(...jobScope, eq(job.status, 'open'))),
+    db.$count(job, and(...jobScope, activeRequirementCondition)),
 
     db.select({ count: sql<number>`count(distinct ${application.candidateId})` })
       .from(application)
@@ -108,9 +109,9 @@ export default defineEventHandler(async (event) => {
       .from(job)
       .leftJoin(application, and(eq(application.jobId, job.id), eq(application.organizationId, orgId)))
       .leftJoin(recruitmentRequirementState, and(eq(recruitmentRequirementState.jobId, job.id), eq(recruitmentRequirementState.organizationId, orgId)))
-      .where(and(...jobScope, eq(job.status, 'open')))
+      .where(and(...jobScope, activeRequirementCondition))
       .groupBy(job.id, recruitmentRequirementState.targetClosureDate)
-      .orderBy(sql`count(${application.id}) desc`)
+      .orderBy(desc(job.updatedAt))
       .limit(8),
 
     db.select({ count: count() })
