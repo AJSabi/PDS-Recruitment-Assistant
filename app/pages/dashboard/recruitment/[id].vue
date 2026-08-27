@@ -79,6 +79,7 @@ useSeoMeta({
 
       <div class="space-y-6">
         <PdsResumeAssessmentPanel :application-id="applicationId" :selected-resume-document-id="profile?.selectedResumeDocumentId" :recruitment-status="profile?.lastStatus" @saved="refreshWorkflow" />
+        <PdsCandidateNotInterested :application-id="applicationId" :status="profile?.lastStatus" @changed="refreshWorkflow" />
         <PdsRecruiterScreening :application-id="applicationId" :enabled="screeningEnabled" @changed="refreshWorkflow" />
         <PdsApplicationRecruitmentPanel :application-id="applicationId" :documents="application.candidate.documents ?? []" @changed="refreshWorkflow" />
         <PdsRecruitmentLifecycle :application-id="applicationId" :profile="profile" @changed="refreshWorkflow" />
