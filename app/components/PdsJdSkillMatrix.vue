@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Plus, Save, ShieldCheck, Sparkles, Trash2, WandSparkles } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, Database, FileText, Loader2, Plus, Save, ShieldCheck, Sparkles, Trash2, UserPlus, WandSparkles } from 'lucide-vue-next'
 
 const route = useRoute()
 const jobId = route.params.id as string
 const toast = useToast()
+const localePath = useLocalePath()
 const { job, status: jobFetchStatus, error: jobError, updateJob } = useJob(jobId)
 
 type Priority = 'mandatory' | 'preferred' | 'optional'
@@ -24,6 +25,7 @@ const isSavingJd = ref(false)
 const isSaving = ref(false)
 const isGenerating = ref(false)
 const dirty = ref(false)
+const showAddCandidate = ref(false)
 
 watch(job, (value: any) => {
   if (!value) return
@@ -150,13 +152,7 @@ async function persist(approve: boolean) {
       return
     }
 
-    toast.success('Skill Matrix approved', { message: 'Searching the existing resume database for matching candidates.' })
-    try {
-      const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/sync`, { method: 'POST' })
-      toast.success('AI Candidate Pool prepared', { message: `${result.visibleMatches ?? 0} candidates meet the ${result.threshold ?? 50}% match threshold.` })
-    } catch (poolErr: any) {
-      toast.warning('Skill Matrix approved', poolErr?.data?.statusMessage ?? poolErr?.message ?? 'Candidate Pool will update when AI analysis is available.')
-    }
+    toast.success('Skill Matrix approved', { message: 'Choose how to source candidates next. Existing Candidate Database matching will run only when a recruiter explicitly requests an AI refresh.' })
   } catch (err: any) {
     toast.error('Could not save Skill Matrix', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isSaving.value = false }
@@ -255,10 +251,27 @@ async function persist(approve: boolean) {
         <button v-if="matrix.classifications.length < 5" type="button" class="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-[#9FC7DF] bg-white px-4 py-3 text-sm font-bold text-[#1F6FA3] dark:bg-surface-900" @click="addClassification"><Plus class="size-4" />Add classification</button>
       </section>
 
+      <section v-if="approved" class="rounded-2xl border border-[#CFE0ED] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+        <div>
+          <h2 class="text-lg font-bold text-[#102A43] dark:text-white">4. Choose candidate sourcing method</h2>
+          <p class="mt-1 max-w-3xl text-sm text-surface-500">The recruiter can work directly with resumes for this requirement or use the AI Candidate Pool. The central Candidate Database is never scanned automatically after approval or page refresh.</p>
+        </div>
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          <div class="rounded-2xl border border-[#B8E2DE] bg-[#F4FBFA] p-5 dark:border-surface-700 dark:bg-surface-800/40">
+            <div class="flex items-start gap-3"><UserPlus class="mt-0.5 size-5 text-[#16847F]" /><div><p class="font-bold text-[#102A43] dark:text-white">Attach candidate / resume directly</p><p class="mt-1 text-sm leading-6 text-surface-500">Add a new or existing candidate directly to this requirement. With a resume, AI evaluates only that candidate against the approved JD and Skill Matrix and immediately shows the match percentage. The recruiter may still validate the candidate through Recruiter Screening regardless of the AI score.</p></div></div>
+            <button type="button" class="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2.5 text-sm font-bold text-white" @click="showAddCandidate = true"><UserPlus class="size-4" />Add Candidate / Resume</button>
+          </div>
+          <div class="rounded-2xl border border-[#BED9E9] bg-[#F7FBFE] p-5 dark:border-surface-700 dark:bg-surface-800/40">
+            <div class="flex items-start gap-3"><Database class="mt-0.5 size-5 text-[#2E86C1]" /><div><p class="font-bold text-[#102A43] dark:text-white">Use AI Candidate Pool</p><p class="mt-1 text-sm leading-6 text-surface-500">Open the Candidate Pool to review existing cached matches or explicitly ask AI to refresh the central Candidate Database. AI database refresh runs only when the recruiter presses Refresh Database Matches.</p></div></div>
+            <a :href="localePath(`/dashboard/jobs/${jobId}/pds-ranking`)" class="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-bold text-white no-underline"><Database class="size-4" />Open AI Candidate Pool</a>
+          </div>
+        </div>
+      </section>
+
       <section v-if="matrix.classifications.length" class="sticky bottom-4 z-10 rounded-2xl border border-[#CFE0ED] bg-white/95 p-4 shadow-xl backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div class="min-w-0">
-            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval locks this JD-specific evidence framework before candidate matching.</p></div></div>
+            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval locks this JD-specific evidence framework. It does not automatically refresh the Candidate Database.</p></div></div>
             <div v-else class="flex items-start gap-2 text-sm text-warning-700"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Review required before approval</p><p class="mt-0.5 text-xs text-surface-500">{{ jdDirty ? 'Save the Active JD before approving the matrix.' : (approvalError || 'Review the current AI proposal before approval.') }}</p></div></div>
           </div>
           <div class="flex shrink-0 flex-wrap gap-2">
@@ -268,5 +281,12 @@ async function persist(approve: boolean) {
         </div>
       </section>
     </template>
+
+    <ApplyCandidateModal
+      v-if="showAddCandidate"
+      :job-id="jobId"
+      @close="showAddCandidate = false"
+      @created="showAddCandidate = false"
+    />
   </div>
 </template>
