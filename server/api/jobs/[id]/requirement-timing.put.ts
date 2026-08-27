@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { job } from '../../../database/schema/app'
 import { recruitmentRequirementState } from '../../../database/schema/recruitmentWorkflow'
-import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
+import { assertRecruitmentAdmin } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -20,8 +20,8 @@ function addDays(date: Date, days: number) {
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['update'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
-  await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, bodySchema.parse)
 
   const requirement = await db.query.job.findFirst({
