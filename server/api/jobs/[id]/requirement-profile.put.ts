@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { job, recruitmentRequirementState } from '../../../database/schema'
 import { ensureRequirementState } from '../../../utils/recruitmentLifecycle'
-import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
+import { getRequirementVisibility, assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -29,12 +29,13 @@ export default defineEventHandler(async (event) => {
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const state = await ensureRequirementState(orgId, jobId)
-  const assignmentDate = body.assignmentDate === undefined
-    ? state.assignmentDate
-    : body.assignmentDate ? new Date(body.assignmentDate) : null
-  const targetClosureDate = body.targetClosureDate === undefined
-    ? state.targetClosureDate
-    : body.targetClosureDate ? new Date(body.targetClosureDate) : null
+  const visibility = await getRequirementVisibility(orgId, session.user.id)
+  const assignmentDate = visibility.canSeeAll
+    ? (body.assignmentDate === undefined ? state.assignmentDate : body.assignmentDate ? new Date(body.assignmentDate) : null)
+    : state.assignmentDate
+  const targetClosureDate = visibility.canSeeAll
+    ? (body.targetClosureDate === undefined ? state.targetClosureDate : body.targetClosureDate ? new Date(body.targetClosureDate) : null)
+    : state.targetClosureDate
 
   const [updated] = await db.update(recruitmentRequirementState).set({
     requirementProfile: {
