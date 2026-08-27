@@ -33,6 +33,7 @@ const primaryNextStage: Record<string, string | null> = {
 }
 
 const labels: Record<string, string> = {
+  recruiter_screening_pending: 'Resume Recruiter Screening',
   hiring_manager_round_pending: 'Move to Hiring Manager Round',
   hiring_manager_round_completed: 'Mark Hiring Manager Round Completed',
   hod_round_pending: 'Move to HOD Round',
@@ -49,8 +50,17 @@ const labels: Record<string, string> = {
   closed: 'Close Application',
 }
 
+const holdResumeStageByAction: Record<string, string> = {
+  'Resume Recruiter Screening': 'recruiter_screening_pending',
+  'Resume Hiring Manager Round': 'hiring_manager_round_pending',
+  'Resume HOD Round': 'hod_round_pending',
+  'Resume HR Round': 'hr_round_pending',
+  'Resume Offer Stage': 'offer_stage',
+}
+
 const currentStatus = computed(() => props.profile?.lastStatus ?? '')
 const recruiterDecisionRequired = computed(() => currentStatus.value === 'recruiter_screening_completed' && props.profile?.nextAction === 'Recruiter Decision Required')
+const holdResumeStage = computed(() => currentStatus.value === 'hold_for_comparison' ? holdResumeStageByAction[props.profile?.nextAction ?? ''] ?? null : null)
 const primaryStage = computed(() => {
   if (currentStatus.value === 'recruiter_screening_completed' && props.profile?.nextAction !== 'Proceed to Hiring Manager Round') return null
   return primaryNextStage[currentStatus.value] ?? null
@@ -115,7 +125,9 @@ const stageGuidance = computed(() => {
     case 'hod_round_completed': return 'HOD Round is complete. When progressing the candidate, manually move to HR Round.'
     case 'hr_round_pending': return 'HR discussion happens outside the application. After it is completed, manually mark this round completed.'
     case 'hr_round_completed': return 'HR Round is complete. When approved, manually move the candidate to Offer Stage.'
-    case 'hold_for_comparison': return 'Candidate is on hold. Resume the appropriate workflow stage after the comparison decision, or choose Reassess / Not Proceeding.'
+    case 'hold_for_comparison': return holdResumeStage.value
+      ? `Candidate is on hold. When the comparison decision is complete, use ${props.profile?.nextAction} to continue from the correct workflow point, or choose Reassess / Not Proceeding.`
+      : 'Candidate is on hold. This older hold record has no safe resume point; choose Reassess or Not Proceeding.'
     case 'reassess': return 'Complete the reassessment workflow above before advancing the candidate.'
     case 'not_proceeding': return 'Recruitment has stopped for this application. Reassess if circumstances change, or close the application.'
     case 'offer_stage': return 'Record the actual offer outcome manually. Choose Offer Accepted or Offer Declined; the application cannot skip directly to Joined or Closed.'
@@ -147,7 +159,7 @@ async function confirmStage(stage: string, requireNote = false) {
       },
     })
     stageNote.value = ''
-    toast.success(labels[stage] ?? 'Recruitment stage updated')
+    toast.success(labels[stage] ?? props.profile?.nextAction ?? 'Recruitment stage updated')
     emit('changed')
   } catch (err: any) {
     toast.error('Could not change stage', { message: err?.data?.statusMessage ?? err?.message })
@@ -200,6 +212,12 @@ async function startReassess() {
       <div v-else-if="recruiterDecisionRequired" class="mt-4">
         <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage('hiring_manager_round_pending')">
           Confirm Recruiter Decision: Proceed to Hiring Manager
+        </button>
+      </div>
+
+      <div v-if="currentStatus === 'hold_for_comparison' && holdResumeStage" class="mt-4">
+        <button :disabled="busy" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="confirmStage(holdResumeStage)">
+          {{ profile?.nextAction }}
         </button>
       </div>
 
