@@ -6,7 +6,7 @@ const readSource = (path: string) => readFileSync(new URL(`../../${path}`, impor
 describe('PDS immediate candidate match workflow', () => {
   it('assesses only the newly linked application rather than refreshing the whole database', () => {
     const modal = readSource('app/components/ApplyCandidateModal.vue')
-    expect(modal).toContain(`/api/applications/${applicationId}/quick-match`)
+    expect(modal).toContain('/api/applications/${applicationId}/quick-match')
     expect(modal).not.toContain('/talent-pool/sync')
   })
 
