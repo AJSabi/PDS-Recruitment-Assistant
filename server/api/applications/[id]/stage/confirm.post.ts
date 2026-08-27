@@ -31,7 +31,6 @@ const defaultNextActionByStage: Record<string, string> = {
 }
 
 const holdResumeActionBySource: Record<string, { stage: string; action: string }> = {
-  resume_reviewed: { stage: 'recruiter_screening_pending', action: 'Resume Recruiter Screening' },
   recruiter_screening_pending: { stage: 'recruiter_screening_pending', action: 'Resume Recruiter Screening' },
   recruiter_screening_completed: { stage: 'hiring_manager_round_pending', action: 'Resume Hiring Manager Round' },
   hiring_manager_round_pending: { stage: 'hiring_manager_round_pending', action: 'Resume Hiring Manager Round' },
@@ -70,12 +69,8 @@ export default defineEventHandler(async (event) => {
 
   if (profile.lastStatus === 'hold_for_comparison' && !['reassess', 'not_proceeding', 'closed'].includes(body.stage)) {
     const expectedResumeStage = holdResumeStageByAction.get(profile.nextAction ?? '')
-    if (!expectedResumeStage) {
-      throw createError({ statusCode: 422, statusMessage: 'This hold record does not contain a safe resume stage. Choose Reassess or Not Proceeding instead.' })
-    }
-    if (body.stage !== expectedResumeStage) {
-      throw createError({ statusCode: 422, statusMessage: `Resume this held candidate through ${profile.nextAction}.` })
-    }
+    if (!expectedResumeStage) throw createError({ statusCode: 422, statusMessage: 'This hold record does not contain a safe resume stage. Choose Reassess or Not Proceeding instead.' })
+    if (body.stage !== expectedResumeStage) throw createError({ statusCode: 422, statusMessage: `Resume this held candidate through ${profile.nextAction}.` })
   }
 
   if (stagesRequiringDecisionNote.has(body.stage) && !body.note?.trim()) {
@@ -96,9 +91,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const holdResume = body.stage === 'hold_for_comparison' ? holdResumeActionBySource[profile.lastStatus] : null
-  if (body.stage === 'hold_for_comparison' && !holdResume) {
-    throw createError({ statusCode: 422, statusMessage: `Hold for Comparison is not supported from ${profile.lastStatus}.` })
-  }
+  if (body.stage === 'hold_for_comparison' && !holdResume) throw createError({ statusCode: 422, statusMessage: `Hold for Comparison is not supported from ${profile.lastStatus}.` })
 
   // Hiring Manager, HOD and HR discussions happen outside the application in V1.
   // The recruiter manually confirms each sequential stage here. A note is optional for normal
@@ -120,13 +113,7 @@ export default defineEventHandler(async (event) => {
     applicationId,
     type: 'stage_change',
     summary: body.note ?? `Recruiter manually confirmed recruitment stage: ${body.stage}`,
-    payload: {
-      event: 'stage_confirmed',
-      from: profile.lastStatus,
-      to: body.stage,
-      manualStageMovement: true,
-      ...(holdResume ? { holdResumeStage: holdResume.stage } : {}),
-    },
+    payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage, manualStageMovement: true, ...(holdResume ? { holdResumeStage: holdResume.stage } : {}) },
     createdBy: session.user.id,
   })
 
