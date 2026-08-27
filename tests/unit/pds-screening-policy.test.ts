@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 const source = readFileSync('server/utils/ai/pdsScreening.ts', 'utf8')
+const notInterestedApi = readFileSync('server/api/applications/[id]/screening/not-interested.post.ts', 'utf8')
+const notInterestedUi = readFileSync('app/components/PdsCandidateNotInterested.vue', 'utf8')
 
 describe('PDS recruiter screening policy', () => {
   it('caps recruiter screening at 10 questions', () => {
@@ -39,5 +41,29 @@ describe('PDS recruiter screening policy', () => {
     expect(source).toContain('10-15 minute phone screening')
     expect(source).toContain('completed within 10-15 minutes')
     expect(source).toContain('30-90 seconds')
+  })
+
+  it('records Candidate Not Interested as a candidate decision, not recruiter rejection', () => {
+    expect(notInterestedApi).toContain("lastStatus: 'not_proceeding'")
+    expect(notInterestedApi).toContain("event: 'candidate_not_interested'")
+    expect(notInterestedApi).toContain('candidateDecision: true')
+    expect(notInterestedApi).toContain('recruiterRejection: false')
+    expect(notInterestedApi).toContain('Candidate remains in the central Candidate Database')
+  })
+
+  it('allows Candidate Not Interested before or during screening and stops an active screening session', () => {
+    expect(notInterestedApi).toContain("['resume_reviewed', 'recruiter_screening_pending']")
+    expect(notInterestedApi).toContain("status: 'completed'")
+    expect(notInterestedApi).toContain("syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'not_proceeding')")
+    expect(notInterestedApi).toContain("nextAction: 'Candidate Not Interested — Reassess or close application'")
+  })
+
+  it('offers practical candidate-decision reasons and keeps reopening governed through Reassess', () => {
+    expect(notInterestedUi).toContain('Candidate Not Interested')
+    expect(notInterestedUi).toContain('Not interested in the role')
+    expect(notInterestedUi).toContain('Compensation not suitable')
+    expect(notInterestedUi).toContain('Location not suitable')
+    expect(notInterestedUi).toContain('Timing / availability not suitable')
+    expect(notInterestedUi).toContain('may be reconsidered later through Reassess')
   })
 })
