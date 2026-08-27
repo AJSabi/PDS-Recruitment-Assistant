@@ -21,7 +21,6 @@ const defaultNextActionByStage: Record<string, string> = {
   hod_round_completed: 'Move to HR Round',
   hr_round_pending: 'Complete HR Round externally, then mark it completed',
   hr_round_completed: 'Move to Offer Stage',
-  hold_for_comparison: 'Review comparison decision',
   reassess: 'Review new evidence and reassess candidate',
   not_proceeding: 'Reassess or close application',
   offer_stage: 'Record Offer Accepted or Offer Declined',
@@ -31,6 +30,20 @@ const defaultNextActionByStage: Record<string, string> = {
   closed: 'No further action',
 }
 
+const holdResumeActionBySource: Record<string, { stage: string; action: string }> = {
+  resume_reviewed: { stage: 'recruiter_screening_pending', action: 'Resume Recruiter Screening' },
+  recruiter_screening_pending: { stage: 'recruiter_screening_pending', action: 'Resume Recruiter Screening' },
+  recruiter_screening_completed: { stage: 'hiring_manager_round_pending', action: 'Resume Hiring Manager Round' },
+  hiring_manager_round_pending: { stage: 'hiring_manager_round_pending', action: 'Resume Hiring Manager Round' },
+  hiring_manager_round_completed: { stage: 'hod_round_pending', action: 'Resume HOD Round' },
+  hod_round_pending: { stage: 'hod_round_pending', action: 'Resume HOD Round' },
+  hod_round_completed: { stage: 'hr_round_pending', action: 'Resume HR Round' },
+  hr_round_pending: { stage: 'hr_round_pending', action: 'Resume HR Round' },
+  hr_round_completed: { stage: 'offer_stage', action: 'Resume Offer Stage' },
+  offer_stage: { stage: 'offer_stage', action: 'Resume Offer Stage' },
+}
+
+const holdResumeStageByAction = new Map(Object.values(holdResumeActionBySource).map(item => [item.action, item.stage]))
 const stagesRequiringDecisionNote = new Set(['hold_for_comparison', 'not_proceeding', 'offer_declined'])
 
 export default defineEventHandler(async (event) => {
@@ -55,6 +68,16 @@ export default defineEventHandler(async (event) => {
   const allowed = CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus] ?? []
   if (!allowed.includes(body.stage)) throw createError({ statusCode: 422, statusMessage: `Cannot confirm stage change from ${profile.lastStatus} to ${body.stage}.` })
 
+  if (profile.lastStatus === 'hold_for_comparison' && !['reassess', 'not_proceeding', 'closed'].includes(body.stage)) {
+    const expectedResumeStage = holdResumeStageByAction.get(profile.nextAction ?? '')
+    if (!expectedResumeStage) {
+      throw createError({ statusCode: 422, statusMessage: 'This hold record does not contain a safe resume stage. Choose Reassess or Not Proceeding instead.' })
+    }
+    if (body.stage !== expectedResumeStage) {
+      throw createError({ statusCode: 422, statusMessage: `Resume this held candidate through ${profile.nextAction}.` })
+    }
+  }
+
   if (stagesRequiringDecisionNote.has(body.stage) && !body.note?.trim()) {
     throw createError({ statusCode: 422, statusMessage: 'Add a short decision comment before recording this stage.' })
   }
@@ -72,6 +95,11 @@ export default defineEventHandler(async (event) => {
     if (!screening || screening.status !== requiredStatus) throw createError({ statusCode: 422, statusMessage: body.stage === 'recruiter_screening_pending' ? 'Start Recruiter Screening first. Screening Pending is set automatically when screening starts.' : 'Complete Recruiter Screening first. Screening Completed is set automatically after the final screening assessment.' })
   }
 
+  const holdResume = body.stage === 'hold_for_comparison' ? holdResumeActionBySource[profile.lastStatus] : null
+  if (body.stage === 'hold_for_comparison' && !holdResume) {
+    throw createError({ statusCode: 422, statusMessage: `Hold for Comparison is not supported from ${profile.lastStatus}.` })
+  }
+
   // Hiring Manager, HOD and HR discussions happen outside the application in V1.
   // The recruiter manually confirms each sequential stage here. A note is optional for normal
   // progression and required only for governed exception/outcome decisions.
@@ -79,7 +107,7 @@ export default defineEventHandler(async (event) => {
   const [updated] = await db.update(recruitmentApplicationProfile).set({
     lastStatus: body.stage,
     statusDate: now,
-    nextAction: body.nextAction ?? defaultNextActionByStage[body.stage] ?? profile.nextAction,
+    nextAction: holdResume?.action ?? body.nextAction ?? defaultNextActionByStage[body.stage] ?? profile.nextAction,
     lastContactAt: body.contactOccurred ? now : profile.lastContactAt,
     aiSummaryStale: true,
     lastUpdatedBy: session.user.id,
@@ -92,7 +120,13 @@ export default defineEventHandler(async (event) => {
     applicationId,
     type: 'stage_change',
     summary: body.note ?? `Recruiter manually confirmed recruitment stage: ${body.stage}`,
-    payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage, manualStageMovement: true },
+    payload: {
+      event: 'stage_confirmed',
+      from: profile.lastStatus,
+      to: body.stage,
+      manualStageMovement: true,
+      ...(holdResume ? { holdResumeStage: holdResume.stage } : {}),
+    },
     createdBy: session.user.id,
   })
 
