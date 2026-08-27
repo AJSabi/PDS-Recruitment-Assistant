@@ -16,8 +16,9 @@ export const CONFIRMED_STAGE_TRANSITIONS: Record<string, string[]> = {
   hold_for_comparison: ['recruiter_screening_pending', 'hiring_manager_round_pending', 'hod_round_pending', 'hr_round_pending', 'reassess', 'not_proceeding', 'closed'],
   reassess: ['resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'hiring_manager_round_pending', 'hod_round_pending', 'hr_round_pending', 'hold_for_comparison', 'not_proceeding', 'closed'],
   not_proceeding: ['reassess', 'closed'],
-  offer_stage: ['offer_accepted', 'offer_declined', 'hold_for_comparison', 'closed'],
-  offer_accepted: ['joined', 'offer_declined', 'closed'],
+  // Offer handling is recruiter-confirmed and sequential: outcome first, then joining, then closure.
+  offer_stage: ['offer_accepted', 'offer_declined', 'hold_for_comparison'],
+  offer_accepted: ['joined', 'offer_declined'],
   offer_declined: ['reassess', 'closed'],
   joined: ['closed'],
   closed: [],
