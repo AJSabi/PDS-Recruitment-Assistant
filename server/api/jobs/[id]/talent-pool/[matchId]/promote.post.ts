@@ -10,9 +10,6 @@ import {
   resumeAssessment,
   talentPoolMatch,
 } from '../../../../../database/schema'
-import { loadAiConfig } from '../../../../../utils/ai/loadConfig'
-import { generatePdsScreeningQuestions } from '../../../../../utils/ai/pdsScreening'
-import type { SupportedProvider } from '../../../../../utils/ai/provider'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../../utils/recruitmentApplicationStatus'
 import { assertRequirementAccess } from '../../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
@@ -21,7 +18,7 @@ const paramsSchema = z.object({ id: z.string().min(1), matchId: z.string().min(1
 const FINAL_POOL_THRESHOLD = 50
 
 export default defineEventHandler(async (event) => {
-  const session = await requirePermission(event, { application: ['create', 'update'], scoring: ['create'] })
+  const session = await requirePermission(event, { application: ['create', 'update'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId, matchId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
@@ -29,7 +26,7 @@ export default defineEventHandler(async (event) => {
   const [jobRecord, matrixRecord, match, requirementState] = await Promise.all([
     db.query.job.findFirst({
       where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
-      columns: { id: true, title: true, description: true },
+      columns: { id: true, description: true },
     }),
     db.query.jobSkillMatrix.findFirst({
       where: and(eq(jobSkillMatrix.jobId, jobId), eq(jobSkillMatrix.organizationId, orgId)),
@@ -56,7 +53,7 @@ export default defineEventHandler(async (event) => {
   if (!match.resumeDocumentId) throw createError({ statusCode: 422, statusMessage: 'The matched resume is no longer available.' })
   if (!matrixRecord?.approvedMatrix || !jobRecord.description) throw createError({ statusCode: 422, statusMessage: 'Active JD and approved Skill Matrix are required.' })
 
-  if (match.promotedApplicationId) return { applicationId: match.promotedApplicationId, alreadyPromoted: true }
+  if (match.promotedApplicationId) return { applicationId: match.promotedApplicationId, alreadyPromoted: true, aiCalls: 0 }
 
   const existingApplication = await db.query.application.findFirst({
     where: and(
@@ -77,7 +74,7 @@ export default defineEventHandler(async (event) => {
         eq(recruitmentApplicationProfile.applicationId, existingApplication.id),
       ))
     }
-    return { applicationId: existingApplication.id, alreadyPromoted: true }
+    return { applicationId: existingApplication.id, alreadyPromoted: true, aiCalls: 0 }
   }
 
   const now = new Date()
@@ -101,7 +98,7 @@ export default defineEventHandler(async (event) => {
     lastStatus: 'resume_reviewed',
     statusDate: now,
     resumeBrief: match.candidateSnapshot,
-    nextAction: 'Prepare Recruiter Screening',
+    nextAction: 'Start Recruiter Screening',
     assessmentLocked: false,
     provisionalFitScore: match.score,
     priority: match.priority,
@@ -144,55 +141,16 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
   })
 
-  let questions: Awaited<ReturnType<typeof generatePdsScreeningQuestions>> = []
-  let questionGenerationError: string | null = null
-  try {
-    const config = await loadAiConfig(orgId, { purpose: 'analysis' })
-    questions = await generatePdsScreeningQuestions({
-      provider: config.provider as SupportedProvider,
-      model: config.model,
-      apiKeyEncrypted: config.apiKeyEncrypted,
-      baseUrl: config.baseUrl,
-      maxTokens: config.maxTokens,
-    }, {
-      jobTitle: jobRecord.title,
-      jobDescription: jobRecord.description,
-      approvedMatrix: matrixRecord.approvedMatrix,
-      resumeAssessment: {
-        candidateSnapshot: match.candidateSnapshot,
-        jdAlignment: match.jdAlignment,
-        skillAssessment: match.skillAssessment,
-        keyGaps: match.keyGaps,
-        verificationAreas: match.verificationAreas,
-        mandatoryScore: match.mandatoryScore,
-        preferredScore: match.preferredScore,
-        experienceScore: match.experienceScore,
-        optionalScore: match.optionalScore,
-        provisionalFitScore: match.score,
-        mandatoryMatch: match.mandatoryMatch,
-        keyStrength: match.keyStrength,
-        mainGap: match.mainGap,
-        priority: match.priority,
-      },
-    })
-  }
-  catch (error: any) {
-    questionGenerationError = error?.data?.statusMessage ?? error?.message ?? 'Screening questions could not be generated.'
-  }
-
+  // Promotion is a recruiter sourcing decision, not consent to spend AI on screening.
+  // Screening questions are prepared only when the recruiter explicitly requests them in Recruiter Screening.
   await db.insert(recruiterScreeningSession).values({
     organizationId: orgId,
     applicationId: created.id,
     status: 'not_started',
-    questions,
+    questions: [],
     responses: [],
     validationFocus: [],
   })
-
-  await db.update(recruitmentApplicationProfile).set({
-    nextAction: questions.length ? 'Start Recruiter Screening' : 'Generate Recruiter Screening Questions',
-    updatedAt: new Date(),
-  }).where(eq(recruitmentApplicationProfile.applicationId, created.id))
 
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
@@ -206,8 +164,8 @@ export default defineEventHandler(async (event) => {
       provisionalFitScore: match.score,
       priority: match.priority,
       source: match.source,
-      screeningQuestionsGenerated: questions.length,
-      screeningQuestionGenerationPending: Boolean(questionGenerationError),
+      screeningQuestionsGenerated: 0,
+      screeningQuestionsRequireExplicitRecruiterAction: true,
       assignedRecruiterId: requirementState?.ownerUserId ?? null,
     },
     createdBy: session.user.id,
@@ -219,7 +177,8 @@ export default defineEventHandler(async (event) => {
   return {
     applicationId: created.id,
     alreadyPromoted: false,
-    screeningQuestions: questions.length,
-    screeningQuestionsPending: Boolean(questionGenerationError),
+    screeningQuestions: 0,
+    screeningQuestionsPending: true,
+    aiCalls: 0,
   }
 })
