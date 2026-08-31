@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 const source = readFileSync('server/utils/ai/pdsScreening.ts', 'utf8')
 const workflowSchema = readFileSync('server/utils/schemas/recruitmentWorkflow.ts', 'utf8')
 const answerApi = readFileSync('server/api/applications/[id]/screening/answer.post.ts', 'utf8')
+const generateApi = readFileSync('server/api/applications/[id]/screening/generate.post.ts', 'utf8')
+const startApi = readFileSync('server/api/applications/[id]/screening/start.post.ts', 'utf8')
 const screeningUi = readFileSync('app/components/PdsRecruiterScreening.vue', 'utf8')
 const recruitmentPage = readFileSync('app/pages/dashboard/recruitment/[id].vue', 'utf8')
 const notInterestedApi = readFileSync('server/api/applications/[id]/screening/not-interested.post.ts', 'utf8')
@@ -40,6 +42,22 @@ describe('PDS recruiter screening policy', () => {
     const submitBlock = screeningUi.slice(screeningUi.indexOf('async function submitAnswer()'), screeningUi.indexOf('async function getAiInterpretation()'))
     expect(submitBlock).toContain('await refresh()')
     expect(submitBlock).not.toContain("emit('changed')")
+  })
+
+  it('preserves completed screening until Revalidation Call starts, then snapshots it before reset', () => {
+    expect(generateApi).toContain("existing?.status === 'completed' && profile.lastStatus === 'reassess'")
+    expect(generateApi).toContain('priorScreeningPreserved: true')
+    expect(generateApi).toContain('return { questions')
+    expect(startApi).toContain("snapshotReason: 'pre_restart_snapshot'")
+    expect(startApi).toContain('priorQuestions: existing.questions ?? []')
+    expect(startApi).toContain('priorResponses')
+    expect(startApi).toContain('priorFinalFit: existing.finalFit ?? null')
+  })
+
+  it('does not let Hold bypass its recorded continuation by restarting recruiter screening', () => {
+    expect(startApi).toContain("const allowedStartStatuses = new Set(['resume_reviewed', 'reassess', 'recruiter_screening_pending'])")
+    expect(startApi).not.toContain("'hold_for_comparison', 'reassess'")
+    expect(generateApi).not.toContain("'hold_for_comparison', 'reassess'")
   })
 
   it('allows a completed screening to reopen as a fresh revalidation flow after Reassess', () => {
