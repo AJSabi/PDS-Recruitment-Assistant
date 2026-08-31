@@ -45,7 +45,9 @@ describe('PDS recruiter screening policy', () => {
   })
 
   it('preserves completed screening until Revalidation Call starts, then snapshots it before reset', () => {
-    expect(generateApi).toContain("existing?.status === 'completed' && profile.lastStatus === 'reassess'")
+    expect(generateApi).toContain("existing?.status === 'completed'")
+    expect(generateApi).toContain("const effectiveStatus = historicalReassess ? 'reassess' : profile.lastStatus")
+    expect(generateApi).toContain("existing?.status === 'completed' && effectiveStatus === 'reassess'")
     expect(generateApi).toContain('priorScreeningPreserved: true')
     expect(generateApi).toContain('return { questions')
     expect(startApi).toContain("snapshotReason: 'pre_restart_snapshot'")
