@@ -8,7 +8,11 @@ import { z } from 'zod'
 const paramsSchema = z.object({ id: z.string().min(1) })
 
 export default defineEventHandler(async (event) => {
-  const session = await requirePermission(event, { scoring: ['update'] })
+  // PDS recruiters own the JD / Skill Matrix for requirements allocated to them.
+  // Keep the broad scoring:update capability admin-only and authorize this PDS
+  // write route with the member-safe scoring:create permission plus the
+  // authoritative requirement-allocation boundary below.
+  const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
