@@ -29,6 +29,11 @@ export const jobSkillMatrix = pgTable('job_skill_matrix', {
   matrix: jsonb('matrix').$type<SkillMatrixPayload>().notNull(),
   approvedMatrix: jsonb('approved_matrix').$type<SkillMatrixPayload>(),
   approvedAt: timestamp('approved_at'),
+  majorSkills: jsonb('major_skills').$type<string[]>().notNull().default([]),
+  booleanSearch: text('boolean_search'),
+  booleanSearchFeedback: text('boolean_search_feedback'),
+  sourcingGeneratedAt: timestamp('sourcing_generated_at'),
+  sourcingUpdatedBy: text('sourcing_updated_by'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => ([
