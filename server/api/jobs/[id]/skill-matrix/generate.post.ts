@@ -9,7 +9,10 @@ import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility
 const paramsSchema = z.object({ id: z.string().min(1) })
 
 export default defineEventHandler(async (event) => {
-  const session = await requirePermission(event, { scoring: ['update'] })
+  // Explicit PDS Skill Matrix generation belongs to the recruiter allocated to
+  // the requirement. Keep general scoring:update admin-only and combine the
+  // member-safe scoring:create permission with allocation-scoped access here.
+  const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
