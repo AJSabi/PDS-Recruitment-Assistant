@@ -7,6 +7,7 @@ import type { MaybeRefOrGetter } from 'vue'
 export function useJob(id: MaybeRefOrGetter<string>) {
   const localePath = useLocalePath()
   const { handlePreviewReadOnlyError } = usePreviewReadOnly()
+  const nuxtApp = useNuxtApp()
   const jobId = computed(() => toValue(id))
 
   const { data: job, status, error, refresh } = useFetch(
@@ -14,6 +15,7 @@ export function useJob(id: MaybeRefOrGetter<string>) {
     {
       key: computed(() => `job-${jobId.value}`),
       headers: useRequestHeaders(['cookie']),
+      getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
     },
   )
 
