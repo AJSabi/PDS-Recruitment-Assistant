@@ -27,8 +27,7 @@ export default defineEventHandler(async (event) => {
   ])
 
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
-  if (!jobRecord.description?.trim()) throw createError({ statusCode: 422, statusMessage: 'Save the Active JD before generating sourcing aids.' })
-  if (!matrixRecord) throw createError({ statusCode: 422, statusMessage: 'Save or generate the Skill Matrix before generating sourcing aids.' })
+  if (!jobRecord.description?.trim()) throw createError({ statusCode: 422, statusMessage: 'Save or upload the Active JD before generating sourcing aids.' })
 
   const config = await loadAiConfig(orgId, { purpose: 'analysis' })
   const generated = await generatePdsSourcingToolkit({
@@ -40,20 +39,35 @@ export default defineEventHandler(async (event) => {
   }, {
     jobTitle: jobRecord.title,
     jobDescription: jobRecord.description,
-    approvedMatrix: matrixRecord.approvedMatrix ?? matrixRecord.matrix,
+    approvedMatrix: matrixRecord?.approvedMatrix ?? matrixRecord?.matrix ?? null,
     recruiterFeedback: body.recruiterFeedback || null,
-    currentBooleanSearch: matrixRecord.booleanSearch,
+    currentBooleanSearch: matrixRecord?.booleanSearch ?? null,
   })
 
   const now = new Date()
-  await db.update(jobSkillMatrix).set({
+  const saved = await db.insert(jobSkillMatrix).values({
+    organizationId: orgId,
+    jobId,
+    matrix: matrixRecord?.matrix ?? { classifications: [] },
+    approvedMatrix: matrixRecord?.approvedMatrix ?? null,
+    approvedAt: matrixRecord?.approvedAt ?? null,
     majorSkills: generated.majorSkills,
     booleanSearch: generated.booleanSearch,
     booleanSearchFeedback: body.recruiterFeedback || null,
     sourcingGeneratedAt: now,
     sourcingUpdatedBy: session.user.id,
     updatedAt: now,
-  }).where(eq(jobSkillMatrix.id, matrixRecord.id))
+  }).onConflictDoUpdate({
+    target: jobSkillMatrix.jobId,
+    set: {
+      majorSkills: generated.majorSkills,
+      booleanSearch: generated.booleanSearch,
+      booleanSearchFeedback: body.recruiterFeedback || null,
+      sourcingGeneratedAt: now,
+      sourcingUpdatedBy: session.user.id,
+      updatedAt: now,
+    },
+  }).returning()
 
   return {
     ...generated,
@@ -62,5 +76,7 @@ export default defineEventHandler(async (event) => {
     source: 'ai',
     provider: config.provider,
     model: config.model,
+    skillMatrixAvailable: Boolean(matrixRecord?.matrix),
+    recordId: saved[0]?.id ?? matrixRecord?.id ?? null,
   }
 })
