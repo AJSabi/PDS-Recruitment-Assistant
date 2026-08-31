@@ -40,12 +40,6 @@ export default defineEventHandler(async (event) => {
       createdAt: true,
       updatedAt: true,
     },
-    with: {
-      applications: {
-        columns: { id: true, candidateId: true, status: true, createdAt: true },
-        limit: 100,
-      },
-    },
   })
 
   if (!result) {
