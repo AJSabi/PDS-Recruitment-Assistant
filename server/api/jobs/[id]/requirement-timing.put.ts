@@ -24,22 +24,25 @@ export default defineEventHandler(async (event) => {
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
 
-  const requirement = await db.query.job.findFirst({
-    where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
-    columns: { id: true },
-  })
+  const [requirement, existing] = await Promise.all([
+    db.query.job.findFirst({
+      where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
+      columns: { id: true },
+    }),
+    db.query.recruitmentRequirementState.findFirst({
+      where: and(eq(recruitmentRequirementState.jobId, jobId), eq(recruitmentRequirementState.organizationId, orgId)),
+    }),
+  ])
   if (!requirement) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
   const assignmentDate = body.assignmentDate ? new Date(body.assignmentDate) : null
   const targetClosureDate = body.targetClosureDate === undefined
-    ? (assignmentDate ? addDays(assignmentDate, 60) : null)
+    ? (existing?.targetClosureDate ?? (assignmentDate ? addDays(assignmentDate, 60) : null))
     : (body.targetClosureDate ? new Date(body.targetClosureDate) : null)
-  const closedAt = body.closedAt ? new Date(body.closedAt) : null
+  const closedAt = body.closedAt === undefined
+    ? (existing?.closedAt ?? null)
+    : (body.closedAt ? new Date(body.closedAt) : null)
   const now = new Date()
-
-  const existing = await db.query.recruitmentRequirementState.findFirst({
-    where: and(eq(recruitmentRequirementState.jobId, jobId), eq(recruitmentRequirementState.organizationId, orgId)),
-  })
 
   if (existing) {
     const [updated] = await db.update(recruitmentRequirementState).set({
