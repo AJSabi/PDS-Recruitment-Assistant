@@ -20,6 +20,14 @@ describe('PDS immediate candidate match workflow', () => {
     expect(modal).toContain("'Add & Calculate Match'")
   })
 
+  it('selects the newest readable stored resume rather than failing on a newer unreadable document', () => {
+    const source = readSource('server/api/applications/[id]/quick-match.post.ts')
+    expect(source).toContain('db.query.document.findMany')
+    expect(source).toContain('orderBy: [desc(document.createdAt)]')
+    expect(source).toContain('resumeCandidates.find')
+    expect(source).toContain('extractResumeText(resume.parsedContent)')
+  })
+
   it('requires the approved JD and Skill Matrix before calculating the percentage', () => {
     const source = readSource('server/api/applications/[id]/quick-match.post.ts')
     expect(source).toContain('skillMatrixApproved')
