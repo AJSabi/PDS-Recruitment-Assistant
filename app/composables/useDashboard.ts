@@ -4,10 +4,18 @@
  * requirements or only the requirements allocated to them.
  */
 export function useDashboard() {
+  const nuxtApp = useNuxtApp()
   const { data, status: fetchStatus, error, refresh: refreshData } = useFetch('/api/dashboard/stats', {
     key: 'dashboard-stats',
     headers: useRequestHeaders(['cookie']),
+    getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
   })
+
+  // Render cached dashboard data immediately on navigation, then revalidate once on
+  // client mount so stage changes, allocations and TAT figures do not remain stale.
+  if (import.meta.client) {
+    onMounted(() => { void refreshData() })
+  }
 
   const counts = computed(() => data.value?.counts ?? {
     openJobs: 0,
