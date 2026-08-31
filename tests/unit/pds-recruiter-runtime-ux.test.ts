@@ -21,9 +21,9 @@ describe('PDS recruiter runtime UX safeguards', () => {
 
   it('keeps recruiter screening question generation allocation-scoped and gated by an approved Skill Matrix', () => {
     const api = source('server/api/applications/[id]/screening/generate.post.ts')
-    expect(api).toContain("requirePermission(event, { scoring: ['create'] })")
+    expect(api).toContain("requirePermission(event, { application: ['update'], scoring: ['create'] })")
     expect(api).toContain('assertApplicationAccess')
-    expect(api).toContain('Approve the AI Skill Matrix before generating recruiter screening questions')
+    expect(api).toContain('Approve the Skill Matrix before generating screening questions')
   })
 
   it('makes the dashboard Actions Pending card open a real recruiter work queue', () => {
