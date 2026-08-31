@@ -17,16 +17,19 @@ export default defineEventHandler(async (event) => {
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
 
-  const [profile, requirementState, jobRecord, matrixRecord, assessment] = await Promise.all([
+  const [profile, requirementState, jobRecord, matrixRecord, assessment, existing] = await Promise.all([
     db.query.recruitmentApplicationProfile.findFirst({ where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)) }),
     db.query.recruitmentRequirementState.findFirst({ where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)) }),
     db.query.job.findFirst({ where: and(eq(job.id, app.jobId), eq(job.organizationId, orgId)), columns: { title: true, description: true } }),
     db.query.jobSkillMatrix.findFirst({ where: and(eq(jobSkillMatrix.jobId, app.jobId), eq(jobSkillMatrix.organizationId, orgId)) }),
     db.query.resumeAssessment.findFirst({ where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)) }),
+    db.query.recruiterScreeningSession.findFirst({ where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)) }),
   ])
 
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'].includes(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: 'Complete resume assessment before generating recruiter screening questions.' })
+  if (!['resume_reviewed', 'reassess', 'recruiter_screening_pending'].includes(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: 'Complete resume assessment before generating recruiter screening questions.' })
+  if (existing?.status === 'in_progress') throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
+  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
   if (!requirementState?.skillMatrixApproved || !matrixRecord?.approvedMatrix) throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before generating screening questions.' })
   if (!assessment) throw createError({ statusCode: 422, statusMessage: 'Resume assessment is required before generating screening questions.' })
   if (!jobRecord?.description) throw createError({ statusCode: 422, statusMessage: 'Active JD is required.' })
@@ -45,11 +48,11 @@ export default defineEventHandler(async (event) => {
     resumeAssessment: assessment,
   })
 
-  const existing = await db.query.recruiterScreeningSession.findFirst({
-    where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
-  })
-  if (existing?.status === 'in_progress') throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
-  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
+  // In Reassess, keep the completed session untouched until Start Revalidation Call.
+  // start.post.ts snapshots the prior questions/responses/finalFit before replacing them.
+  if (existing?.status === 'completed' && profile.lastStatus === 'reassess') {
+    return { questions, source: 'ai', provider: config.provider, model: config.model, reassessment: true, priorScreeningPreserved: true }
+  }
 
   const now = new Date()
   if (existing) {
