@@ -16,7 +16,18 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
-  const body = await readValidatedBody(event, saveSkillMatrixSchema.parse)
+
+  const rawBody = await readBody(event)
+  const parsed = saveSkillMatrixSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    throw createError({
+      statusCode: 422,
+      statusMessage: firstIssue?.message ?? 'Skill Matrix validation failed.',
+      data: { issues: parsed.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })) },
+    })
+  }
+  const body = parsed.data
 
   const jobRecord = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
