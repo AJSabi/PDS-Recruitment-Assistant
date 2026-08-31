@@ -19,11 +19,41 @@ describe('PDS recruiter runtime UX safeguards', () => {
     expect(api).not.toContain("scoring: ['update']")
   })
 
-  it('keeps recruiter screening question generation allocation-scoped and gated by an approved Skill Matrix', () => {
+  it('keeps recruiter screening question generation allocation-scoped and gated by the canonical approved Skill Matrix', () => {
     const api = source('server/api/applications/[id]/screening/generate.post.ts')
     expect(api).toContain("requirePermission(event, { application: ['update'], scoring: ['create'] })")
     expect(api).toContain('assertApplicationAccess')
+    expect(api).toContain('matrixRecord?.approvedAt')
+    expect(api).toContain('matrixRecord?.approvedMatrix')
+    expect(api).not.toContain('requirementState?.skillMatrixApproved')
     expect(api).toContain('Approve the Skill Matrix before generating screening questions')
+  })
+
+  it('never runs resume AI automatically on recruitment workspace page open', () => {
+    const panel = source('app/components/PdsResumeAssessmentPanel.vue')
+    const api = source('server/api/applications/[id]/resume-assessment/generate.post.ts')
+    expect(panel).toContain('Run AI Resume Analysis')
+    expect(panel).toContain('opening this page never spends AI credits')
+    expect(panel).not.toContain('autoAttemptedForResume')
+    expect(panel).not.toContain('runAiAnalysis(true)')
+    expect(api).not.toContain('generatePdsScreeningQuestions')
+    expect(api).not.toContain('recruiterScreeningSession')
+    expect(api).toContain('screeningQuestionsGenerated: 0')
+  })
+
+  it('keeps Reassess intact when an explicit resume AI refresh is requested', () => {
+    const api = source('server/api/applications/[id]/resume-assessment/generate.post.ts')
+    expect(api).toContain("const remainsInReassess = profile.lastStatus === 'reassess'")
+    expect(api).toContain("lastStatus: remainsInReassess ? 'reassess' : 'resume_reviewed'")
+    expect(api).toContain("nextAction: remainsInReassess ? 'Revalidate recruiter screening'")
+  })
+
+  it('shows a stable Approved state instead of another Approve button for the current saved matrix', () => {
+    const page = source('app/components/PdsJdSkillMatrix.vue')
+    expect(page).toContain('const approvalCurrent = computed(() => approved.value && !dirty.value)')
+    expect(page).toContain('<template v-if="approvalCurrent">')
+    expect(page).toContain('Skill Matrix approved')
+    expect(page).toContain('>Approved</div>')
   })
 
   it('makes the dashboard Actions Pending card open a real recruiter work queue', () => {
