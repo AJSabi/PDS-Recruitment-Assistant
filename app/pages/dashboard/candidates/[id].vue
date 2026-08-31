@@ -10,7 +10,7 @@ const localePath = useLocalePath()
 const candidateId = route.params.id as string
 const toast = useToast()
 const { handlePreviewReadOnlyError } = usePreviewReadOnly()
-const { candidate, status: fetchStatus, error, updateCandidate, deleteCandidate, refresh } = useCandidate(candidateId)
+const { candidate, status: fetchStatus, error, updateCandidate, refresh } = useCandidate(candidateId)
 const { formatCandidateName, formatDate } = useOrgSettings()
 const { uploadDocument, downloadDocument, getPreviewUrl, deleteDocument } = useDocuments()
 
@@ -19,8 +19,6 @@ useSeoMeta({ title: computed(() => candidate.value ? `${candidate.value.firstNam
 const activeTab = ref<'applications' | 'documents'>('applications')
 const isEditing = ref(false)
 const isSaving = ref(false)
-const isDeleting = ref(false)
-const showDeleteConfirm = ref(false)
 const editErrors = ref<Record<string, string>>({})
 const editForm = ref({ firstName: '', lastName: '', displayName: '', email: '', phone: '', gender: '' as '' | 'male' | 'female' | 'other' | 'prefer_not_to_say', dateOfBirth: '' })
 
@@ -77,15 +75,6 @@ async function saveCandidate() {
   } catch (err: any) {
     if (!handlePreviewReadOnlyError(err)) toast.error('Failed to save candidate', { message: err?.data?.statusMessage ?? err?.message })
   } finally { isSaving.value = false }
-}
-
-async function removeCandidate() {
-  isDeleting.value = true
-  try { await deleteCandidate() }
-  catch (err: any) {
-    if (!handlePreviewReadOnlyError(err)) toast.error('Failed to delete candidate', { message: err?.data?.statusMessage ?? err?.message })
-    isDeleting.value = false
-  }
 }
 
 const applicationStatusClasses: Record<string, string> = {
@@ -146,10 +135,10 @@ async function handleDeleteDoc(id: string) {
             <h1 class="mt-1 text-2xl font-bold text-[#102A43] dark:text-white">{{ formatCandidateName(candidate) }}</h1>
             <div class="mt-2 flex flex-wrap gap-4 text-sm text-surface-500"><a :href="`mailto:${candidate.email}`" class="inline-flex items-center gap-1 hover:underline"><Mail class="size-4" />{{ candidate.email }}</a><span v-if="candidate.phone" class="inline-flex items-center gap-1"><Phone class="size-4" />{{ candidate.phone }}</span></div>
           </div>
-          <div class="flex gap-2"><button class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-2 text-sm font-semibold" @click="startEdit"><Pencil class="size-4" />Edit</button><button class="inline-flex items-center gap-1.5 rounded-lg border border-danger-300 px-3 py-2 text-sm font-semibold text-danger-600" @click="showDeleteConfirm = true"><Trash2 class="size-4" />Delete</button></div>
+          <button class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-2 text-sm font-semibold" @click="startEdit"><Pencil class="size-4" />Edit</button>
         </div>
         <div class="mt-5 grid gap-3 sm:grid-cols-3"><div><p class="text-xs text-surface-400">Display name</p><p class="font-medium">{{ candidate.displayName || '—' }}</p></div><div><p class="text-xs text-surface-400">Gender</p><p class="font-medium">{{ candidate.gender ? (genderLabels[candidate.gender] ?? candidate.gender) : '—' }}</p></div><div><p class="text-xs text-surface-400">Date of birth</p><p class="font-medium">{{ candidate.dateOfBirth ? formatDate(candidate.dateOfBirth) : '—' }}</p></div></div>
-        <div class="mt-4 rounded-xl border border-[#BED9E9] bg-[#F7FBFE] px-4 py-3 text-sm text-[#1F6FA3]">Candidate identity and resumes are shared organisation-wide. Requirement-specific recruitment history below is limited to requirements you are authorised to access. Add candidates to another requirement from that requirement's JD & Skill Matrix / Add Candidate flow.</div>
+        <div class="mt-4 rounded-xl border border-[#BED9E9] bg-[#F7FBFE] px-4 py-3 text-sm text-[#1F6FA3]">Candidate identity and resumes are shared organisation-wide. Requirement-specific recruitment history below is limited to requirements you are authorised to access. Add candidates to another requirement from that requirement's JD & Skill Matrix / Add Candidate flow. Candidate deletion/retention is governed from the appropriate administrative retention workflow.</div>
       </section>
 
       <section v-if="isEditing" class="rounded-2xl border border-surface-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900">
@@ -180,7 +169,6 @@ async function handleDeleteDoc(id: string) {
       </section>
     </template>
 
-    <div v-if="showDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"><div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"><h3 class="font-bold">Delete candidate?</h3><p class="mt-2 text-sm text-surface-500">This action is subject to server-side retention and application safeguards.</p><div class="mt-5 flex justify-end gap-2"><button class="rounded-lg border px-3 py-2 text-sm" @click="showDeleteConfirm = false">Cancel</button><button :disabled="isDeleting" class="rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white" @click="removeCandidate">{{ isDeleting ? 'Deleting…' : 'Delete' }}</button></div></div></div>
     <div v-if="showDocDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"><div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"><h3 class="font-bold">Delete document?</h3><div class="mt-5 flex justify-end gap-2"><button class="rounded-lg border px-3 py-2 text-sm" @click="showDocDeleteConfirm = null">Cancel</button><button :disabled="isDeletingDoc" class="rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white" @click="handleDeleteDoc(showDocDeleteConfirm!)">Delete</button></div></div></div>
     <div v-if="showPreview" class="fixed inset-0 z-50 flex flex-col bg-black/80"><div class="flex items-center justify-between bg-white px-4 py-3"><p class="font-semibold">{{ previewFilename }}</p><button class="rounded-lg p-2" @click="showPreview = false; previewUrl = null"><X class="size-5" /></button></div><iframe v-if="previewUrl" :src="previewUrl" class="h-full w-full bg-white" /></div>
   </div>
