@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 const source = readFileSync('server/utils/ai/pdsScreening.ts', 'utf8')
 const workflowSchema = readFileSync('server/utils/schemas/recruitmentWorkflow.ts', 'utf8')
 const answerApi = readFileSync('server/api/applications/[id]/screening/answer.post.ts', 'utf8')
+const backApi = readFileSync('server/api/applications/[id]/screening/back.post.ts', 'utf8')
 const generateApi = readFileSync('server/api/applications/[id]/screening/generate.post.ts', 'utf8')
 const startApi = readFileSync('server/api/applications/[id]/screening/start.post.ts', 'utf8')
 const screeningUi = readFileSync('app/components/PdsRecruiterScreening.vue', 'utf8')
@@ -29,6 +30,26 @@ describe('PDS recruiter screening policy', () => {
     expect(screeningUi).toContain('v-else-if="otherSelected"')
   })
 
+  it('advances immediately for standard MCQ options while retaining explicit Next for narrative or exact response', () => {
+    expect(screeningUi).toContain('async function chooseOption(option: string)')
+    expect(screeningUi).toContain('await submitAnswer(option)')
+    expect(screeningUi).toContain('v-if="!currentQuestion.options?.length || otherSelected"')
+    expect(screeningUi).toContain('Next Question')
+    expect(screeningUi).not.toContain('Save Response & Next')
+  })
+
+  it('supports a governed Back action that removes only the latest response and its injected branch', () => {
+    expect(screeningUi).toContain('async function goBack()')
+    expect(screeningUi).toContain('/screening/back')
+    expect(screeningUi).toContain('>Back</button>')
+    expect(backApi).toContain("profile.lastStatus !== 'recruiter_screening_pending'")
+    expect(backApi).toContain("screening.status !== 'in_progress'")
+    expect(backApi).toContain('const previousResponses = responses.slice(0, -1)')
+    expect(backApi).toContain('injectedFollowUpId')
+    expect(backApi).toContain('restoredQuestions = questions.filter')
+    expect(backApi).not.toContain('generatePdsScreeningQuestions')
+  })
+
   it('supports conditional answer-based follow-up questions without an AI call per answer', () => {
     expect(workflowSchema).toContain('followUps: z.array(screeningFollowUpSchema).max(3).optional()')
     expect(source).toContain('ADAPTIVE FOLLOW-UPS')
@@ -39,7 +60,7 @@ describe('PDS recruiter screening policy', () => {
   })
 
   it('does not refresh the whole recruitment workspace after every screening response', () => {
-    const submitBlock = screeningUi.slice(screeningUi.indexOf('async function submitAnswer()'), screeningUi.indexOf('async function getAiInterpretation()'))
+    const submitBlock = screeningUi.slice(screeningUi.indexOf('async function submitAnswer('), screeningUi.indexOf('async function goBack()'))
     expect(submitBlock).toContain('await refresh()')
     expect(submitBlock).not.toContain("emit('changed')")
   })
