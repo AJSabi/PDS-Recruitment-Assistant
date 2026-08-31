@@ -4,14 +4,17 @@ import { describe, expect, it } from 'vitest'
 const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
 describe('PDS full-flow audit safeguards', () => {
-  it('keeps the PDS-facing candidate record free of legacy application and interview bypasses', () => {
+  it('keeps the PDS-facing candidate record free of legacy application, interview and shared-candidate deletion bypasses', () => {
     const page = source('app/pages/dashboard/candidates/[id].vue')
     expect(page).not.toContain('ApplyToJobModal')
     expect(page).not.toContain('Apply to Job')
     expect(page).not.toContain('Schedule Interview')
     expect(page).not.toContain('InterviewScheduleSidebar')
+    expect(page).not.toContain('deleteCandidate')
+    expect(page).not.toContain('Delete candidate?')
     expect(page).toContain('/dashboard/recruitment/${app.id}')
     expect(page).toContain("requirement's JD & Skill Matrix / Add Candidate flow")
+    expect(page).toContain('Candidate deletion/retention is governed')
   })
 
   it('scopes Candidate Database application history to recruiter allocations while owners/admins can see all', () => {
@@ -20,6 +23,14 @@ describe('PDS full-flow audit safeguards', () => {
     expect(api).toContain('visibility.canSeeAll')
     expect(api).toContain('recruitmentRequirementState.ownerUserId, session.user.id')
     expect(api).toContain('applications: applicationRows.map')
+  })
+
+  it('scopes Candidate Database application counts to visible requirements for recruiters', () => {
+    const api = source('server/api/candidates/index.get.ts')
+    expect(api).toContain('getRequirementVisibility')
+    expect(api).toContain('visibility.canSeeAll')
+    expect(api).toContain('recruitmentRequirementState.ownerUserId, session.user.id')
+    expect(api).toContain('filter (where ${recruitmentRequirementState.id} is not null)')
   })
 
   it('deduplicates direct candidate intake by email first and then phone', () => {
