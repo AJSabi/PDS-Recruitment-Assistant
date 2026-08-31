@@ -16,6 +16,7 @@ import { syncApplicationStatusForRecruitmentStage } from '../../../utils/recruit
 import { calculateProvisionalFit } from '../../../utils/recruitmentScoring'
 import { assertApplicationAccess } from '../../../utils/recruitmentVisibility'
 import { createRateLimiter } from '../../../utils/rateLimit'
+import { extractResumeText } from '../../../utils/resume-parser'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -29,7 +30,7 @@ export default defineEventHandler(async (event) => {
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
 
-  const [profile, requirementState, jobRecord, matrixRecord, latestResume] = await Promise.all([
+  const [profile, requirementState, jobRecord, matrixRecord, resumeCandidates] = await Promise.all([
     db.query.recruitmentApplicationProfile.findFirst({
       where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
     }),
@@ -43,7 +44,7 @@ export default defineEventHandler(async (event) => {
     db.query.jobSkillMatrix.findFirst({
       where: and(eq(jobSkillMatrix.jobId, app.jobId), eq(jobSkillMatrix.organizationId, orgId)),
     }),
-    db.query.document.findFirst({
+    db.query.document.findMany({
       where: and(eq(document.organizationId, orgId), eq(document.candidateId, app.candidateId), eq(document.type, 'resume')),
       orderBy: [desc(document.createdAt)],
       columns: { id: true, originalFilename: true, parsedContent: true },
@@ -51,7 +52,8 @@ export default defineEventHandler(async (event) => {
   ])
 
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!latestResume?.parsedContent) throw createError({ statusCode: 422, statusMessage: 'A readable resume is required before AI match analysis.' })
+  const latestResume = resumeCandidates.find(resume => Boolean(extractResumeText(resume.parsedContent)))
+  if (!latestResume) throw createError({ statusCode: 422, statusMessage: 'A readable resume is required before AI match analysis.' })
   if (!jobRecord?.description) throw createError({ statusCode: 422, statusMessage: 'Save the Active JD before AI candidate analysis.' })
   if (!requirementState?.skillMatrixApproved || !matrixRecord?.approvedMatrix) {
     throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before calculating the candidate match percentage.' })
