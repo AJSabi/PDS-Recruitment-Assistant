@@ -11,7 +11,6 @@ const emit = defineEmits<{ saved: [] }>()
 const toast = useToast()
 const isSaving = ref(false)
 const isAnalyzing = ref(false)
-const autoAttemptedForResume = ref<string | null>(null)
 
 const { data, refresh } = useFetch(() => `/api/applications/${props.applicationId}/resume-assessment`, {
   key: computed(() => `pds-resume-assessment-${props.applicationId}`),
@@ -64,6 +63,8 @@ watch(data, (value: any) => {
   priority.value = a.priority ?? null
 }, { immediate: true })
 
+const analysisAllowed = computed(() => Boolean(props.selectedResumeDocumentId) && ['resume_received', 'resume_reviewed', 'reassess'].includes(props.recruitmentStatus ?? ''))
+
 function lines(value: string) {
   return value.split('\n').map(v => v.trim()).filter(Boolean)
 }
@@ -72,10 +73,10 @@ function evidenceLabel(value?: string) {
   return (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-async function runAiAnalysis(auto = false) {
+async function runAiAnalysis() {
   if (!props.selectedResumeDocumentId) return
-  if (!['resume_received', 'resume_reviewed', 'reassess'].includes(props.recruitmentStatus ?? '')) {
-    if (!auto) toast.warning('AI analysis not available', 'The current recruitment status does not allow resume assessment.')
+  if (!analysisAllowed.value) {
+    toast.warning('AI analysis not available', 'The current recruitment status does not allow resume assessment.')
     return
   }
   isAnalyzing.value = true
@@ -83,28 +84,16 @@ async function runAiAnalysis(auto = false) {
     const result: any = await $fetch(`/api/applications/${props.applicationId}/resume-assessment/generate`, { method: 'POST' })
     await refresh()
     emit('saved')
-    toast.success(auto ? 'AI candidate analysis completed automatically' : 'AI resume analysis completed', {
-      message: `${result?.ranking?.priority ?? ''}${result?.ranking?.provisionalFitScore != null ? ` · Score ${result.ranking.provisionalFitScore}` : ''}${result?.questions?.length ? ` · ${result.questions.length} screening questions generated` : ''}`.trim(),
+    toast.success('AI resume analysis completed', {
+      message: `${result?.ranking?.priority ?? ''}${result?.ranking?.provisionalFitScore != null ? ` · Score ${result.ranking.provisionalFitScore}` : ''}`.trim(),
     })
   } catch (err: any) {
     const message = err?.data?.statusMessage ?? err?.message
-    toast.error(auto ? 'Automatic AI analysis could not run' : 'AI analysis could not be completed', { message })
+    toast.error('AI analysis could not be completed', { message })
   } finally {
     isAnalyzing.value = false
   }
 }
-
-watch(
-  () => [props.selectedResumeDocumentId, props.recruitmentStatus, data.value?.assessment] as const,
-  async ([resumeId, status, existing]) => {
-    if (!resumeId || !['resume_received', 'reassess'].includes(status ?? '')) return
-    if (existing) return
-    if (autoAttemptedForResume.value === resumeId) return
-    autoAttemptedForResume.value = resumeId
-    await runAiAnalysis(true)
-  },
-  { immediate: true },
-)
 
 async function saveAssessment() {
   if (!props.selectedResumeDocumentId) return toast.warning('Select a resume first', 'Choose the resume for this application before assessment.')
@@ -150,16 +139,16 @@ async function saveAssessment() {
         <ClipboardCheck class="mt-0.5 size-4 text-brand-600" />
         <div>
           <div class="flex flex-wrap items-center gap-2"><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">AI Candidate Skill Assessment</h2><span v-if="assessmentSource" class="rounded-full bg-surface-100 px-2 py-0.5 text-xs text-surface-600 dark:bg-surface-800">{{ assessmentSource === 'ai' ? 'AI generated' : 'Adjusted manually' }}</span><span v-if="priority" class="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">{{ priority }}</span><span v-if="provisionalFitScore != null" class="text-xs text-surface-500">Score {{ provisionalFitScore }}/100</span></div>
-          <p class="mt-1 text-xs text-surface-500">After a resume is selected, AI automatically assesses it against the approved Skill Matrix and prepares recruiter screening questions. Resume evidence remains provisional and does not change Current Fit.</p>
+          <p class="mt-1 text-xs text-surface-500">Run AI explicitly to assess the selected resume against the approved Skill Matrix. Screening questions are prepared separately from Recruiter Screening, and opening this page never spends AI credits.</p>
         </div>
       </div>
-      <button v-if="selectedResumeDocumentId && assessmentSource" type="button" :disabled="isAnalyzing || isSaving" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="runAiAnalysis(false)"><Loader2 v-if="isAnalyzing" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isAnalyzing ? 'Analyzing…' : 'Run AI Analysis Again' }}</button>
+      <button v-if="selectedResumeDocumentId && analysisAllowed" type="button" :disabled="isAnalyzing || isSaving" class="inline-flex items-center gap-2 rounded-lg border border-brand-300 px-4 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="runAiAnalysis"><Loader2 v-if="isAnalyzing" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ isAnalyzing ? 'Analyzing…' : (assessmentSource ? 'Run AI Analysis Again' : 'Run AI Resume Analysis') }}</button>
     </div>
 
-    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">Select the resume for this application. AI analysis will then start automatically once the Skill Matrix is approved.</div>
-    <div v-else-if="isAnalyzing && !assessmentSource" class="rounded-lg border border-brand-200 bg-brand-50/50 p-4 text-sm text-brand-800 dark:border-brand-900 dark:bg-brand-950/20 dark:text-brand-200"><span class="inline-flex items-center gap-2"><Loader2 class="size-4 animate-spin" />AI is analysing the resume against the approved Skill Matrix and creating candidate-specific screening questions…</span></div>
+    <div v-if="!selectedResumeDocumentId" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">Select the resume for this application, then run AI Resume Analysis when you want an assessment.</div>
+    <div v-else-if="isAnalyzing && !assessmentSource" class="rounded-lg border border-brand-200 bg-brand-50/50 p-4 text-sm text-brand-800 dark:border-brand-900 dark:bg-brand-950/20 dark:text-brand-200"><span class="inline-flex items-center gap-2"><Loader2 class="size-4 animate-spin" />AI is analysing the resume against the approved Skill Matrix…</span></div>
 
-    <div v-else-if="selectedResumeDocumentId && !assessmentSource" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">No AI assessment is available yet. If automatic analysis failed, verify that the Skill Matrix is approved, the resume has parsed text, and an AI analysis provider is configured.</div>
+    <div v-else-if="selectedResumeDocumentId && !assessmentSource" class="rounded-lg border border-dashed border-surface-300 p-4 text-sm text-surface-500 dark:border-surface-700">No AI assessment is available yet. Run AI Resume Analysis explicitly after confirming the Skill Matrix is approved and the selected resume is readable.</div>
 
     <div v-else class="space-y-4">
       <div class="grid gap-4 md:grid-cols-2">
