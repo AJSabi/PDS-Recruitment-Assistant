@@ -26,6 +26,7 @@ const isSaving = ref(false)
 const isGenerating = ref(false)
 const dirty = ref(false)
 const showAddCandidate = ref(false)
+let syncingMatrixFromServer = false
 
 watch(job, (value: any) => {
   if (!value) return
@@ -36,12 +37,16 @@ watch(job, (value: any) => {
 
 watch(data, (value: any) => {
   if (!value) return
+  syncingMatrixFromServer = true
   matrix.value = value.matrix ?? { classifications: [] }
   approved.value = Boolean(value.approved)
   dirty.value = false
+  syncingMatrixFromServer = false
 }, { immediate: true })
 
-watch(matrix, () => { dirty.value = true }, { deep: true })
+watch(matrix, () => {
+  if (!syncingMatrixFromServer) dirty.value = true
+}, { deep: true, flush: 'sync' })
 
 const jdDirty = computed(() => jdDraft.value !== savedJd.value)
 const totalSkills = computed(() => matrix.value.classifications.flatMap(c => c.skills).length)
@@ -50,6 +55,7 @@ const preferredCount = computed(() => matrix.value.classifications.flatMap(c => 
 const optionalCount = computed(() => matrix.value.classifications.flatMap(c => c.skills).filter(s => s.priority === 'optional').length)
 const approvalError = computed(() => validate(true))
 const approvalReady = computed(() => Boolean(savedJd.value.trim()) && !jdDirty.value && !approvalError.value)
+const approvalCurrent = computed(() => approved.value && !dirty.value)
 
 function slug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 80) || crypto.randomUUID()
@@ -194,7 +200,7 @@ async function persist(approve: boolean) {
             <div class="flex items-center gap-2"><Sparkles class="size-5 text-[#16847F]" /><h2 class="font-bold text-[#102A43] dark:text-white">2. AI Skill Matrix</h2></div>
             <p class="mt-1 max-w-3xl text-sm text-surface-500">AI proposes JD-specific, assessable evidence criteria. It runs only when you explicitly click Generate with AI. Recruiter review and approval remain mandatory.</p>
           </div>
-          <span v-if="approved" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><ShieldCheck class="size-3.5" />Approved</span>
+          <span v-if="approvalCurrent" class="inline-flex items-center gap-1 rounded-full bg-[#E9F8F6] px-3 py-1 text-xs font-bold text-[#13756F]"><ShieldCheck class="size-3.5" />Approved</span>
           <span v-else class="rounded-full bg-[#FFF7E8] px-3 py-1 text-xs font-bold text-[#976511]">Review required</span>
         </div>
 
@@ -270,14 +276,20 @@ async function persist(approve: boolean) {
 
       <section v-if="matrix.classifications.length" class="sticky bottom-4 z-10 rounded-2xl border border-[#CFE0ED] bg-white/95 p-4 shadow-xl backdrop-blur dark:border-surface-800 dark:bg-surface-900/95">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div class="min-w-0">
-            <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval locks this JD-specific evidence framework. It does not automatically refresh the Candidate Database.</p></div></div>
-            <div v-else class="flex items-start gap-2 text-sm text-warning-700"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Review required before approval</p><p class="mt-0.5 text-xs text-surface-500">{{ jdDirty ? 'Save the Active JD before approving the matrix.' : (approvalError || 'Review the current AI proposal before approval.') }}</p></div></div>
-          </div>
-          <div class="flex shrink-0 flex-wrap gap-2">
-            <button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-bold disabled:opacity-50" @click="persist(false)"><Save class="size-4" />Save Draft</button>
-            <button type="button" :disabled="isSaving || isGenerating || !approvalReady" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="persist(true)"><CheckCircle2 class="size-4" />Approve Skill Matrix</button>
-          </div>
+          <template v-if="approvalCurrent">
+            <div class="flex items-start gap-2 text-sm text-[#13756F]"><ShieldCheck class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Skill Matrix approved</p><p class="mt-0.5 text-xs text-surface-500">The current saved matrix is the approved hiring baseline. Edit it only when the requirement changes.</p></div></div>
+            <div class="inline-flex items-center gap-2 rounded-lg bg-[#E9F8F6] px-4 py-2 text-sm font-bold text-[#13756F]"><CheckCircle2 class="size-4" />Approved</div>
+          </template>
+          <template v-else>
+            <div class="min-w-0">
+              <div v-if="approvalReady" class="flex items-start gap-2 text-sm text-[#13756F]"><CheckCircle2 class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Ready for approval</p><p class="mt-0.5 text-xs text-surface-500">Approval establishes this JD-specific evidence framework. It does not automatically refresh the Candidate Database.</p></div></div>
+              <div v-else class="flex items-start gap-2 text-sm text-warning-700"><AlertTriangle class="mt-0.5 size-4 shrink-0" /><div><p class="font-bold">Review required before approval</p><p class="mt-0.5 text-xs text-surface-500">{{ jdDirty ? 'Save the Active JD before approving the matrix.' : (approvalError || 'Review the current AI proposal before approval.') }}</p></div></div>
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-2">
+              <button type="button" :disabled="isSaving || isGenerating" class="inline-flex items-center gap-2 rounded-lg border border-surface-300 px-4 py-2 text-sm font-bold disabled:opacity-50" @click="persist(false)"><Save class="size-4" />Save Draft</button>
+              <button type="button" :disabled="isSaving || isGenerating || !approvalReady" class="inline-flex items-center gap-2 rounded-lg bg-[#16847F] px-4 py-2 text-sm font-bold text-white disabled:opacity-40" @click="persist(true)"><CheckCircle2 class="size-4" />Approve Skill Matrix</button>
+            </div>
+          </template>
         </div>
       </section>
     </template>
