@@ -34,9 +34,27 @@ describe('PDS recruitment stage integrity', () => {
     expect(lifecycle).toContain('the application cannot skip directly to Joined or Closed')
   })
 
+  it('routes unsuccessful active recruitment through Not Proceeding before closure', () => {
+    const activeStages = [
+      'candidate_added', 'resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'recruiter_screening_completed',
+      'hiring_manager_round_pending', 'hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed',
+      'hr_round_pending', 'hr_round_completed', 'hold_for_comparison',
+    ]
+    for (const stage of activeStages) expect(CONFIRMED_STAGE_TRANSITIONS[stage]).not.toContain('closed')
+    expect(CONFIRMED_STAGE_TRANSITIONS.not_proceeding).toEqual(expect.arrayContaining(['reassess', 'closed']))
+  })
+
+  it('keeps Reassess as a governed evidence/revalidation route rather than a late-stage jump', () => {
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).toEqual(expect.arrayContaining(['resume_received', 'resume_reviewed', 'recruiter_screening_pending', 'not_proceeding']))
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).not.toContain('hiring_manager_round_pending')
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).not.toContain('hod_round_pending')
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).not.toContain('hr_round_pending')
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).not.toContain('offer_stage')
+    expect(CONFIRMED_STAGE_TRANSITIONS.reassess).not.toContain('closed')
+  })
+
   it('honors Hold and Reassess as actual screening outcomes instead of silently offering HM', () => {
     const source = readSource('server/api/applications/[id]/screening/complete.post.ts')
-
     expect(source).toContain("if (decision === 'hold_for_comparison') return 'hold_for_comparison'")
     expect(source).toContain("if (decision === 'reassess') return 'reassess'")
     expect(source).toContain('const finalStatus = completionStageForDecision(body.recommendedNextStep)')
@@ -49,7 +67,6 @@ describe('PDS recruitment stage integrity', () => {
 
   it('requires an explicit recruiter decision before HM when screening asks for recruiter judgement', () => {
     const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
-
     expect(lifecycle).toContain("props.profile?.nextAction === 'Recruiter Decision Required'")
     expect(lifecycle).toContain("props.profile?.nextAction !== 'Proceed to Hiring Manager Round'")
     expect(lifecycle).toContain('Confirm Recruiter Decision: Proceed to Hiring Manager')
@@ -59,7 +76,6 @@ describe('PDS recruitment stage integrity', () => {
   it('keeps HM, HOD and HR interviews external while recruiters manually move stages', () => {
     const stageApi = readSource('server/api/applications/[id]/stage/confirm.post.ts')
     const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
-
     expect(stageApi).toContain('Hiring Manager, HOD and HR discussions happen outside the application')
     expect(stageApi).not.toContain('requiredEvidenceForCompletedStage')
     expect(stageApi).not.toContain('Record ${roundLabel} interview evidence before marking this round completed.')
@@ -74,7 +90,6 @@ describe('PDS recruitment stage integrity', () => {
   it('resumes held candidates only at the workflow point captured when Hold was recorded', () => {
     const stageApi = readSource('server/api/applications/[id]/stage/confirm.post.ts')
     const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
-
     expect(stageApi).toContain('holdResumeActionBySource')
     expect(stageApi).toContain('holdResumeStageByAction')
     expect(stageApi).toContain("profile.lastStatus === 'hold_for_comparison'")
@@ -95,7 +110,6 @@ describe('PDS recruitment stage integrity', () => {
 
   it('shows only exception decisions that the current backend stage permits', () => {
     const lifecycle = readSource('app/components/PdsRecruitmentLifecycle.vue')
-
     expect(lifecycle).toContain('holdAllowedStatuses')
     expect(lifecycle).toContain('reassessAllowedStatuses')
     expect(lifecycle).toContain('notProceedingAllowedStatuses')
@@ -104,7 +118,6 @@ describe('PDS recruitment stage integrity', () => {
 
   it('keeps stage changes human-confirmed, sequential, access-controlled and auditable', () => {
     const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
-
     expect(source).toContain('assertApplicationAccess')
     expect(source).toContain('CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus]')
     expect(source).toContain('stagesRequiringDecisionNote')
