@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Loader2, PhoneCall, Plus, Save, Sparkles, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Loader2, PhoneCall, Plus, Save, Sparkles, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps<{ applicationId: string; enabled: boolean; recruitmentStatus?: string | null }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -40,6 +40,7 @@ const otherSelected = computed(() => /other|exact response/i.test(selectedOption
 const responseReady = computed(() => currentQuestion.value?.options?.length
   ? Boolean(selectedOption.value && (!otherSelected.value || exactAnswer.value.trim()))
   : Boolean(answer.value.trim()))
+const canGoBack = computed(() => screening.value?.status === 'in_progress' && (screening.value?.responses?.length ?? 0) > 0)
 
 watch(screening, (value: any) => {
   if (!value) return
@@ -61,12 +62,17 @@ function lines(value: string) {
   return value.split('\n').map(v => v.trim()).filter(Boolean)
 }
 
-function chooseOption(option: string) {
+async function chooseOption(option: string) {
+  if (busy.value) return
   selectedOption.value = option
-  if (!/other|exact response/i.test(option)) exactAnswer.value = ''
+  if (/other|exact response/i.test(option)) return
+  exactAnswer.value = ''
+  await nextTick()
+  await submitAnswer(option)
 }
 
-function capturedAnswer() {
+function capturedAnswer(override?: string) {
+  if (override) return override
   if (!currentQuestion.value?.options?.length) return answer.value.trim()
   return otherSelected.value ? `${selectedOption.value}: ${exactAnswer.value.trim()}` : selectedOption.value
 }
@@ -80,9 +86,7 @@ function addDraftQuestion(target: 'generated' | 'live') {
 function removeDraftQuestion(target: 'generated' | 'live', index: number) {
   const list = target === 'generated' ? generatedQuestions.value : liveQuestions.value
   const question = list[index]
-  if (target === 'live' && question && answeredIds.value.has(question.id)) {
-    return toast.warning('Question already answered', 'Answered questions are preserved as part of the screening evidence.')
-  }
+  if (target === 'live' && question && answeredIds.value.has(question.id)) return toast.warning('Question already answered', 'Use Back during the live call if you need to revisit the most recent response.')
   list.splice(index, 1)
 }
 
@@ -124,7 +128,7 @@ async function startScreening(useAi = false) {
     emit('changed')
     await nextTick()
     document.getElementById('recruiter-screening')?.scrollIntoView({ block: 'start' })
-    toast.success(reassessmentMode.value ? 'Revalidation screening started' : 'Recruiter call started', { message: 'Select the candidate response and continue. The next question can branch from the recorded answer.' })
+    toast.success(reassessmentMode.value ? 'Revalidation screening started' : 'Recruiter call started', { message: 'Select a response to move directly to the next question. Use Back to revisit the previous response.' })
   } catch (err: any) {
     toast.error('Could not start recruiter screening', { message: err?.data?.statusMessage ?? err?.message })
   } finally { busy.value = false }
@@ -143,18 +147,33 @@ async function saveLiveQuestionPlan() {
   } finally { savingQuestionPlan.value = false }
 }
 
-async function submitAnswer() {
-  if (!currentQuestion.value || !responseReady.value) return
+async function submitAnswer(override?: string) {
+  if (!currentQuestion.value) return
+  const response = capturedAnswer(override)
+  if (!response) return
   busy.value = true
   try {
     const result: any = await $fetch(`/api/applications/${props.applicationId}/screening/answer`, {
       method: 'POST',
-      body: { questionId: currentQuestion.value.id, answer: capturedAnswer() },
+      body: { questionId: currentQuestion.value.id, answer: response },
     })
     await refresh()
     if (result.adaptiveFollowUpAdded) toast.info('Follow-up adapted', 'The next question was adjusted based on the candidate response.')
   } catch (err: any) {
     toast.error('Could not save answer', { message: err?.data?.statusMessage ?? err?.message })
+  } finally { busy.value = false }
+}
+
+async function goBack() {
+  if (!canGoBack.value || busy.value) return
+  busy.value = true
+  try {
+    await $fetch(`/api/applications/${props.applicationId}/screening/back`, { method: 'POST' })
+    await refresh()
+    await nextTick()
+    document.getElementById('recruiter-screening')?.scrollIntoView({ block: 'start' })
+  } catch (err: any) {
+    toast.error('Could not go back', { message: err?.data?.statusMessage ?? err?.message })
   } finally { busy.value = false }
 }
 
@@ -195,7 +214,7 @@ async function completeScreening() {
     <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div>
         <div class="flex items-center gap-2"><PhoneCall class="size-4 text-[#16847F]" /><h2 class="text-sm font-semibold text-surface-800 dark:text-surface-200">{{ reassessmentMode ? 'Recruiter Revalidation Screening' : 'Recruiter Screening Call' }}</h2></div>
-        <p class="mt-1 max-w-3xl text-xs text-surface-500">MCQ-first capture is used wherever practical. The next question can branch from the candidate's response without refreshing the full page.</p>
+        <p class="mt-1 max-w-3xl text-xs text-surface-500">MCQ-first capture is used wherever practical. Selecting a standard option saves it and advances immediately; conditional follow-ups can branch from the selected response.</p>
       </div>
     </div>
 
@@ -223,18 +242,28 @@ async function completeScreening() {
     </div>
 
     <div v-else-if="screening?.status === 'in_progress'" class="space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-2"><div class="text-xs text-surface-500">Recruiter call in progress · Question {{ Math.min(progress.answered + 1, progress.total) }} of {{ progress.total }}</div><span class="rounded-full bg-[#E9F8F6] px-2.5 py-1 text-xs font-semibold text-[#13756F]">Live screening</span></div>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-3"><button v-if="canGoBack" type="button" :disabled="busy" class="inline-flex items-center gap-1 rounded-lg border border-surface-300 px-2.5 py-1.5 text-xs font-semibold text-surface-600 disabled:opacity-50" @click="goBack"><ArrowLeft class="size-3.5" />Back</button><div class="text-xs text-surface-500">Recruiter call in progress · Question {{ Math.min(progress.answered + 1, progress.total) }} of {{ progress.total }}</div></div>
+        <span class="rounded-full bg-[#E9F8F6] px-2.5 py-1 text-xs font-semibold text-[#13756F]">Live screening</span>
+      </div>
       <template v-if="currentQuestion">
         <div class="rounded-lg bg-surface-50 p-4 text-sm font-medium text-surface-800 dark:bg-surface-800/60 dark:text-surface-100">{{ currentQuestion.question }}<div v-if="currentQuestion.verificationArea" class="mt-2 text-xs font-normal text-surface-500">Validation focus: {{ currentQuestion.verificationArea }}</div></div>
-        <div v-if="currentQuestion.options?.length" class="grid gap-2 sm:grid-cols-2"><button v-for="option in currentQuestion.options" :key="option" type="button" class="rounded-lg border px-3 py-2 text-left text-sm transition" :class="selectedOption === option ? 'border-[#16847F] bg-[#E9F8F6] font-semibold text-[#13756F]' : 'border-surface-300 hover:border-[#16847F]'" @click="chooseOption(option)">{{ option }}</button></div>
+        <div v-if="currentQuestion.options?.length" class="grid gap-2 sm:grid-cols-2"><button v-for="option in currentQuestion.options" :key="option" type="button" :disabled="busy" class="rounded-lg border px-3 py-2 text-left text-sm transition disabled:opacity-50" :class="selectedOption === option ? 'border-[#16847F] bg-[#E9F8F6] font-semibold text-[#13756F]' : 'border-surface-300 hover:border-[#16847F]'" @click="chooseOption(option)">{{ option }}</button></div>
         <textarea v-if="!currentQuestion.options?.length" v-model="answer" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="Record the candidate response" />
         <textarea v-else-if="otherSelected" v-model="exactAnswer" rows="2" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm dark:border-surface-700 dark:bg-surface-800" placeholder="Capture the exact response" />
-        <div class="flex justify-end"><button :disabled="busy || !responseReady" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="submitAnswer">Save Response & Next</button></div>
+        <div v-if="!currentQuestion.options?.length || otherSelected" class="flex justify-end"><button :disabled="busy || !responseReady" class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="submitAnswer()">Next Question</button></div>
       </template>
 
-      <details class="rounded-lg border border-surface-200 p-4 dark:border-surface-800"><summary class="cursor-pointer text-sm font-semibold">Adjust unanswered questions</summary><p class="mt-2 text-xs text-surface-500">Answered questions stay locked. You may edit future questions, while adaptive follow-ups are inserted automatically from the selected response.</p><div class="mt-3 space-y-2"><div v-for="(q, i) in liveQuestions" :key="q.id" class="flex items-start gap-2 rounded-lg border border-surface-200 p-2 dark:border-surface-700" :class="answeredIds.has(q.id) ? 'opacity-60' : ''"><span class="mt-2 text-xs font-bold text-surface-400">{{ i + 1 }}.</span><div class="min-w-0 flex-1"><textarea v-model="q.question" :disabled="answeredIds.has(q.id)" rows="2" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800" /><input v-model="q.verificationArea" :disabled="answeredIds.has(q.id)" class="mt-1 w-full rounded-lg border border-surface-200 px-3 py-1.5 text-xs disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800" placeholder="Validation focus" /></div><button v-if="!answeredIds.has(q.id)" type="button" class="mt-1 rounded-lg p-2 text-surface-400 hover:bg-danger-50 hover:text-danger-600" @click="removeDraftQuestion('live', i)"><Trash2 class="size-4" /></button></div><div class="flex flex-wrap justify-between gap-2"><button v-if="liveQuestions.length < 10" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-surface-300 px-3 py-2 text-sm font-semibold text-surface-600" @click="addDraftQuestion('live')"><Plus class="size-4" />Add Follow-up Question</button><button :disabled="savingQuestionPlan" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="saveLiveQuestionPlan"><Loader2 v-if="savingQuestionPlan" class="size-4 animate-spin" /><Save v-else class="size-4" />Save Question Plan</button></div></div></details>
+      <details class="rounded-lg border border-surface-200 p-4 dark:border-surface-800"><summary class="cursor-pointer text-sm font-semibold">Adjust unanswered questions</summary><p class="mt-2 text-xs text-surface-500">Use Back for the most recent answered question. Future questions may still be edited here, while adaptive follow-ups are inserted automatically from the selected response.</p><div class="mt-3 space-y-2"><div v-for="(q, i) in liveQuestions" :key="q.id" class="flex items-start gap-2 rounded-lg border border-surface-200 p-2 dark:border-surface-700" :class="answeredIds.has(q.id) ? 'opacity-60' : ''"><span class="mt-2 text-xs font-bold text-surface-400">{{ i + 1 }}.</span><div class="min-w-0 flex-1"><textarea v-model="q.question" :disabled="answeredIds.has(q.id)" rows="2" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800" /><input v-model="q.verificationArea" :disabled="answeredIds.has(q.id)" class="mt-1 w-full rounded-lg border border-surface-200 px-3 py-1.5 text-xs disabled:bg-surface-100 dark:border-surface-700 dark:bg-surface-800" placeholder="Validation focus" /></div><button v-if="!answeredIds.has(q.id)" type="button" class="mt-1 rounded-lg p-2 text-surface-400 hover:bg-danger-50 hover:text-danger-600" @click="removeDraftQuestion('live', i)"><Trash2 class="size-4" /></button></div><div class="flex flex-wrap justify-between gap-2"><button v-if="liveQuestions.length < 10" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-surface-300 px-3 py-2 text-sm font-semibold text-surface-600" @click="addDraftQuestion('live')"><Plus class="size-4" />Add Follow-up Question</button><button :disabled="savingQuestionPlan" type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-50" @click="saveLiveQuestionPlan"><Loader2 v-if="savingQuestionPlan" class="size-4 animate-spin" /><Save v-else class="size-4" />Save Question Plan</button></div></div></details>
 
-      <div v-if="readyToComplete" class="space-y-3 rounded-lg border border-surface-200 p-4 dark:border-surface-700"><div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="text-sm font-semibold">Complete Recruiter Screening</h3><p class="mt-1 text-xs text-surface-500">AI may suggest the fit and next step, but recruiter confirmation remains mandatory.</p></div><button :disabled="aiInterpreting || busy" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="getAiInterpretation"><Loader2 v-if="aiInterpreting" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ aiInterpreting ? 'Interpreting…' : 'Get AI Recommendation' }}</button></div><div v-if="aiRationale" class="rounded-lg bg-brand-50 p-3 text-xs text-brand-900"><strong>AI rationale:</strong> {{ aiRationale }}</div><div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-xs font-medium">Final Fit</label><select v-model="finalFit" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"><option value="strong_fit">Strong Fit</option><option value="potential_fit">Potential Fit</option><option value="borderline_requires_validation">Borderline / Requires Validation</option><option value="significant_gap">Significant Gap</option></select></div><div><label class="mb-1 block text-xs font-medium">Recommended Next Step</label><select v-model="recommendedNextStep" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"><option value="proceed_to_hiring_manager_round">Proceed to Hiring Manager Round</option><option value="hold_for_comparison">Hold for Comparison</option><option value="reassess">Reassess</option><option value="recruiter_decision_required">Recruiter Decision Required</option></select></div></div><div><label class="mb-1 block text-xs font-medium">Conversation Brief</label><textarea v-model="conversationBrief" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm" /></div><div><label class="mb-1 block text-xs font-medium">Hiring Manager Validation Focus</label><textarea v-model="validationFocusText" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm" placeholder="One item per line" /></div><div class="flex justify-end"><button :disabled="busy || aiInterpreting" class="rounded-lg bg-success-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="completeScreening">Confirm & Complete Screening</button></div></div>
+      <div v-if="readyToComplete" class="space-y-3 rounded-lg border border-surface-200 p-4 dark:border-surface-700">
+        <div class="flex flex-wrap items-center justify-between gap-2"><div><h3 class="text-sm font-semibold">Complete Recruiter Screening</h3><p class="mt-1 text-xs text-surface-500">You can still use Back before completing. AI may suggest the fit and next step, but recruiter confirmation remains mandatory.</p></div><button :disabled="aiInterpreting || busy" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="getAiInterpretation"><Loader2 v-if="aiInterpreting" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ aiInterpreting ? 'Interpreting…' : 'Get AI Recommendation' }}</button></div>
+        <div v-if="aiRationale" class="rounded-lg bg-brand-50 p-3 text-xs text-brand-900"><strong>AI rationale:</strong> {{ aiRationale }}</div>
+        <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-xs font-medium">Final Fit</label><select v-model="finalFit" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"><option value="strong_fit">Strong Fit</option><option value="potential_fit">Potential Fit</option><option value="borderline_requires_validation">Borderline / Requires Validation</option><option value="significant_gap">Significant Gap</option></select></div><div><label class="mb-1 block text-xs font-medium">Recommended Next Step</label><select v-model="recommendedNextStep" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm"><option value="proceed_to_hiring_manager_round">Proceed to Hiring Manager Round</option><option value="hold_for_comparison">Hold for Comparison</option><option value="reassess">Reassess</option><option value="recruiter_decision_required">Recruiter Decision Required</option></select></div></div>
+        <div><label class="mb-1 block text-xs font-medium">Conversation Brief</label><textarea v-model="conversationBrief" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm" /></div>
+        <div><label class="mb-1 block text-xs font-medium">Hiring Manager Validation Focus</label><textarea v-model="validationFocusText" rows="3" class="w-full rounded-lg border border-surface-300 px-3 py-2 text-sm" placeholder="One item per line" /></div>
+        <div class="flex justify-end"><button :disabled="busy || aiInterpreting" class="rounded-lg bg-success-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="completeScreening">Confirm & Complete Screening</button></div>
+      </div>
     </div>
 
     <div v-else-if="screening?.status === 'completed'" class="rounded-lg bg-success-50 p-4 text-sm text-success-800 dark:bg-success-950/30 dark:text-success-300">Recruiter screening completed. Final fit: <strong>{{ screening.finalFit }}</strong>. Recommended next step: <strong>{{ screening.recommendedNextStep }}</strong>.</div>
