@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, CheckCircle2, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound, ShieldCheck, Target, TrendingUp } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, CheckCircle2, Database, FileSearch, Loader2, RefreshCw, Sparkles, UploadCloud, UserPlus, UsersRound, ShieldCheck } from 'lucide-vue-next'
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
 const jobId = route.params.id as string
@@ -16,8 +16,6 @@ const { data: poolData, status: poolStatus, error: poolError, refresh: refreshPo
   headers: useRequestHeaders(['cookie']),
 })
 
-const batchBusy = ref(false)
-const batchProgress = ref({ done: 0, total: 0 })
 const poolBusy = ref(false)
 const lastPoolSync = ref<any>(null)
 const uploadingResumes = ref(false)
@@ -31,7 +29,6 @@ const summary = computed(() => ({
   needsReassessment: rows.value.filter(row => row.needsReassessment).length,
   notYetAssessed: rows.value.filter(row => row.currentFit === 'not_yet_assessed').length,
 }))
-const batchEligible = computed(() => rows.value.filter(row => row.selectedResume && !row.assessed && row.lastStatus === 'resume_received'))
 const deferredAiCount = computed(() => Number(lastPoolSync.value?.deferredForAiBudget ?? 0))
 
 function label(value?: string | null) {
@@ -80,28 +77,11 @@ async function promoteMatch(row: any) {
     const result: any = await $fetch(`/api/jobs/${jobId}/talent-pool/${row.matchId}/promote`, { method: 'POST' })
     await refreshAll()
     toast.success(result.alreadyPromoted ? 'Candidate already in recruitment' : 'Candidate moved to recruitment', {
-      message: result.alreadyPromoted ? 'Opening the existing recruitment workflow.' : 'AI Skill Analysis and recruiter screening questions were carried forward.',
+      message: result.alreadyPromoted ? 'Opening the existing recruitment workflow.' : 'The existing AI match was carried forward. Prepare Recruiter Screening explicitly when ready.',
     })
     await navigateTo(localePath(`/dashboard/recruitment/${result.applicationId}`))
   } catch (err: any) { toast.error('Could not move candidate to recruitment', { message: err?.data?.statusMessage ?? err?.message }) }
   finally { promotingMatchId.value = null }
-}
-async function analyzePendingWithAi() {
-  const candidates = batchEligible.value
-  if (!candidates.length) return toast.warning('No candidates ready', 'Select a resume for each candidate and ensure the approved Skill Matrix is available.')
-  batchBusy.value = true
-  batchProgress.value = { done: 0, total: candidates.length }
-  let succeeded = 0
-  const failures: string[] = []
-  for (const candidate of candidates) {
-    try { await $fetch(`/api/applications/${candidate.applicationId}/resume-assessment/generate`, { method: 'POST' }); succeeded++ }
-    catch (err: any) { failures.push(`${candidate.candidate}: ${err?.data?.statusMessage ?? err?.message ?? 'Analysis failed'}`) }
-    finally { batchProgress.value.done++ }
-  }
-  await refresh()
-  batchBusy.value = false
-  if (failures.length) toast.warning('Batch AI analysis completed with exceptions', `${succeeded} completed; ${failures.length} need review.`)
-  else toast.success('Batch AI analysis completed', { message: `${succeeded} candidates assessed and ranked.` })
 }
 </script>
 
@@ -136,7 +116,7 @@ async function analyzePendingWithAi() {
     </section>
 
     <section class="rounded-2xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
-      <div class="flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-bold text-[#102A43] dark:text-white">Active Recruitment Pipeline</h2><p class="mt-1 text-sm text-surface-500">Candidates you have already selected for recruiter action.</p></div><button :disabled="batchBusy || !batchEligible.length" class="inline-flex items-center gap-2 rounded-xl border border-brand-300 px-3 py-2 text-sm font-semibold text-brand-700 disabled:opacity-40" @click="analyzePendingWithAi"><Loader2 v-if="batchBusy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ batchBusy ? `Analyzing ${batchProgress.done}/${batchProgress.total}` : `Analyze Pending (${batchEligible.length})` }}</button></div>
+      <div><h2 class="font-bold text-[#102A43] dark:text-white">Active Recruitment Pipeline</h2><p class="mt-1 text-sm text-surface-500">Candidates already selected for recruiter action. AI assessment is performed through explicit candidate intake or governed reassessment, not bulk-scored from this view.</p></div>
       <div v-if="status === 'pending'" class="py-10 text-center text-surface-400">Loading active recruitment…</div>
       <div v-else-if="error" class="mt-4 rounded-xl border border-danger-200 bg-danger-50 p-5 text-danger-700"><p class="font-semibold">Active recruitment could not be loaded</p></div>
       <template v-else><div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div class="rounded-xl bg-[#F7FBFE] p-4"><p class="text-xs font-semibold text-surface-500">Active Candidates</p><p class="mt-1 text-2xl font-bold text-[#102A43]">{{ summary.total }}</p></div><div class="rounded-xl bg-[#F1FAF8] p-4"><p class="text-xs font-semibold text-surface-500">Resume Assessed</p><p class="mt-1 text-2xl font-bold text-[#16847F]">{{ summary.assessed }}</p></div><div class="rounded-xl bg-surface-50 p-4"><p class="text-xs font-semibold text-surface-500">Not Yet Assessed</p><p class="mt-1 text-2xl font-bold text-surface-800">{{ summary.notYetAssessed }}</p></div><div class="rounded-xl bg-[#FFF9EC] p-4"><p class="text-xs font-semibold text-surface-500">Reassessment Required</p><p class="mt-1 text-2xl font-bold text-[#976511]">{{ summary.needsReassessment }}</p></div></div><div class="mt-4 space-y-3"><NuxtLink v-for="row in rows" :key="row.applicationId" :to="localePath(`/dashboard/recruitment/${row.applicationId}`)" class="grid gap-3 rounded-xl border border-surface-200 p-4 no-underline hover:border-brand-300 hover:bg-[#F7FBFE] md:grid-cols-[1.2fr_.7fr_.8fr_1.3fr]"><div><p class="font-semibold">{{ row.candidate }}</p><p class="text-xs text-surface-400">{{ row.email }}</p></div><div><p class="text-[10px] uppercase tracking-wide text-surface-400">Priority / Score</p><p class="mt-1 text-sm font-semibold">{{ row.priority ?? '—' }} · {{ row.provisionalFitScore != null ? `${row.provisionalFitScore}%` : '—' }}</p></div><div><p class="text-[10px] uppercase tracking-wide text-surface-400">Stage</p><p class="mt-1 text-sm font-semibold">{{ label(row.lastStatus) }}</p></div><div><p class="text-[10px] uppercase tracking-wide text-surface-400">Next Action</p><p class="mt-1 text-sm font-medium text-[#1F6FA3]">{{ row.nextAction ?? 'Open recruitment workflow' }}</p></div></NuxtLink><div v-if="!rows.length" class="rounded-xl border border-dashed border-surface-300 px-4 py-8 text-center text-sm text-surface-400">No candidates are currently in active recruitment.</div></div></template>
