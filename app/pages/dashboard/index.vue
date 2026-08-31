@@ -123,12 +123,12 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
           <p class="mt-1 text-xs text-surface-400">Across visible requirements</p>
         </div>
 
-        <div class="rounded-2xl border border-[#F0DFC0] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
-          <span class="flex size-10 items-center justify-center rounded-xl bg-[#FFF7E8] text-[#A96F12] dark:bg-warning-950"><Clock3 class="size-5" /></span>
+        <NuxtLink :to="localePath('/dashboard/actions')" class="group rounded-2xl border border-[#F0DFC0] bg-white p-5 no-underline shadow-sm transition hover:-translate-y-0.5 hover:border-[#D8B86B] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <div class="flex items-center justify-between"><span class="flex size-10 items-center justify-center rounded-xl bg-[#FFF7E8] text-[#A96F12] dark:bg-warning-950"><Clock3 class="size-5" /></span><ArrowRight class="size-4 text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-[#A96F12]" /></div>
           <p class="mt-5 text-3xl font-bold text-[#102A43] dark:text-white">{{ recruitment.actionPending }}</p>
           <p class="mt-1 text-sm font-semibold text-surface-700 dark:text-surface-200">Actions Pending</p>
-          <p class="mt-1 text-xs text-surface-400">Candidates needing recruiter movement</p>
-        </div>
+          <p class="mt-1 text-xs text-surface-400">Open recruiter action queue</p>
+        </NuxtLink>
 
         <div class="rounded-2xl border border-[#E8D4D4] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-10 items-center justify-center rounded-xl bg-[#FDF0F0] text-[#B45454] dark:bg-danger-950"><Target class="size-5" /></span>
