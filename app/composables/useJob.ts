@@ -2,12 +2,12 @@ import type { MaybeRefOrGetter } from 'vue'
 
 /**
  * Composable for a single job detail with update and delete mutations.
- * Wraps `useFetch('/api/jobs/:id')` with a reactive key.
+ * Requirement detail is intentionally fetched fresh: the endpoint is lightweight and
+ * the Active JD must never be held behind a stale Nuxt payload when recruiters edit it.
  */
 export function useJob(id: MaybeRefOrGetter<string>) {
   const localePath = useLocalePath()
   const { handlePreviewReadOnlyError } = usePreviewReadOnly()
-  const nuxtApp = useNuxtApp()
   const jobId = computed(() => toValue(id))
 
   const { data: job, status, error, refresh } = useFetch(
@@ -15,7 +15,6 @@ export function useJob(id: MaybeRefOrGetter<string>) {
     {
       key: computed(() => `job-${jobId.value}`),
       headers: useRequestHeaders(['cookie']),
-      getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
     },
   )
 
