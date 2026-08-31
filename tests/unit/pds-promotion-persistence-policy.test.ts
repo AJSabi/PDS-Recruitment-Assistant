@@ -6,7 +6,6 @@ const readSource = (path: string) => readFileSync(new URL(`../../${path}`, impor
 describe('PDS Move to Recruitment reuse policy', () => {
   it('reuses the persisted Candidate Pool assessment instead of re-running resume AI during promotion', () => {
     const source = readSource('server/api/jobs/[id]/talent-pool/[matchId]/promote.post.ts')
-
     expect(source).toContain('await db.insert(resumeAssessment).values({')
     expect(source).toContain('candidateSnapshot: match.candidateSnapshot')
     expect(source).toContain('skillAssessment: match.skillAssessment')
@@ -17,27 +16,26 @@ describe('PDS Move to Recruitment reuse policy', () => {
 
   it('inherits recruiter ownership from the requirement allocation and seeds the AI summary from stored evidence', () => {
     const source = readSource('server/api/jobs/[id]/talent-pool/[matchId]/promote.post.ts')
-
     expect(source).toContain('assignedRecruiterId: requirementState?.ownerUserId ?? null')
     expect(source).toContain('aiCandidateSummary: match.candidateSnapshot')
     expect(source).toContain('aiOverallAssessment: match.jdAlignment')
     expect(source).toContain("currentFit: 'not_yet_assessed'")
   })
 
-  it('keeps screening-question generation non-blocking after promotion', () => {
+  it('does not spend AI on Move to Recruitment; screening questions require a separate recruiter action', () => {
     const source = readSource('server/api/jobs/[id]/talent-pool/[matchId]/promote.post.ts')
-
-    expect(source).toContain('let questionGenerationError: string | null = null')
-    expect(source).toContain('catch (error: any)')
-    expect(source).toContain("nextAction: questions.length ? 'Start Recruiter Screening' : 'Generate Recruiter Screening Questions'")
-    expect(source).toContain('screeningQuestionsPending: Boolean(questionGenerationError)')
+    expect(source).not.toContain('generatePdsScreeningQuestions')
+    expect(source).not.toContain('loadAiConfig')
+    expect(source).toContain("nextAction: 'Start Recruiter Screening'")
+    expect(source).toContain('screeningQuestionsGenerated: 0')
+    expect(source).toContain('screeningQuestionsRequireExplicitRecruiterAction: true')
+    expect(source).toContain('aiCalls: 0')
   })
 })
 
 describe('PDS Recruiter Screening persistence policy', () => {
   it('persists each answer and any matching follow-up before returning the next question', () => {
     const source = readSource('server/api/applications/[id]/screening/answer.post.ts')
-
     expect(source).toContain('const updatedResponses: ScreeningResponse[] = [...responses')
     expect(source).toContain('.set({ responses: updatedResponses, questions: updatedQuestions, updatedAt: now })')
     expect(source).toContain('const nextQuestion = updatedQuestions.find')
@@ -47,14 +45,12 @@ describe('PDS Recruiter Screening persistence policy', () => {
   it('prevents skipping ahead or completing an incomplete screening', () => {
     const answerSource = readSource('server/api/applications/[id]/screening/answer.post.ts')
     const completeSource = readSource('server/api/applications/[id]/screening/complete.post.ts')
-
     expect(answerSource).toContain('Answer the current screening question before moving to the next question.')
     expect(completeSource).toContain('Complete all screening questions before final assessment.')
   })
 
   it('stores completed screening evidence, preserves the decision outcome, and marks the AI Candidate Summary stale', () => {
     const source = readSource('server/api/applications/[id]/screening/complete.post.ts')
-
     expect(source).toContain('const finalStatus = completionStageForDecision(body.recommendedNextStep)')
     expect(source).toContain('lastStatus: finalStatus')
     expect(source).toContain('aiSummaryStale: true')
@@ -73,9 +69,6 @@ describe('PDS Recruiter Screening persistence policy', () => {
       'server/api/applications/[id]/screening/generate.post.ts',
       'server/api/applications/[id]/screening/interpret.post.ts',
     ]
-
-    for (const path of paths) {
-      expect(readSource(path)).toContain('assertApplicationAccess')
-    }
+    for (const path of paths) expect(readSource(path)).toContain('assertApplicationAccess')
   })
 })
