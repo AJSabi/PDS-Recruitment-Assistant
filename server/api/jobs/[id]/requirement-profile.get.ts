@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   const jobRecord = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
-    columns: { id: true, title: true, location: true, experienceLevel: true },
+    columns: { id: true, title: true, description: true, location: true, experienceLevel: true },
   })
   if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
@@ -34,6 +34,8 @@ export default defineEventHandler(async (event) => {
       closureDate: state.targetClosureDate ?? null,
       assignmentDate: state.assignmentDate ?? null,
       majorRequirements: profile.majorRequirements ?? [],
+      hasActiveJd: Boolean(jobRecord.description?.trim()),
+      skillMatrixApproved: Boolean(state.skillMatrixApproved),
     },
   }
 })
