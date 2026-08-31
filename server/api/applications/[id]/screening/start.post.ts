@@ -6,7 +6,7 @@ import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
-const allowedStartStatuses = new Set(['resume_reviewed', 'hold_for_comparison', 'reassess', 'recruiter_screening_pending'])
+const allowedStartStatuses = new Set(['resume_reviewed', 'reassess', 'recruiter_screening_pending'])
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)),
   })
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!allowedStartStatuses.has(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: `Recruiter screening cannot start while candidate status is ${profile.lastStatus}.` })
+  if (!allowedStartStatuses.has(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: `Recruiter screening cannot start while candidate status is ${profile.lastStatus}. Resume a held candidate through the recorded continuation point or choose Reassess first.` })
 
   const existing = await db.query.recruiterScreeningSession.findFirst({
     where: and(eq(recruiterScreeningSession.applicationId, applicationId), eq(recruiterScreeningSession.organizationId, orgId)),
