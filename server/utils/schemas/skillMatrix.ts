@@ -5,11 +5,13 @@ export const skillPrioritySchema = z.enum(['mandatory', 'preferred', 'optional']
 // Drafts are intentionally permissive. Recruiters must be able to save work in progress.
 // Approval validates matrix structure and evidence quality without forcing arbitrary
 // Mandatory-skill quotas that can make a JD-specific matrix generic.
+// Client-normalized skill IDs may include both the classification and skill slugs,
+// so allow enough room for a stable canonical ID. AI rationales may legitimately be null.
 export const skillMatrixItemSchema = z.object({
-  id: z.string().min(1).max(100),
+  id: z.string().min(1).max(200),
   skill: z.string().trim().max(200),
   priority: skillPrioritySchema,
-  rationale: z.string().trim().max(500).optional(),
+  rationale: z.string().trim().max(500).nullish(),
 })
 
 export const skillMatrixClassificationSchema = z.object({
@@ -61,8 +63,6 @@ export const saveSkillMatrixSchema = z.object({
     mandatoryTotal += classification.skills.filter(s => s.priority === 'mandatory').length
   }
 
-  // At least one true hiring gate is required so downstream scoring has a meaningful
-  // Mandatory dimension. The exact count is determined by JD evidence, not a quota.
   if (mandatoryTotal < 1) {
     ctx.addIssue({ code: 'custom', message: 'Mark at least one genuinely role-critical criterion as Mandatory before approval.', path: ['matrix', 'classifications'] })
   }
