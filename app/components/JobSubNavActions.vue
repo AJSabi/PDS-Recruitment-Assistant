@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserPlus, Pencil, Trash2, MoreHorizontal, Settings2 } from 'lucide-vue-next'
+import { UserPlus, Pencil, Trash2, MoreHorizontal, Settings2, Search } from 'lucide-vue-next'
 import { JOB_STATUS_TRANSITIONS } from '~~/shared/status-transitions'
 
 const props = defineProps<{
@@ -167,6 +167,14 @@ function openPropertyEditor(scope: 'org' | 'job') {
                 >
                   <Pencil class="size-3.5 text-surface-400" />
                   Edit Job
+                </NuxtLink>
+                <NuxtLink
+                  :to="localePath(`/dashboard/jobs/${jobId}/sourcing`)"
+                  class="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800/80 transition-colors"
+                  @click="showMoreMenu = false"
+                >
+                  <Search class="size-3.5 text-[#2E86C1]" />
+                  Sourcing Toolkit
                 </NuxtLink>
                 <button
                   class="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2 text-sm text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800/80 transition-colors sm:hidden"
