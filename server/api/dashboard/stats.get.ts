@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, count, inArray } from 'drizzle-orm'
+import { eq, and, desc, sql, count, inArray, isNotNull } from 'drizzle-orm'
 import { application, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema'
 import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
@@ -137,9 +137,13 @@ export default defineEventHandler(async (event) => {
     db.select({ count: count() })
       .from(recruitmentApplicationProfile)
       .innerJoin(application, eq(application.id, recruitmentApplicationProfile.applicationId))
+      .innerJoin(job, eq(job.id, application.jobId))
       .where(and(
         eq(recruitmentApplicationProfile.organizationId, orgId),
+        activeRequirementCondition,
         sql`${recruitmentApplicationProfile.lastStatus} not in ('closed','joined','not_proceeding')`,
+        isNotNull(recruitmentApplicationProfile.nextAction),
+        sql`trim(${recruitmentApplicationProfile.nextAction}) <> ''`,
         ...(visibleRequirementIds ? [inArray(application.jobId, visibleRequirementIds)] : []),
       )),
   ])
