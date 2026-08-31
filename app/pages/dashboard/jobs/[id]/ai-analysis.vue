@@ -8,19 +8,17 @@ const route = useRoute()
 const localePath = useLocalePath()
 const jobId = route.params.id as string
 
+// Requirement Profile also exposes the setup-state flags needed by this shell.
+// The editor below owns the Job + Skill Matrix fetches, avoiding duplicate requests
+// every time the requirement setup page is opened.
 const { data: requirementData } = useFetch(() => `/api/jobs/${jobId}/requirement-profile`, {
   key: `pds-requirement-profile-${jobId}`,
   headers: useRequestHeaders(['cookie']),
 })
-const { data: matrixData } = useFetch(() => `/api/jobs/${jobId}/skill-matrix`, {
-  key: `skill-matrix-${jobId}`,
-  headers: useRequestHeaders(['cookie']),
-})
-const { job } = useJob(jobId)
 
 const profile = computed<any>(() => requirementData.value?.profile ?? null)
-const matrixApproved = computed(() => Boolean(matrixData.value?.approved))
-const hasJd = computed(() => Boolean(job.value?.description?.trim()))
+const matrixApproved = computed(() => Boolean(profile.value?.skillMatrixApproved))
+const hasJd = computed(() => Boolean(profile.value?.hasActiveJd))
 const hasProfile = computed(() => Boolean(profile.value))
 
 function value(v: unknown) {
@@ -53,7 +51,7 @@ const steps = computed(() => [
         <div class="flex flex-wrap items-start justify-between gap-5">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9FD3F2]">Requirement Setup</p>
-            <h1 class="mt-2 text-3xl font-bold tracking-tight">{{ job?.title ?? 'JD & Skill Matrix' }}</h1>
+            <h1 class="mt-2 text-3xl font-bold tracking-tight">{{ profile?.jobTitle ?? 'JD & Skill Matrix' }}</h1>
             <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Define the requirement once, validate what AI extracted, and approve the evidence framework before candidate matching begins.</p>
           </div>
           <div class="rounded-2xl border px-4 py-3" :class="matrixApproved ? 'border-[#6ED2C8]/40 bg-[#16847F]/20' : 'border-[#8FC8E8]/30 bg-white/5'">
