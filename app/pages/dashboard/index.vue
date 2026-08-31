@@ -65,6 +65,11 @@ function candidateName(row: any) {
   return `${row.candidateFirstName ?? ''} ${row.candidateLastName ?? ''}`.trim() || 'Candidate'
 }
 
+function tatLabel(job: any) {
+  if (!job.assignmentDate || job.openDays == null) return 'TAT not started'
+  return `Open for ${job.openDays} day${Number(job.openDays) === 1 ? '' : 's'}`
+}
+
 const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.totalApplications === 0)
 </script>
 
@@ -116,12 +121,12 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
           <p class="mt-1 text-xs text-surface-400">Active hiring requirements</p>
         </NuxtLink>
 
-        <div class="rounded-2xl border border-[#D7E9E7] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
-          <span class="flex size-10 items-center justify-center rounded-xl bg-[#E9F8F6] text-[#16847F] dark:bg-accent-950"><UsersRound class="size-5" /></span>
+        <NuxtLink :to="localePath('/dashboard/active-candidates')" class="group rounded-2xl border border-[#D7E9E7] bg-white p-5 no-underline shadow-sm transition hover:-translate-y-0.5 hover:border-[#7FC5C1] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <div class="flex items-center justify-between"><span class="flex size-10 items-center justify-center rounded-xl bg-[#E9F8F6] text-[#16847F] dark:bg-accent-950"><UsersRound class="size-5" /></span><ArrowRight class="size-4 text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-[#16847F]" /></div>
           <p class="mt-5 text-3xl font-bold text-[#102A43] dark:text-white">{{ counts.totalCandidates }}</p>
           <p class="mt-1 text-sm font-semibold text-surface-700 dark:text-surface-200">Active Candidates</p>
-          <p class="mt-1 text-xs text-surface-400">Across visible requirements</p>
-        </div>
+          <p class="mt-1 text-xs text-surface-400">Open active candidate queue</p>
+        </NuxtLink>
 
         <NuxtLink :to="localePath('/dashboard/actions')" class="group rounded-2xl border border-[#F0DFC0] bg-white p-5 no-underline shadow-sm transition hover:-translate-y-0.5 hover:border-[#D8B86B] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
           <div class="flex items-center justify-between"><span class="flex size-10 items-center justify-center rounded-xl bg-[#FFF7E8] text-[#A96F12] dark:bg-warning-950"><Clock3 class="size-5" /></span><ArrowRight class="size-4 text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-[#A96F12]" /></div>
@@ -130,18 +135,18 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
           <p class="mt-1 text-xs text-surface-400">Open recruiter action queue</p>
         </NuxtLink>
 
-        <div class="rounded-2xl border border-[#E8D4D4] bg-white p-5 shadow-sm dark:border-surface-800 dark:bg-surface-900">
-          <span class="flex size-10 items-center justify-center rounded-xl bg-[#FDF0F0] text-[#B45454] dark:bg-danger-950"><Target class="size-5" /></span>
+        <NuxtLink :to="localePath('/dashboard/closure-risk')" class="group rounded-2xl border border-[#E8D4D4] bg-white p-5 no-underline shadow-sm transition hover:-translate-y-0.5 hover:border-[#D9A6A6] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <div class="flex items-center justify-between"><span class="flex size-10 items-center justify-center rounded-xl bg-[#FDF0F0] text-[#B45454] dark:bg-danger-950"><Target class="size-5" /></span><ArrowRight class="size-4 text-surface-300 transition group-hover:translate-x-0.5 group-hover:text-[#B45454]" /></div>
           <p class="mt-5 text-3xl font-bold text-[#102A43] dark:text-white">{{ recruitment.overdueRequirements }}</p>
           <p class="mt-1 text-sm font-semibold text-surface-700 dark:text-surface-200">Closure Risk</p>
-          <p class="mt-1 text-xs text-surface-400">Requirements past target closure</p>
-        </div>
+          <p class="mt-1 text-xs text-surface-400">Review overdue and due-soon requirements</p>
+        </NuxtLink>
       </section>
 
       <div v-if="recruitment.dueSoonRequirements || recruitment.overdueRequirements" class="flex flex-wrap items-center gap-3 rounded-2xl border border-[#E8D7B4] bg-[#FFF9EC] px-5 py-4 text-[#6F531B] dark:border-warning-900 dark:bg-warning-950/20 dark:text-warning-200">
         <AlertTriangle class="size-5 shrink-0" />
         <p class="text-sm"><strong>{{ recruitment.overdueRequirements }}</strong> overdue and <strong>{{ recruitment.dueSoonRequirements }}</strong> due within the next 7 days.</p>
-        <NuxtLink :to="localePath('/dashboard/jobs')" class="ml-auto text-sm font-semibold text-[#815E15] underline underline-offset-2 dark:text-warning-200">Review requirements</NuxtLink>
+        <NuxtLink :to="localePath('/dashboard/closure-risk')" class="ml-auto text-sm font-semibold text-[#815E15] underline underline-offset-2 dark:text-warning-200">Review closure risk</NuxtLink>
       </div>
 
       <div v-if="isEmpty" class="rounded-3xl border border-dashed border-[#BFD6E6] bg-[#F7FBFE] px-6 py-14 text-center dark:border-surface-700 dark:bg-surface-900">
@@ -153,14 +158,14 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
       <div v-else class="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
         <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
           <div class="flex items-center justify-between border-b border-surface-100 px-5 py-4 dark:border-surface-800">
-            <div><h2 class="font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'My Requirements' : 'Active Requirements' }}</h2><p class="mt-0.5 text-xs text-surface-400">Target closure and current recruitment load</p></div>
+            <div><h2 class="font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'My Requirements' : 'Active Requirements' }}</h2><p class="mt-0.5 text-xs text-surface-400">Target closure, opening duration and current recruitment load</p></div>
             <NuxtLink :to="localePath('/dashboard/jobs')" class="text-sm font-semibold text-[#1F6FA3] no-underline hover:underline">View all</NuxtLink>
           </div>
           <div class="divide-y divide-surface-100 dark:divide-surface-800">
             <NuxtLink v-for="job in topJobs" :key="job.id" :to="localePath(`/dashboard/jobs/${job.id}`)" class="grid gap-3 px-5 py-4 no-underline transition hover:bg-[#F7FBFE] sm:grid-cols-[1fr_auto] dark:hover:bg-surface-800/40">
               <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2"><p class="truncate font-semibold text-surface-900 dark:text-white">{{ job.title }}</p><span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[11px] font-semibold text-[#1F6FA3] dark:bg-brand-950 dark:text-brand-300">{{ job.applicationCount ?? 0 }} candidates</span></div>
-                <p class="mt-1 text-xs" :class="daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! < 0 ? 'text-danger-600' : daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! <= 7 ? 'text-warning-700' : 'text-surface-400'">Target: {{ formatDate(job.targetClosureDate) }} · {{ closureLabel(job.targetClosureDate) }}</p>
+                <div class="flex flex-wrap items-center gap-2"><p class="truncate font-semibold text-surface-900 dark:text-white">{{ job.title }}</p><span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[11px] font-semibold text-[#1F6FA3] dark:bg-brand-950 dark:text-brand-300">{{ job.applicationCount ?? 0 }} candidates</span><span class="rounded-full bg-[#F4FBFA] px-2 py-0.5 text-[11px] font-semibold text-[#16847F]">{{ tatLabel(job) }}</span></div>
+                <p class="mt-1 text-xs" :class="daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! < 0 ? 'text-danger-600' : daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! <= 7 ? 'text-warning-700' : 'text-surface-400'">Assigned: {{ formatDate(job.assignmentDate) }} · Target: {{ formatDate(job.targetClosureDate) }} · {{ closureLabel(job.targetClosureDate) }}</p>
               </div>
               <div class="flex items-center gap-4 text-xs text-surface-500"><span><strong class="text-surface-800 dark:text-surface-200">{{ job.screeningCount ?? 0 }}</strong> screening</span><span><strong class="text-surface-800 dark:text-surface-200">{{ job.interviewCount ?? 0 }}</strong> interview</span><span><strong class="text-surface-800 dark:text-surface-200">{{ job.offerCount ?? 0 }}</strong> offer</span></div>
             </NuxtLink>
