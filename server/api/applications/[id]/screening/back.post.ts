@@ -32,8 +32,10 @@ export default defineEventHandler(async (event) => {
   const responses = [...((screening.responses ?? []) as ScreeningResponse[])]
   if (!responses.length) throw createError({ statusCode: 409, statusMessage: 'There is no previous screening response to revisit.' })
 
+  const removedResponse = responses.at(-1)
+  if (!removedResponse) throw createError({ statusCode: 409, statusMessage: 'There is no previous screening response to revisit.' })
+
   const previousResponses = responses.slice(0, -1)
-  const removedResponse = responses[responses.length - 1]
   const injectedFollowUpId = `${removedResponse.questionId}_followup_${responses.length}`
   const restoredQuestions = questions.filter(question => question.id !== injectedFollowUpId)
   const answeredIds = new Set(previousResponses.map(response => response.questionId))
