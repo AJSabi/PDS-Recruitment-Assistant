@@ -219,6 +219,7 @@ function openPropertyEditor(scope: 'org' | 'job') {
   </ClientOnly>
 
   <PropertySchemaEditor
+    v-if="showPropertyEditor"
     :open="showPropertyEditor"
     entity-type="application"
     :job-id="propertyEditorScope === 'job' ? jobId : null"
