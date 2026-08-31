@@ -27,9 +27,15 @@ export default defineEventHandler(async (event) => {
   ])
 
   if (!profile) throw createError({ statusCode: 404, statusMessage: 'Recruitment profile not found' })
-  if (!['resume_reviewed', 'reassess', 'recruiter_screening_pending'].includes(profile.lastStatus)) throw createError({ statusCode: 422, statusMessage: 'Complete resume assessment before generating recruiter screening questions.' })
+
+  const historicalReassess = existing?.status === 'completed'
+    && existing.recommendedNextStep === 'reassess'
+    && ['resume_reviewed', 'recruiter_screening_pending', 'recruiter_screening_completed'].includes(profile.lastStatus)
+  const effectiveStatus = historicalReassess ? 'reassess' : profile.lastStatus
+
+  if (!['resume_reviewed', 'reassess', 'recruiter_screening_pending'].includes(effectiveStatus)) throw createError({ statusCode: 422, statusMessage: 'Complete resume assessment before generating recruiter screening questions.' })
   if (existing?.status === 'in_progress') throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
-  if (existing?.status === 'completed' && profile.lastStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
+  if (existing?.status === 'completed' && effectiveStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
   if (!requirementState?.skillMatrixApproved || !matrixRecord?.approvedMatrix) throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before generating screening questions.' })
   if (!assessment) throw createError({ statusCode: 422, statusMessage: 'Resume assessment is required before generating screening questions.' })
   if (!jobRecord?.description) throw createError({ statusCode: 422, statusMessage: 'Active JD is required.' })
@@ -48,10 +54,25 @@ export default defineEventHandler(async (event) => {
     resumeAssessment: assessment,
   })
 
+  // Repair only on an explicit successful revalidation action. This keeps GET endpoints
+  // side-effect free while allowing historical completed sessions to re-enter the
+  // governed Reassess flow without losing their prior screening evidence.
+  if (historicalReassess) {
+    const now = new Date()
+    await db.update(recruitmentApplicationProfile).set({
+      lastStatus: 'reassess',
+      statusDate: now,
+      nextAction: 'Revalidate recruiter screening',
+      aiSummaryStale: true,
+      lastUpdatedBy: session.user.id,
+      updatedAt: now,
+    }).where(eq(recruitmentApplicationProfile.id, profile.id))
+  }
+
   // In Reassess, keep the completed session untouched until Start Revalidation Call.
   // start.post.ts snapshots the prior questions/responses/finalFit before replacing them.
-  if (existing?.status === 'completed' && profile.lastStatus === 'reassess') {
-    return { questions, source: 'ai', provider: config.provider, model: config.model, reassessment: true, priorScreeningPreserved: true }
+  if (existing?.status === 'completed' && effectiveStatus === 'reassess') {
+    return { questions, source: 'ai', provider: config.provider, model: config.model, reassessment: true, priorScreeningPreserved: true, historicalStageRecovered: historicalReassess }
   }
 
   const now = new Date()
