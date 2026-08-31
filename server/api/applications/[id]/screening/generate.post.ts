@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { job, jobSkillMatrix, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentRequirementState, resumeAssessment } from '../../../../database/schema'
+import { job, jobSkillMatrix, recruiterScreeningSession, recruitmentApplicationProfile, resumeAssessment } from '../../../../database/schema'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsScreeningQuestions } from '../../../../utils/ai/pdsScreening'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
@@ -17,9 +17,8 @@ export default defineEventHandler(async (event) => {
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   const app = await assertApplicationAccess(orgId, session.user.id, applicationId)
 
-  const [profile, requirementState, jobRecord, matrixRecord, assessment, existing] = await Promise.all([
+  const [profile, jobRecord, matrixRecord, assessment, existing] = await Promise.all([
     db.query.recruitmentApplicationProfile.findFirst({ where: and(eq(recruitmentApplicationProfile.applicationId, applicationId), eq(recruitmentApplicationProfile.organizationId, orgId)) }),
-    db.query.recruitmentRequirementState.findFirst({ where: and(eq(recruitmentRequirementState.jobId, app.jobId), eq(recruitmentRequirementState.organizationId, orgId)) }),
     db.query.job.findFirst({ where: and(eq(job.id, app.jobId), eq(job.organizationId, orgId)), columns: { title: true, description: true } }),
     db.query.jobSkillMatrix.findFirst({ where: and(eq(jobSkillMatrix.jobId, app.jobId), eq(jobSkillMatrix.organizationId, orgId)) }),
     db.query.resumeAssessment.findFirst({ where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)) }),
@@ -36,7 +35,9 @@ export default defineEventHandler(async (event) => {
   if (!['resume_reviewed', 'reassess', 'recruiter_screening_pending'].includes(effectiveStatus)) throw createError({ statusCode: 422, statusMessage: 'Complete resume assessment before generating recruiter screening questions.' })
   if (existing?.status === 'in_progress') throw createError({ statusCode: 409, statusMessage: 'Screening is already in progress. Finish or reassess before regenerating questions.' })
   if (existing?.status === 'completed' && effectiveStatus !== 'reassess') throw createError({ statusCode: 409, statusMessage: 'Screening is already completed. Confirm Reassess before regenerating questions.' })
-  if (!requirementState?.skillMatrixApproved || !matrixRecord?.approvedMatrix) throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before generating screening questions.' })
+  // job_skill_matrix is the canonical approval record. recruitment_requirement_state mirrors
+  // workflow metadata and must not block a genuinely approved matrix if historical data drifted.
+  if (!matrixRecord?.approvedAt || !matrixRecord?.approvedMatrix) throw createError({ statusCode: 422, statusMessage: 'Approve the Skill Matrix before generating screening questions.' })
   if (!assessment) throw createError({ statusCode: 422, statusMessage: 'Resume assessment is required before generating screening questions.' })
   if (!jobRecord?.description) throw createError({ statusCode: 422, statusMessage: 'Active JD is required.' })
 
