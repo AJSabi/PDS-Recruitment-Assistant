@@ -27,7 +27,19 @@ export default defineEventHandler(async (event) => {
       data: { issues: parsed.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })) },
     })
   }
-  const body = parsed.data
+
+  // The AI proposal schema permits null rationale values. The persisted matrix contract
+  // uses an optional string, so canonicalize null to undefined at this API boundary.
+  const matrix = {
+    classifications: parsed.data.matrix.classifications.map(classification => ({
+      ...classification,
+      skills: classification.skills.map(skill => ({
+        ...skill,
+        rationale: skill.rationale ?? undefined,
+      })),
+    })),
+  }
+  const body = { ...parsed.data, matrix }
 
   const jobRecord = await db.query.job.findFirst({
     where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
