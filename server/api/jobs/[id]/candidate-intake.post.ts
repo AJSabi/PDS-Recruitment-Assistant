@@ -19,10 +19,7 @@ export default defineEventHandler(async (event) => {
       columns: { id: true, title: true },
     }),
     db.query.recruitmentRequirementState.findFirst({
-      where: and(
-        eq(recruitmentRequirementState.organizationId, orgId),
-        eq(recruitmentRequirementState.jobId, jobId),
-      ),
+      where: and(eq(recruitmentRequirementState.organizationId, orgId), eq(recruitmentRequirementState.jobId, jobId)),
       columns: { ownerUserId: true },
     }),
   ])
@@ -37,27 +34,27 @@ export default defineEventHandler(async (event) => {
       columns: { id: true, firstName: true, lastName: true, email: true },
     })
     if (!candidateRecord) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
-  }
-  else {
+  } else {
     const email = body.email!
-    const matchedCandidate = await db.query.candidate.findFirst({
+    const matchedByEmail = await db.query.candidate.findFirst({
       where: and(eq(candidate.organizationId, orgId), eq(candidate.email, email)),
       columns: { id: true, firstName: true, lastName: true, email: true, quarantinedAt: true },
     })
+    const matchedByPhone = !matchedByEmail && body.phone
+      ? await db.query.candidate.findFirst({
+          where: and(eq(candidate.organizationId, orgId), eq(candidate.phone, body.phone)),
+          columns: { id: true, firstName: true, lastName: true, email: true, quarantinedAt: true },
+        })
+      : undefined
+    const matchedCandidate = matchedByEmail ?? matchedByPhone
 
     if (matchedCandidate?.quarantinedAt) {
       throw createError({ statusCode: 409, statusMessage: 'A matching candidate is in retention quarantine and cannot be linked through recruiter intake.' })
     }
 
     if (matchedCandidate) {
-      candidateRecord = {
-        id: matchedCandidate.id,
-        firstName: matchedCandidate.firstName,
-        lastName: matchedCandidate.lastName,
-        email: matchedCandidate.email,
-      }
-    }
-    else {
+      candidateRecord = { id: matchedCandidate.id, firstName: matchedCandidate.firstName, lastName: matchedCandidate.lastName, email: matchedCandidate.email }
+    } else {
       const [createdCandidate] = await db.insert(candidate).values({
         organizationId: orgId,
         firstName: body.firstName!,
@@ -72,26 +69,16 @@ export default defineEventHandler(async (event) => {
   }
 
   const duplicate = await db.query.application.findFirst({
-    where: and(
-      eq(application.organizationId, orgId),
-      eq(application.candidateId, candidateId),
-      eq(application.jobId, jobId),
-    ),
+    where: and(eq(application.organizationId, orgId), eq(application.candidateId, candidateId), eq(application.jobId, jobId)),
     columns: { id: true },
   })
 
   if (duplicate) {
     const profile = await db.query.recruitmentApplicationProfile.findFirst({
-      where: and(
-        eq(recruitmentApplicationProfile.applicationId, duplicate.id),
-        eq(recruitmentApplicationProfile.organizationId, orgId),
-      ),
+      where: and(eq(recruitmentApplicationProfile.applicationId, duplicate.id), eq(recruitmentApplicationProfile.organizationId, orgId)),
     })
     if (profile && requirementState?.ownerUserId && profile.assignedRecruiterId !== requirementState.ownerUserId) {
-      await db.update(recruitmentApplicationProfile).set({
-        assignedRecruiterId: requirementState.ownerUserId,
-        updatedAt: new Date(),
-      }).where(eq(recruitmentApplicationProfile.id, profile.id))
+      await db.update(recruitmentApplicationProfile).set({ assignedRecruiterId: requirementState.ownerUserId, updatedAt: new Date() }).where(eq(recruitmentApplicationProfile.id, profile.id))
     }
     return {
       created: false,
@@ -134,6 +121,7 @@ export default defineEventHandler(async (event) => {
       jobId,
       candidateEmail: candidateRecord.email,
       assignedRecruiterId: requirementState?.ownerUserId ?? null,
+      dedupeOrder: 'email_then_phone',
     },
   })
 
