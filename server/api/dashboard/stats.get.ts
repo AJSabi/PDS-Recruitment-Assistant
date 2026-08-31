@@ -54,7 +54,13 @@ export default defineEventHandler(async (event) => {
 
     db.select({ count: sql<number>`count(distinct ${application.candidateId})` })
       .from(application)
-      .where(and(...applicationScope)),
+      .innerJoin(job, eq(job.id, application.jobId))
+      .leftJoin(recruitmentApplicationProfile, eq(recruitmentApplicationProfile.applicationId, application.id))
+      .where(and(
+        ...applicationScope,
+        activeRequirementCondition,
+        sql`(${recruitmentApplicationProfile.lastStatus} is null or ${recruitmentApplicationProfile.lastStatus} not in ('closed','joined','not_proceeding'))`,
+      )),
 
     db.$count(application, and(...applicationScope)),
     db.$count(application, and(...applicationScope, eq(application.status, 'new'))),
@@ -97,7 +103,11 @@ export default defineEventHandler(async (event) => {
       slug: job.slug,
       status: job.status,
       createdAt: job.createdAt,
+      assignmentDate: recruitmentRequirementState.assignmentDate,
       targetClosureDate: recruitmentRequirementState.targetClosureDate,
+      closedAt: recruitmentRequirementState.closedAt,
+      ownerUserId: recruitmentRequirementState.ownerUserId,
+      openDays: sql<number | null>`case when ${recruitmentRequirementState.assignmentDate} is null then null else greatest(0, (current_date - ${recruitmentRequirementState.assignmentDate}::date)) end`.as('open_days'),
       applicationCount: count(application.id).as('application_count'),
       newCount: sql<number>`count(case when ${application.status} = 'new' then 1 end)`.as('new_count'),
       screeningCount: sql<number>`count(case when ${application.status} = 'screening' then 1 end)`.as('screening_count'),
@@ -110,16 +120,27 @@ export default defineEventHandler(async (event) => {
       .leftJoin(application, and(eq(application.jobId, job.id), eq(application.organizationId, orgId)))
       .leftJoin(recruitmentRequirementState, and(eq(recruitmentRequirementState.jobId, job.id), eq(recruitmentRequirementState.organizationId, orgId)))
       .where(and(...jobScope, activeRequirementCondition))
-      .groupBy(job.id, recruitmentRequirementState.targetClosureDate)
-      .orderBy(desc(job.updatedAt))
-      .limit(8),
+      .groupBy(
+        job.id,
+        recruitmentRequirementState.assignmentDate,
+        recruitmentRequirementState.targetClosureDate,
+        recruitmentRequirementState.closedAt,
+        recruitmentRequirementState.ownerUserId,
+      )
+      // Owner/admin retain organisation-wide visibility, but their own allocated work is
+      // surfaced first so test/demo requirements cannot crowd an assigned requirement out.
+      .orderBy(
+        sql`case when ${recruitmentRequirementState.ownerUserId} = ${userId} then 0 else 1 end`,
+        desc(job.updatedAt),
+      )
+      .limit(16),
 
     db.select({ count: count() })
       .from(recruitmentRequirementState)
       .innerJoin(job, eq(job.id, recruitmentRequirementState.jobId))
       .where(and(
         eq(recruitmentRequirementState.organizationId, orgId),
-        eq(job.status, 'open'),
+        activeRequirementCondition,
         sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} < ${now}::date`,
         ...(visibleRequirementIds ? [inArray(recruitmentRequirementState.jobId, visibleRequirementIds)] : []),
       )),
@@ -129,7 +150,7 @@ export default defineEventHandler(async (event) => {
       .innerJoin(job, eq(job.id, recruitmentRequirementState.jobId))
       .where(and(
         eq(recruitmentRequirementState.organizationId, orgId),
-        eq(job.status, 'open'),
+        activeRequirementCondition,
         sql`${recruitmentRequirementState.targetClosureDate} is not null and ${recruitmentRequirementState.targetClosureDate} >= ${now}::date and ${recruitmentRequirementState.targetClosureDate} <= ${sevenDays}::date`,
         ...(visibleRequirementIds ? [inArray(recruitmentRequirementState.jobId, visibleRequirementIds)] : []),
       )),
