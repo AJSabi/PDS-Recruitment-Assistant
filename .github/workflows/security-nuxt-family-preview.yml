@@ -1,4 +1,4 @@
-name: Promote Nuxt Source Compatibility
+name: Security Nuxt Family Preview
 
 on:
   push:
@@ -8,12 +8,12 @@ on:
       - .github/workflows/security-nuxt-family-preview.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  promote:
+  preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
       BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
@@ -21,65 +21,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: feature/pds-skill-matrix
-          fetch-depth: 2
-
-      - name: Guard promotion parent
-        shell: bash
-        run: |
-          test "$(git rev-parse HEAD^)" = "c2523de459ab394e51c09c4f059a665090ebb05a"
-          test "$(git branch --show-current)" = "feature/pds-skill-matrix"
-
-      - name: Apply proven compatibility edits
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs')
-
-          const appPath = 'app/app.vue'
-          let app = fs.readFileSync(appPath, 'utf8')
-          const oldLink = '  link: i18nHead.value.link,'
-          const oldMeta = '  meta: i18nHead.value.meta,'
-          if (!app.includes(oldLink) || !app.includes(oldMeta)) throw new Error('Expected i18n head lines not found')
-          app = app.replace(oldLink, '  link: i18nHead.value.link as any,')
-          app = app.replace(oldMeta, '  meta: i18nHead.value.meta as any,')
-          fs.writeFileSync(appPath, app)
-
-          const files = [
-            'app/components/PdsJdSkillMatrix.vue',
-            'app/pages/dashboard/jobs/[id]/index.vue',
-            'app/pages/dashboard/jobs/[id]/pds-ranking.vue',
-            'app/pages/dashboard/jobs/[id]/pds-register.vue',
-            'app/pages/dashboard/pds-candidates.vue',
-          ]
-          let replacements = 0
-          const pattern = /((?:\w+Error)|error)\?\.data\?\.statusMessage/g
-          for (const file of files) {
-            let source = fs.readFileSync(file, 'utf8')
-            source = source.replace(pattern, (_match, name) => {
-              replacements += 1
-              return `(${name}?.data as { statusMessage?: string } | undefined)?.statusMessage`
-            })
-            fs.writeFileSync(file, source)
-          }
-          if (replacements !== 6) throw new Error(`Expected 6 request-error typing replacements, got ${replacements}`)
-          console.log(`Applied ${replacements + 2} proven compatibility edits.`)
-          NODE
-
-      - name: Verify change scope
-        shell: bash
-        run: |
-          git diff --check
-          expected=$(printf '%s\n' \
-            'app/app.vue' \
-            'app/components/PdsJdSkillMatrix.vue' \
-            'app/pages/dashboard/jobs/[id]/index.vue' \
-            'app/pages/dashboard/jobs/[id]/pds-ranking.vue' \
-            'app/pages/dashboard/jobs/[id]/pds-register.vue' \
-            'app/pages/dashboard/pds-candidates.vue' | sort)
-          actual=$(git diff --name-only | sort)
-          test "$actual" = "$expected"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -87,10 +28,65 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install current dependency graph
+      - name: Use npm 11 resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
+      - name: Generate deterministic Nuxt-family candidate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          pkg.dependencies.nuxt = '4.5.2'
+          pkg.devDependencies = {
+            ...(pkg.devDependencies || {}),
+            cac: '7.0.0'
+          }
+          pkg.overrides = {
+            ...(pkg.overrides || {}),
+            '@nuxt/devtools': '3.4.1',
+            '@nuxt/vite-builder': '4.5.2',
+            '@nuxt/nitro-server': '4.5.2',
+            '@nuxt/kit': '4.5.2',
+            '@nuxt/schema': '4.5.2',
+            unhead: '3.4.0',
+            '@bomb.sh/tab': '0.0.22'
+          }
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
+          NODE
+          npm install --include=dev --ignore-scripts
+          rm -rf node_modules
+
+      - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
-      - name: Typecheck current framework
+      - name: Inspect Nuxt dependency graph
+        shell: bash
+        run: |
+          npm ls cac unhead @bomb.sh/tab --all || true
+          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all || true
+
+      - name: Audit candidate
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
+          const counts = report.metadata?.vulnerabilities ?? {}
+          console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
+          }
+          if ((counts.critical ?? 0) > 0 || (counts.high ?? 0) > 3 || (counts.total ?? 0) > 4) {
+            console.error('Nuxt candidate did not meet the validated security ceiling.')
+            process.exit(1)
+          }
+          NODE
+
+      - name: Typecheck
         run: npm run typecheck
 
       - name: Unit tests
@@ -101,16 +97,11 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Commit proven source compatibility
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/app.vue \
-            app/components/PdsJdSkillMatrix.vue \
-            'app/pages/dashboard/jobs/[id]/index.vue' \
-            'app/pages/dashboard/jobs/[id]/pds-ranking.vue' \
-            'app/pages/dashboard/jobs/[id]/pds-register.vue' \
-            app/pages/dashboard/pds-candidates.vue
-          git commit -m "fix: prepare source for Nuxt 4.5"
-          git push origin HEAD:feature/pds-skill-matrix
+      - name: Upload candidate manifest and lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuxt-family-security-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
