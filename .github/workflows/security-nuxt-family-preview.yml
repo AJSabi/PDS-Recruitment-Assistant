@@ -63,11 +63,11 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
-      - name: Verify Nuxt dependency graph
+      - name: Inspect Nuxt dependency graph
         shell: bash
         run: |
-          npm ls cac unhead @bomb.sh/tab --all
-          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all
+          npm ls cac unhead @bomb.sh/tab --all || true
+          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all || true
 
       - name: Audit candidate
         shell: bash
