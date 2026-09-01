@@ -53,9 +53,7 @@ jobs:
             '@nuxt/kit': '4.5.2',
             '@nuxt/schema': '4.5.2',
             unhead: '3.4.0',
-            '@bomb.sh/tab': {
-              cac: '6.7.14'
-            }
+            '@bomb.sh/tab': '0.0.22'
           }
           fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
           NODE
@@ -68,7 +66,7 @@ jobs:
       - name: Verify Nuxt dependency graph
         shell: bash
         run: |
-          npm ls cac unhead --all
+          npm ls cac unhead @bomb.sh/tab --all
           npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all
 
       - name: Audit candidate
