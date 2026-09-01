@@ -1,0 +1,24 @@
+name: Logging Audit
+
+on:
+  push:
+    branches:
+      - tmp/logging-audit
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Inventory runtime logging
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== console usage (server first) ==='
+          grep -RInE --include='*.ts' --include='*.js' --include='*.vue' 'console\.(log|info|warn|error|debug)' server app 2>/dev/null || true
+          echo '=== Sentry / capture usage ==='
+          grep -RInE --include='*.ts' --include='*.js' --include='*.vue' 'capture(Exception|Message)|Sentry|useLogger|logger\.' server app 2>/dev/null || true
+          echo '=== potentially sensitive values adjacent to logging/error reporting ==='
+          grep -RInE --include='*.ts' --include='*.js' --include='*.vue' '(console\.|capture(Exception|Message)|logger\.).*(email|phone|resume|cv|candidate|prompt|response|content|body|token|secret|password|apiKey|api_key)' server app 2>/dev/null || true
+          echo '=== error construction with raw upstream details ==='
+          grep -RInE --include='*.ts' 'statusMessage:.*(err|error|message|body|response)|message:.*(err|error)\.message' server 2>/dev/null || true
