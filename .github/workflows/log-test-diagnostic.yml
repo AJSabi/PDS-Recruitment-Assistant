@@ -1,0 +1,34 @@
+name: Log Test Diagnostic
+
+on:
+  push:
+    branches:
+      - tmp/log-test
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install --global npm@11.6.0
+      - run: npm ci --include=dev
+      - name: Run targeted tests
+        shell: bash
+        run: |
+          set +e
+          npm test -- tests/unit/log-redaction.test.ts tests/unit/pds-release-hardening.test.ts > test-output.txt 2>&1
+          code=$?
+          cat test-output.txt
+          echo "$code" > test-exit-code.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: log-test-diagnostic
+          path: |
+            test-output.txt
+            test-exit-code.txt
+          retention-days: 1
