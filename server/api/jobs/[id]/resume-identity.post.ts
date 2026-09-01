@@ -1,6 +1,7 @@
 import { fileTypeFromBuffer } from 'file-type'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { parseDocument, extractResumeText } from '../../../utils/resume-parser'
+import { inferResumeIdentity } from '../../../utils/resumeIdentity'
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE, sanitizeFilename } from '../../../utils/schemas/document'
 import { z } from 'zod'
 
@@ -12,28 +13,6 @@ function detectLegacyDoc(buffer: Buffer, mimeType?: string) {
   return buffer.length >= 8 && Buffer.compare(buffer.subarray(0, 8), magic) === 0
     ? 'application/msword'
     : undefined
-}
-
-function inferIdentity(resumeText: string, filename: string) {
-  const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0]?.toLowerCase() ?? null
-  const phoneCandidate = resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/)?.[0]?.trim() ?? null
-  const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
-
-  const possibleName = resumeText.split('\n').slice(0, 15).map(line => line.trim()).find((line) => {
-    if (!line || line.length > 80 || /@|\d/.test(line)) return false
-    if (/resume|curriculum|profile|summary|experience|contact|email|phone/i.test(line)) return false
-    const words = line.split(/\s+/).filter(Boolean)
-    return words.length >= 2 && words.length <= 5 && words.every(word => /^[A-Za-z.'-]+$/.test(word))
-  })
-  const filenameName = filename.replace(/\.(pdf|docx?|rtf)$/i, '').replace(/[_-]+/g, ' ').trim()
-  const parts = (possibleName || filenameName).split(/\s+/).filter(Boolean)
-
-  return {
-    firstName: parts[0]?.slice(0, 100) ?? '',
-    lastName: parts.slice(1).join(' ').slice(0, 100),
-    email,
-    phone,
-  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -63,6 +42,6 @@ export default defineEventHandler(async (event) => {
 
   return {
     filename: sanitizeFilename(filePart.filename),
-    identity: inferIdentity(resumeText, filePart.filename),
+    identity: inferResumeIdentity(resumeText, filePart.filename),
   }
 })
