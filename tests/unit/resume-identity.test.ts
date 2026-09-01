@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inferResumeIdentity } from '../../server/utils/resumeIdentity'
+import { inferResumeIdentity, isNameSupportedByResume } from '../../server/utils/resumeIdentity'
 
 describe('resume identity inference', () => {
   it('prefers an explicit full name label', () => {
@@ -48,5 +48,20 @@ describe('resume identity inference', () => {
     const result = inferResumeIdentity(`Professional Summary\nExperienced technology professional`, 'Resume_Senior_Account_Manager_Final.pdf')
     expect(result.firstName).toBe('')
     expect(result.lastName).toBe('')
+  })
+
+  it('accepts an AI proposed name only when the resume supports it', () => {
+    const resume = `Rahul Sharma\nEnterprise Account Executive\nrahul.sharma@example.com\nExperience`
+    expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(true)
+  })
+
+  it('rejects an AI hallucinated name even when it looks syntactically valid', () => {
+    const resume = `Rahul Sharma\nEnterprise Account Executive\nrahul.sharma@example.com\nExperience`
+    expect(isNameSupportedByResume('Amit', 'Verma', resume)).toBe(false)
+  })
+
+  it('rejects a designation supplied by AI as a name', () => {
+    const resume = `Senior Network Security Engineer\nProfessional Summary\ncontact@example.com`
+    expect(isNameSupportedByResume('Senior Network', 'Security Engineer', resume)).toBe(false)
   })
 })
