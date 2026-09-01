@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           parent=$(git rev-parse HEAD^)
-          if [ "${parent}" != "776006f3d95c1cb03e2c45ff024d3ac8f7c783ad" ]; then
+          if [ "${parent}" != "05331c9b7f8a9a9cf923525180be2274c92f0e44" ]; then
             echo "Unexpected migration parent: ${parent}"
             exit 1
           fi
@@ -63,8 +63,21 @@ jobs:
           git grep -Il -z "lucide-vue-next" -- 'app/**/*.vue' 'app/**/*.ts' 'app/**/*.tsx' 'app/**/*.js' 'app/**/*.jsx' 2>/dev/null \
             | xargs -0 -r sed -i "s/from 'lucide-vue-next'/from '@lucide\/vue'/g; s/from \"lucide-vue-next\"/from \"@lucide\/vue\"/g"
 
+          # Lucide v1 intentionally removed brand icons. Preserve repository-link semantics
+          # with the supported neutral GitBranch icon in the three former Github usages.
+          for file in \
+            app/components/PreviewUpsellModal.vue \
+            app/components/PublicNavBar.vue \
+            app/pages/index.vue; do
+            sed -i 's/\bGithub\b/GitBranch/g' "$file"
+          done
+
           if git grep -n "lucide-vue-next" -- app 2>/dev/null; then
             echo 'Deprecated Lucide source imports remain after migration'
+            exit 1
+          fi
+          if git grep -nE "import .*\bGithub\b.*from ['\"]@lucide/vue['\"]" -- app 2>/dev/null; then
+            echo 'Removed Github brand icon is still imported from @lucide/vue'
             exit 1
           fi
 
@@ -123,10 +136,27 @@ jobs:
             exit 1
           fi
           git diff --check
-          if git diff -- app | grep -E '^[+-]' | grep -vE '^(---|\+\+\+|[-+].*from ["'"'](@lucide/vue|lucide-vue-next)["'"'])'; then
-            echo 'Non-import source changes detected in Lucide migration'
-            exit 1
-          fi
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process')
+          const fs = require('node:fs')
+          const special = new Set([
+            'app/components/PreviewUpsellModal.vue',
+            'app/components/PublicNavBar.vue',
+            'app/pages/index.vue',
+          ])
+          const changed = execFileSync('git', ['diff', '--name-only', '--', 'app'], { encoding: 'utf8' })
+            .trim().split('\n').filter(Boolean)
+          for (const file of changed) {
+            const original = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8' })
+            let expected = original
+              .replaceAll("from 'lucide-vue-next'", "from '@lucide/vue'")
+              .replaceAll('from "lucide-vue-next"', 'from "@lucide/vue"')
+            if (special.has(file)) expected = expected.replaceAll('Github', 'GitBranch')
+            const actual = fs.readFileSync(file, 'utf8')
+            if (actual !== expected) throw new Error(`Unexpected source change in ${file}`)
+          }
+          console.log(`Verified ${changed.length} source files contain only approved Lucide migration edits`)
+          NODE
 
       - name: Commit validated Lucide migration
         shell: bash
