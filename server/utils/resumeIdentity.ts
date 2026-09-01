@@ -20,7 +20,7 @@ function normalizeCandidateName(value: string): string {
     .trim()
 }
 
-function isPlausibleName(value: string): boolean {
+export function isPlausibleResumeName(value: string): boolean {
   const candidate = normalizeCandidateName(value)
   if (!candidate || candidate.length < 2 || candidate.length > 80) return false
   if (/@|https?:|www\.|\d/u.test(candidate)) return false
@@ -30,8 +30,6 @@ function isPlausibleName(value: string): boolean {
   if (words.length < 1 || words.length > 6) return false
 
   return words.every((word) => {
-    // Unicode letters support Indian and international names. Initials, apostrophes
-    // and hyphenated names are accepted, but punctuation-only tokens are not.
     return /^(?:\p{L}[\p{L}\p{M}'’.-]*|\p{L}\.)$/u.test(word)
       && /\p{L}/u.test(word)
   })
@@ -54,14 +52,14 @@ function filenameName(filename: string): string | null {
     .replace(/\s+/g, ' ')
     .trim()
 
-  return isPlausibleName(cleaned) ? normalizeCandidateName(cleaned) : null
+  return isPlausibleResumeName(cleaned) ? normalizeCandidateName(cleaned) : null
 }
 
 function emailLocalName(email: string | null): string | null {
   if (!email) return null
   const local = email.split('@')[0] ?? ''
   const cleaned = local.replace(/[._-]+/g, ' ').replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim()
-  return isPlausibleName(cleaned) ? normalizeCandidateName(cleaned) : null
+  return isPlausibleResumeName(cleaned) ? normalizeCandidateName(cleaned) : null
 }
 
 function normalizedTokens(value: string): string[] {
@@ -81,15 +79,21 @@ function corroborates(candidate: string, other: string | null): boolean {
   return overlap >= Math.min(2, a.length, b.length)
 }
 
+/** Verify that an AI-proposed name is plausible and explicitly represented in resume text. */
+export function isNameSupportedByResume(firstName: string, lastName: string, resumeText: string): boolean {
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+  if (!isPlausibleResumeName(fullName)) return false
+
+  const proposed = normalizedTokens(fullName)
+  if (!proposed.length) return false
+  const topText = resumeText.split('\n').slice(0, 30).join(' ')
+  const textTokens = normalizedTokens(topText)
+  return proposed.every(token => textTokens.includes(token))
+}
+
 /**
  * Infer candidate identity conservatively from parsed resume text.
- *
- * A wrong candidate name is more damaging than an unresolved one. Therefore:
- * 1. Explicit "Name:" labels win when syntactically plausible.
- * 2. Header candidates must look like human names and reject role/title vocabulary.
- * 3. Header candidates are preferred when corroborated by filename/email identity.
- * 4. Filename-only fallback is accepted only when it is itself a clean human name.
- * 5. Otherwise the name remains blank for recruiter review rather than guessing.
+ * A wrong candidate name is more damaging than an unresolved one.
  */
 export function inferResumeIdentity(resumeText: string, filename: string): InferredResumeIdentity {
   const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0]?.toLowerCase() ?? null
@@ -101,7 +105,7 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
   for (const line of lines) {
     const match = line.match(NAME_LABEL)
     const labelled = match?.[1] ? normalizeCandidateName(match[1]) : null
-    if (labelled && isPlausibleName(labelled)) {
+    if (labelled && isPlausibleResumeName(labelled)) {
       return { ...splitName(labelled), email, phone, nameConfidence: 'high', nameSource: 'label' }
     }
   }
@@ -109,7 +113,7 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
   const fromFilename = filenameName(filename)
   const fromEmail = emailLocalName(email)
   const headerCandidates = lines
-    .filter(line => line.length <= 80 && isPlausibleName(line))
+    .filter(line => line.length <= 80 && isPlausibleResumeName(line))
     .map(normalizeCandidateName)
 
   const corroboratedHeader = headerCandidates.find(name => corroborates(name, fromFilename) || corroborates(name, fromEmail))
@@ -117,9 +121,7 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
     return { ...splitName(corroboratedHeader), email, phone, nameConfidence: 'high', nameSource: 'header' }
   }
 
-  // A very early clean header is usually the name, but keep confidence medium
-  // unless another source corroborates it. This avoids accepting later section text.
-  const earlyHeader = lines.slice(0, 5).find(line => isPlausibleName(line))
+  const earlyHeader = lines.slice(0, 5).find(line => isPlausibleResumeName(line))
   if (earlyHeader) {
     return { ...splitName(earlyHeader), email, phone, nameConfidence: 'medium', nameSource: 'header' }
   }
