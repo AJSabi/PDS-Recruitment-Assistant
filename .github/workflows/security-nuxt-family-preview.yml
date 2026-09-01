@@ -12,9 +12,13 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
+      BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
+      BETTER_AUTH_URL: http://localhost:3000
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,18 +29,57 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Inspect Nuxt 4.5.2 dependency family
+      - name: Generate pinned Nuxt-family candidate
         shell: bash
         run: |
-          echo 'Nuxt 4.5.2 dependencies:'
-          npm view nuxt@4.5.2 dependencies --json
-          echo 'Nuxt 4.5.2 optional dependencies:'
-          npm view nuxt@4.5.2 optionalDependencies --json || true
-          echo 'Target package versions and dependency metadata:'
-          for pkg in '@nuxt/devtools' '@nuxt/vite-builder' '@nuxt/nitro-server' 'rolldown'; do
-            echo "=== $pkg ==="
-            npm view "$pkg" version --json
-          done
-          echo 'Current Nuxt family:'
-          npm ci --include=dev >/dev/null
-          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server rolldown --all || true
+          npm pkg set dependencies.nuxt=4.5.2
+          npm pkg set 'overrides.@nuxt/devtools=3.4.1'
+          npm pkg set 'overrides.@nuxt/vite-builder=4.5.2'
+          npm pkg set 'overrides.@nuxt/nitro-server=4.5.2'
+          npm pkg set 'overrides.@nuxt/kit=4.5.2'
+          npm pkg set 'overrides.@nuxt/schema=4.5.2'
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Install candidate graph
+        run: npm ci --include=dev
+
+      - name: Inspect resolved Nuxt family
+        run: npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all || true
+
+      - name: Audit candidate
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
+          const counts = report.metadata?.vulnerabilities ?? {}
+          console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
+          }
+          if ((counts.critical ?? 0) > 0) {
+            console.error('Critical vulnerabilities remain in Nuxt-family candidate.')
+            process.exit(1)
+          }
+          NODE
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Upload candidate manifest and lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuxt-family-security-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
