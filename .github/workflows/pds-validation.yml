@@ -27,29 +27,18 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Generate targeted security dependency candidate
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Inspect Better Auth security peer graph
         shell: bash
         run: |
-          npm pkg set 'dependencies.nuxt=4.5.2'
-          npm pkg set 'dependencies.better-auth=1.6.30'
-          npm pkg set 'dependencies.@better-auth/sso=1.6.30'
-          npm pkg set 'overrides.tar=7.5.22'
-          npm pkg set 'overrides.axios=1.20.0'
-          rm package-lock.json
-          npm install --package-lock-only --ignore-scripts
-
-      - name: Upload security dependency candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-dependency-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Install candidate dependencies
-        run: npm ci --include=dev
+          echo 'Current installed graph:'
+          npm ls better-auth @better-auth/sso @better-auth/core @better-auth/utils better-call --all || true
+          echo 'Target Better Auth dependencies:'
+          npm view better-auth@1.6.30 dependencies peerDependencies --json
+          echo 'Target SSO dependencies and peers:'
+          npm view @better-auth/sso@1.6.30 dependencies peerDependencies --json
 
       - name: Dependency security audit summary
         shell: bash
