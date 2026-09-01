@@ -28,8 +28,9 @@ jobs:
       - name: Guard migration parent
         shell: bash
         run: |
-          if [ "${GITHUB_SHA}" != "820a089c5d6d27688bc8db790c8e7bb965f894c2" ]; then
-            echo "Unexpected migration parent: ${GITHUB_SHA}"
+          parent=$(git rev-parse HEAD^)
+          if [ "${parent}" != "776006f3d95c1cb03e2c45ff024d3ac8f7c783ad" ]; then
+            echo "Unexpected migration parent: ${parent}"
             exit 1
           fi
 
@@ -62,7 +63,7 @@ jobs:
           git grep -Il -z "lucide-vue-next" -- 'app/**/*.vue' 'app/**/*.ts' 'app/**/*.tsx' 'app/**/*.js' 'app/**/*.jsx' 2>/dev/null \
             | xargs -0 -r sed -i "s/from 'lucide-vue-next'/from '@lucide\/vue'/g; s/from \"lucide-vue-next\"/from \"@lucide\/vue\"/g"
 
-          if git grep -n "lucide-vue-next" -- app ':!package-lock.json' 2>/dev/null; then
+          if git grep -n "lucide-vue-next" -- app 2>/dev/null; then
             echo 'Deprecated Lucide source imports remain after migration'
             exit 1
           fi
