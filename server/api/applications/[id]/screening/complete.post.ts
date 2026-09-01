@@ -3,6 +3,7 @@ import { recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEv
 import { completeScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
+import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -74,6 +75,21 @@ export default defineEventHandler(async (event) => {
   }).where(eq(recruitmentApplicationProfile.id, profile.id))
 
   await syncApplicationStatusForRecruitmentStage(orgId, applicationId, finalStatus)
+  await recordRecruitmentStageChange({
+    organizationId: orgId,
+    applicationId,
+    from: profile.lastStatus,
+    to: finalStatus,
+    actorId: session.user.id,
+    source: 'screening_completion',
+    summary: body.conversationBrief,
+    metadata: {
+      finalFit: body.finalFit,
+      recommendedNextStep: body.recommendedNextStep,
+      requirementRevision,
+      ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
+    },
+  })
   await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
     applicationId,
