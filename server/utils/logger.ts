@@ -66,58 +66,88 @@ function getLogger() {
 interface LogContext {
   posthog_distinct_id?: string
   org_id?: string
-  [key: string]: string | number | boolean | null | undefined
+  [key: string]: unknown
+}
+
+const SENSITIVE_ATTRIBUTE_KEY = /(email|phone|password|secret|token|authorization|cookie|request[_-]?body|response[_-]?body|content|prompt|resume|\bcv\b|api[_-]?key)/i
+const MAX_LOG_STRING_LENGTH = 500
+
+/**
+ * Redact common credentials and direct identifiers from a diagnostic string.
+ * This is a last line of defence for upstream error messages; callers should
+ * still avoid intentionally placing candidate/resume payloads in telemetry.
+ */
+export function sanitizeLogString(value: string): string {
+  const redacted = value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED_EMAIL]')
+    .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, '[REDACTED_PHONE]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]')
+    .replace(/([?&](?:token|secret|password|key|code)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, '$1[REDACTED]:[REDACTED]@')
+
+  return redacted.length > MAX_LOG_STRING_LENGTH
+    ? `${redacted.slice(0, MAX_LOG_STRING_LENGTH)}…[TRUNCATED]`
+    : redacted
 }
 
 /**
- * Emit an INFO-level structured log to PostHog.
+ * Keep telemetry attributes scalar and redact values whose keys indicate PII,
+ * credentials, candidate content, or model payloads. Nested objects/arrays are
+ * intentionally not serialized into production logs.
  */
+export function sanitizeLogAttributes(attributes?: Record<string, unknown>): AnyValueMap | undefined {
+  if (!attributes) return undefined
+
+  const sanitized: Record<string, string | number | boolean> = {}
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value === undefined || value === null) continue
+
+    if (SENSITIVE_ATTRIBUTE_KEY.test(key)) {
+      sanitized[key] = '[REDACTED]'
+      continue
+    }
+
+    if (typeof value === 'string') {
+      sanitized[key] = sanitizeLogString(value)
+    }
+    else if (typeof value === 'number' || typeof value === 'boolean') {
+      sanitized[key] = value
+    }
+    else {
+      sanitized[key] = '[NON_SCALAR_OMITTED]'
+    }
+  }
+  return sanitized as AnyValueMap
+}
+
+function emitLog(severityNumber: SeverityNumber, severityText: string, body: string, attributes?: LogContext): void {
+  try {
+    getLogger().emit({
+      severityNumber,
+      severityText,
+      body: sanitizeLogString(body),
+      attributes: sanitizeLogAttributes(attributes),
+    })
+  }
+  catch {
+    // Logging must never break the primary operation
+  }
+}
+
+/** Emit an INFO-level structured log to PostHog. */
 export function logInfo(body: string, attributes?: LogContext): void {
-  try {
-    getLogger().emit({
-      severityNumber: SeverityNumber.INFO,
-      severityText: 'INFO',
-      body,
-      attributes: attributes as AnyValueMap,
-    })
-  }
-  catch {
-    // Logging must never break the primary operation
-  }
+  emitLog(SeverityNumber.INFO, 'INFO', body, attributes)
 }
 
-/**
- * Emit a WARN-level structured log to PostHog.
- */
+/** Emit a WARN-level structured log to PostHog. */
 export function logWarn(body: string, attributes?: LogContext): void {
-  try {
-    getLogger().emit({
-      severityNumber: SeverityNumber.WARN,
-      severityText: 'WARN',
-      body,
-      attributes: attributes as AnyValueMap,
-    })
-  }
-  catch {
-    // Logging must never break the primary operation
-  }
+  emitLog(SeverityNumber.WARN, 'WARN', body, attributes)
 }
 
-/**
- * Emit an ERROR-level structured log to PostHog.
- */
+/** Emit an ERROR-level structured log to PostHog. */
 export function logError(body: string, attributes?: LogContext): void {
-  try {
-    getLogger().emit({
-      severityNumber: SeverityNumber.ERROR,
-      severityText: 'ERROR',
-      body,
-      attributes: attributes as AnyValueMap,
-    })
-  }
-  catch {
-    // Logging must never break the primary operation
-  }
+  emitLog(SeverityNumber.ERROR, 'ERROR', body, attributes)
 }
 
 /**
@@ -126,17 +156,7 @@ export function logError(body: string, attributes?: LogContext): void {
  * by default — enable selectively for specific services.
  */
 export function logDebug(body: string, attributes?: LogContext): void {
-  try {
-    getLogger().emit({
-      severityNumber: SeverityNumber.DEBUG,
-      severityText: 'DEBUG',
-      body,
-      attributes: attributes as AnyValueMap,
-    })
-  }
-  catch {
-    // Logging must never break the primary operation
-  }
+  emitLog(SeverityNumber.DEBUG, 'DEBUG', body, attributes)
 }
 
 /**
@@ -147,7 +167,7 @@ export function requestAttributes(event: H3Event): Record<string, string | undef
   const headers = getHeaders(event)
   // Extract PostHog session_id from the cookie for Session Replay linking.
   // The ph_<project>_posthog cookie stores a JSON blob; $sesid contains the
-  // active session ID.  We also extract the distinct_id for identity linking.
+  // active session ID. We also extract the distinct_id for identity linking.
   let sessionId: string | undefined
   let cookieDistinctId: string | undefined
   try {
