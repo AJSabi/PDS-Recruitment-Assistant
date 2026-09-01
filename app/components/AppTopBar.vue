@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   BarChart3,
+  Bot,
   Briefcase,
   ChevronDown,
   ChevronLeft,
@@ -52,6 +53,7 @@ const mainNav = computed(() => [
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
   ...(canManageRequirements.value ? [
     { label: 'Analytics', to: '/dashboard/management-analytics', icon: BarChart3, exact: true },
+    { label: 'AI Usage', to: '/dashboard/management-ai-usage', icon: Bot, exact: true },
     { label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true },
   ] : []),
   canManageRequirements.value
