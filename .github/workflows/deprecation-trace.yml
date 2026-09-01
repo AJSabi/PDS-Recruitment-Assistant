@@ -1,0 +1,51 @@
+name: Trace Dependency Deprecations
+
+on:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+    paths:
+      - .github/workflows/deprecation-trace.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Use validated npm resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
+      - name: Install exact dependency graph
+        run: npm ci --include=dev
+
+      - name: Trace deprecated packages
+        shell: bash
+        run: |
+          for pkg in \
+            '@esbuild-kit/esm-loader' \
+            '@esbuild-kit/core-utils' \
+            'prebuild-install' \
+            'node-domexception' \
+            'vue-i18n'; do
+            echo "===== ${pkg} ====="
+            npm explain "${pkg}" || true
+            echo
+          done
+
+      - name: Show top-level dependency versions
+        run: npm ls --depth=0
