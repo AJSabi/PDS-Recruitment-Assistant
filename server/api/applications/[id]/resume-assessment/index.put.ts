@@ -3,6 +3,7 @@ import { recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirem
 import { saveResumeAssessmentSchema } from '../../../../utils/schemas/resumeAssessment'
 import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
+import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -44,6 +45,17 @@ export default defineEventHandler(async (event) => {
   const [assessment] = existing ? await db.update(resumeAssessment).set(values).where(eq(resumeAssessment.id, existing.id)).returning() : await db.insert(resumeAssessment).values(values).returning()
 
   await db.update(recruitmentApplicationProfile).set({ lastStatus: 'resume_reviewed', statusDate: now, resumeBrief: body.candidateSnapshot ?? profile.resumeBrief, provisionalFitScore, priority, mandatoryMatch: body.mandatoryMatch ?? null, keyStrength: body.keyStrength ?? null, mainGap: body.mainGap ?? null, requirementVersionAssessed: requirementRevision, nextAction: 'Recruiter screening / comparison', lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id))
+  if (profile.lastStatus !== 'resume_reviewed') {
+    await recordRecruitmentStageChange({
+      organizationId: orgId,
+      applicationId,
+      from: profile.lastStatus,
+      to: 'resume_reviewed',
+      actorId: session.user.id,
+      source: 'resume_assessment',
+      metadata: { requirementRevision },
+    })
+  }
   await db.insert(recruitmentEvidence).values({ organizationId: orgId, applicationId, type: 'resume', summary: body.candidateSnapshot ?? 'Resume assessment updated', payload: { event: 'resume_assessed', selectedResumeDocumentId: profile.selectedResumeDocumentId, provisionalFitScore, priority, mandatoryMatch: body.mandatoryMatch ?? null, requirementRevision, source: body.source }, createdBy: session.user.id })
   await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
