@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
 import { startScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -58,6 +59,16 @@ export default defineEventHandler(async (event) => {
 
   await db.update(recruitmentApplicationProfile).set({ lastStatus: 'recruiter_screening_pending', statusDate: now, nextAction: 'Complete recruiter screening', lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id))
   await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'recruiter_screening_pending')
+  if (profile.lastStatus !== 'recruiter_screening_pending') {
+    await recordRecruitmentStageChange({
+      organizationId: orgId,
+      applicationId,
+      from: profile.lastStatus,
+      to: 'recruiter_screening_pending',
+      actorId: session.user.id,
+      source: 'screening_start',
+    })
+  }
 
   return { screening, currentQuestion: body.questions[0], progress: { answered: 0, total: body.questions.length } }
 })
