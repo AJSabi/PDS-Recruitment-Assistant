@@ -14,7 +14,6 @@ const HONORIFIC = /^(?:mr|mrs|ms|miss|dr|prof)\.?\s+/iu
 const HEADER_SEGMENT_SEPARATOR = /[|•·]+/u
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu
 const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/giu
-const LINKEDIN_PATTERN = /\b(?:linkedin(?:\.com)?\/in\/)?[A-Za-z0-9._-]+(?=\s*$)/iu
 const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{8,}\d)/gu
 
 function normalizeCandidateName(value: string): string {
@@ -91,9 +90,9 @@ function corroborates(candidate: string, other: string | null): boolean {
 }
 
 /**
- * Remove contact artifacts that PDF/DOCX text extraction often places on the same
- * visual line as the candidate's name. We only remove strongly structured contact
- * forms; arbitrary prose is never stripped into a name candidate.
+ * Remove contact artifacts that PDF/DOCX extraction often places on the same visual
+ * line as a person's name. Only strongly structured contact forms are removed;
+ * arbitrary prose is never transformed into a name candidate.
  */
 function stripContactNoise(value: string): string {
   return value
@@ -106,16 +105,16 @@ function stripContactNoise(value: string): string {
     .trim()
 }
 
-function addCandidate(target: string[], value: string) {
+function candidateFromSegment(value: string): string | null {
   const normalized = normalizeCandidateName(stripContactNoise(value))
-  if (normalized.length <= 80 && isPlausibleResumeName(normalized)) target.push(normalized)
+  return normalized.length <= 80 && isPlausibleResumeName(normalized) ? normalized : null
 }
 
 /**
  * Extract self-contained header segments that could reasonably carry a name.
- * The extended window supports two-column/layout-heavy resumes whose PDF text order
- * emits contact/sidebar content before the visual name. Candidates beyond the early
- * header are used only with filename/email corroboration by inferResumeIdentity.
+ * The wider window supports two-column/layout-heavy resumes whose extraction order
+ * emits contact/sidebar content before the visual name. Later candidates still need
+ * independent filename/email corroboration before inferResumeIdentity accepts them.
  */
 function headerNameCandidates(resumeText: string, lineLimit = 40): { name: string, lineIndex: number }[] {
   const candidates: Array<{ name: string, lineIndex: number }> = []
@@ -127,16 +126,14 @@ function headerNameCandidates(resumeText: string, lineLimit = 40): { name: strin
 
     const labelled = line.match(NAME_LABEL)?.[1]
     if (labelled) {
-      const names: string[] = []
-      addCandidate(names, labelled)
-      for (const name of names) candidates.push({ name, lineIndex })
+      const name = candidateFromSegment(labelled)
+      if (name) candidates.push({ name, lineIndex })
       continue
     }
 
     for (const segment of line.split(HEADER_SEGMENT_SEPARATOR)) {
-      const names: string[] = []
-      addCandidate(names, segment)
-      for (const name of names) candidates.push({ name, lineIndex })
+      const name = candidateFromSegment(segment)
+      if (name) candidates.push({ name, lineIndex })
     }
   }
 
@@ -151,8 +148,7 @@ function headerNameCandidates(resumeText: string, lineLimit = 40): { name: strin
 /**
  * Verify that an AI-proposed name is plausible and represented as one coherent
  * name-bearing segment in the resume header. Merely finding individual name tokens
- * on unrelated lines is insufficient. A wider layout window is allowed only when
- * the complete proposed name appears on one coherent line/segment.
+ * on unrelated lines is insufficient.
  */
 export function isNameSupportedByResume(firstName: string, lastName: string, resumeText: string): boolean {
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
@@ -170,12 +166,12 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
   const phoneCandidate = resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/u)?.[0]?.trim() ?? null
   const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
 
-  const lines = resumeText.split('\n').slice(0, 40).map(line => line.trim()).filter(Boolean)
+  const lines = resumeText.split('\n').slice(0, 25).map(line => line.trim()).filter(Boolean)
 
-  for (const line of lines.slice(0, 25)) {
+  for (const line of lines) {
     const match = line.match(NAME_LABEL)
-    const labelled = match?.[1] ? normalizeCandidateName(stripContactNoise(match[1])) : null
-    if (labelled && isPlausibleResumeName(labelled)) {
+    const labelled = match?.[1] ? candidateFromSegment(match[1]) : null
+    if (labelled) {
       return { ...splitName(labelled), email, phone, nameConfidence: 'high', nameSource: 'label' }
     }
   }
@@ -189,13 +185,8 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
     return { ...splitName(corroboratedHeader.name), email, phone, nameConfidence: 'high', nameSource: 'header' }
   }
 
-  // Only the early visual/header area may establish a name without external
-  // corroboration, and even there it must be a clean coherent name segment.
-  const uncorroboratedEarly = headerCandidates.filter(candidate => candidate.lineIndex < 8)
-  if (uncorroboratedEarly.length === 1 && !fromFilename && !fromEmail) {
-    return { ...splitName(uncorroboratedEarly[0].name), email, phone, nameConfidence: 'medium', nameSource: 'header' }
-  }
-
+  // Never accept a superficially name-like header merely because it appears early.
+  // Locations, employers and other short text frequently satisfy syntactic name rules.
   if (fromFilename) {
     const filenameAppearsInHeader = headerCandidates.some(({ name }) => sameName(name, fromFilename))
     if (filenameAppearsInHeader || corroborates(fromFilename, fromEmail)) {
