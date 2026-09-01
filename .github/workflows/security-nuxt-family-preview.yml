@@ -34,13 +34,17 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Generate scoped Nuxt-family candidate
+      - name: Generate deterministic Nuxt-family candidate
         shell: bash
         run: |
           node <<'NODE'
           const fs = require('node:fs')
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
           pkg.dependencies.nuxt = '4.5.2'
+          pkg.devDependencies = {
+            ...(pkg.devDependencies || {}),
+            cac: '7.0.0'
+          }
           pkg.overrides = {
             ...(pkg.overrides || {}),
             '@nuxt/devtools': '3.4.1',
