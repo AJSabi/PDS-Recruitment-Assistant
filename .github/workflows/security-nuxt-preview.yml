@@ -1,4 +1,4 @@
-name: Security Override Preview
+name: Security Override Promotion
 
 on:
   workflow_dispatch:
@@ -9,10 +9,10 @@ on:
       - .github/workflows/security-nuxt-preview.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  preview:
+  promote:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: feature/pds-skill-matrix
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -48,8 +50,9 @@ jobs:
           const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
           const counts = report.metadata?.vulnerabilities ?? {}
           console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
-          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
-            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
+          if ((counts.critical ?? 0) > 1 || (counts.high ?? 0) > 8 || (counts.total ?? 0) > 11) {
+            console.error('Security candidate regressed beyond the validated audit ceiling.')
+            process.exit(1)
           }
           NODE
 
@@ -64,11 +67,15 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Upload candidate manifest and lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-override-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Commit validated manifest and lockfile
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No dependency changes to commit.'
+            exit 0
+          fi
+          git commit -m "fix: refresh transitive security overrides"
+          git push origin HEAD:feature/pds-skill-matrix
