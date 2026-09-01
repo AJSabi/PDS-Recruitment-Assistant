@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import {
   application,
+  applicationSource,
   job,
   recruitmentApplicationProfile,
   recruitmentEvidence,
@@ -8,11 +9,13 @@ import {
   recruiterScreeningSession,
   user,
 } from '../../database/schema'
+import { recruitmentSourceFromPersistence, recruitmentSourceLabel } from '../../utils/recruitmentSource'
 import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const ACTIVE_REQUIREMENT_STATUSES = ['draft', 'open'] as const
 const TERMINAL_STAGES = ['closed', 'joined', 'not_proceeding'] as const
 const HISTORICAL_TELEMETRY_START = new Date('2026-09-01T05:28:41.000Z')
+const SOURCE_EFFECTIVENESS_START = new Date('2026-09-01T05:55:20.000Z')
 
 type StageEventPayload = {
   event?: unknown
@@ -110,13 +113,79 @@ function buildHistoricalConversions(rows: Array<{ applicationId: string; payload
   }
 }
 
+function buildSourceEffectiveness(
+  sourceRows: Array<{ applicationId: string; channel: string; utmSource: string | null }>,
+  stageRows: Array<{ applicationId: string; payload: Record<string, unknown> | null }>,
+) {
+  const sourceByApplication = new Map<string, ReturnType<typeof recruitmentSourceFromPersistence>>()
+  for (const row of sourceRows) sourceByApplication.set(row.applicationId, recruitmentSourceFromPersistence(row.channel, row.utmSource))
+
+  const reachedByStage = new Map<string, Set<string>>()
+  for (const stage of ['recruiter_screening_completed', 'hiring_manager_round_pending', 'offer_stage', 'joined']) reachedByStage.set(stage, new Set())
+  for (const row of stageRows) {
+    if (!sourceByApplication.has(row.applicationId)) continue
+    const payload = (row.payload ?? {}) as StageEventPayload
+    if (payload.event !== 'stage_changed' && payload.event !== 'stage_confirmed') continue
+    if (typeof payload.to !== 'string') continue
+    reachedByStage.get(payload.to)?.add(row.applicationId)
+  }
+
+  const grouped = new Map<string, {
+    key: string
+    label: string
+    profiles: Set<string>
+    screened: Set<string>
+    interviews: Set<string>
+    offers: Set<string>
+    joined: Set<string>
+  }>()
+
+  for (const [applicationId, source] of sourceByApplication.entries()) {
+    const group = grouped.get(source) ?? {
+      key: source,
+      label: recruitmentSourceLabel(source),
+      profiles: new Set<string>(),
+      screened: new Set<string>(),
+      interviews: new Set<string>(),
+      offers: new Set<string>(),
+      joined: new Set<string>(),
+    }
+    group.profiles.add(applicationId)
+    if (reachedByStage.get('recruiter_screening_completed')?.has(applicationId)) group.screened.add(applicationId)
+    if (reachedByStage.get('hiring_manager_round_pending')?.has(applicationId)) group.interviews.add(applicationId)
+    if (reachedByStage.get('offer_stage')?.has(applicationId)) group.offers.add(applicationId)
+    if (reachedByStage.get('joined')?.has(applicationId)) group.joined.add(applicationId)
+    grouped.set(source, group)
+  }
+
+  return {
+    telemetryStartAt: SOURCE_EFFECTIVENESS_START.toISOString(),
+    attributedApplications: sourceByApplication.size,
+    rows: [...grouped.values()]
+      .map(group => ({
+        key: group.key,
+        label: group.label,
+        profiles: group.profiles.size,
+        screened: group.screened.size,
+        interviews: group.interviews.size,
+        offers: group.offers.size,
+        joined: group.joined.size,
+        screeningRate: percentage(group.screened.size, group.profiles.size),
+        interviewRate: percentage(group.interviews.size, group.screened.size),
+        offerRate: percentage(group.offers.size, group.interviews.size),
+        joiningRate: percentage(group.joined.size, group.offers.size),
+      }))
+      .sort((a, b) => b.profiles - a.profiles || a.label.localeCompare(b.label)),
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['read'], candidate: ['read'], application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const userId = session.user.id
   await assertRecruitmentAdmin(orgId, userId)
 
-  const [requirementRows, historicalStageRows] = await Promise.all([
+  const [requirementRows, historicalStageRows, sourceRows, sourceStageRows] = await Promise.all([
     db.select({
       jobId: job.id,
       title: job.title,
@@ -147,9 +216,30 @@ export default defineEventHandler(async (event) => {
         eq(recruitmentEvidence.type, 'stage_change'),
         gte(recruitmentEvidence.createdAt, HISTORICAL_TELEMETRY_START),
       )),
+    db.select({
+      applicationId: applicationSource.applicationId,
+      channel: applicationSource.channel,
+      utmSource: applicationSource.utmSource,
+    })
+      .from(applicationSource)
+      .where(and(
+        eq(applicationSource.organizationId, orgId),
+        gte(applicationSource.createdAt, SOURCE_EFFECTIVENESS_START),
+      )),
+    db.select({
+      applicationId: recruitmentEvidence.applicationId,
+      payload: recruitmentEvidence.payload,
+    })
+      .from(recruitmentEvidence)
+      .where(and(
+        eq(recruitmentEvidence.organizationId, orgId),
+        eq(recruitmentEvidence.type, 'stage_change'),
+        gte(recruitmentEvidence.createdAt, SOURCE_EFFECTIVENESS_START),
+      )),
   ])
 
   const historicalConversions = buildHistoricalConversions(historicalStageRows)
+  const sourceEffectiveness = buildSourceEffectiveness(sourceRows, sourceStageRows)
   const requirementIds = requirementRows.map(row => row.jobId)
   if (requirementIds.length === 0) {
     return {
@@ -167,10 +257,11 @@ export default defineEventHandler(async (event) => {
       ageing: { days0To30: 0, days31To45: 0, days46To60: 0, days61Plus: 0, tatNotStarted: 0 },
       stageFunnel: [],
       historicalConversions,
+      sourceEffectiveness,
       recruiters: [],
       requirements: [],
       limitations: {
-        sourceEffectiveness: 'Application source is not captured as a governed field yet.',
+        sourceEffectiveness: 'Source effectiveness includes only applications attributed through the governed source taxonomy from the source-governance baseline. Older or legacy attribution is excluded.',
         historicalConversion: 'Historical conversion rates use governed stage-change events recorded from the telemetry baseline only. Earlier incomplete history is excluded.',
       },
     }
@@ -335,6 +426,7 @@ export default defineEventHandler(async (event) => {
     ageing,
     stageFunnel,
     historicalConversions,
+    sourceEffectiveness,
     recruiters,
     requirements: requirements.sort((a, b) => {
       if (a.overdue !== b.overdue) return a.overdue ? -1 : 1
@@ -342,7 +434,7 @@ export default defineEventHandler(async (event) => {
       return Number(b.openDays ?? -1) - Number(a.openDays ?? -1)
     }),
     limitations: {
-      sourceEffectiveness: 'Application source is not captured as a governed field yet.',
+      sourceEffectiveness: 'Source effectiveness includes only applications attributed through the governed source taxonomy from the source-governance baseline. Older or legacy attribution is excluded.',
       historicalConversion: 'Historical conversion rates use governed stage-change events recorded from the telemetry baseline only. Earlier incomplete history is excluded.',
     },
   }
