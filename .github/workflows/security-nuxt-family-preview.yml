@@ -88,7 +88,7 @@ jobs:
             'app/pages/dashboard/pds-candidates.vue',
           ]
           let replacements = 0
-          const pattern = /(\w+Error)\?\.data\?\.statusMessage/g
+          const pattern = /((?:\w+Error)|error)\?\.data\?\.statusMessage/g
           for (const file of files) {
             let source = fs.readFileSync(file, 'utf8')
             source = source.replace(pattern, (_match, name) => {
