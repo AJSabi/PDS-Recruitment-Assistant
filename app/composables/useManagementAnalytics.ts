@@ -33,6 +33,11 @@ export function useManagementAnalytics() {
     observedApplications: 0,
     metrics: [],
   })
+  const sourceEffectiveness = computed(() => data.value?.sourceEffectiveness ?? {
+    telemetryStartAt: '',
+    attributedApplications: 0,
+    rows: [],
+  })
   const recruiters = computed(() => data.value?.recruiters ?? [])
   const requirements = computed(() => data.value?.requirements ?? [])
   const limitations = computed(() => data.value?.limitations ?? {
@@ -47,6 +52,7 @@ export function useManagementAnalytics() {
     ageing,
     stageFunnel,
     historicalConversions,
+    sourceEffectiveness,
     recruiters,
     requirements,
     limitations,
