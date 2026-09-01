@@ -22,21 +22,33 @@ import {
   MAX_DOCUMENTS_PER_CANDIDATE,
   MIME_TO_EXTENSION,
   sanitizeFilename,
+  isFilenameCompatibleWithMime,
 } from '../../../../utils/schemas/document'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 const FINAL_POOL_THRESHOLD = 50
+const MAX_BULK_RESUMES = 20
 
 function detectLegacyDoc(buffer: Buffer, mimeType?: string) {
-  if (mimeType) return mimeType
+  if (mimeType && mimeType !== 'application/x-cfb') return mimeType
   const magic = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
-  return buffer.length >= 8 && Buffer.compare(buffer.subarray(0, 8), magic) === 0 ? 'application/msword' : undefined
+  return buffer.length >= 8 && Buffer.compare(buffer.subarray(0, 8), magic) === 0 ? 'application/msword' : mimeType
 }
 
 function phoneDigits(phone?: string | null) {
   const digits = (phone ?? '').replace(/\D/g, '')
   return digits.length >= 10 ? digits : null
+}
+
+function emailIsInResume(email: string | null, resumeText: string): boolean {
+  return Boolean(email && resumeText.toLowerCase().includes(email.trim().toLowerCase()))
+}
+
+function phoneIsInResume(phone: string | null, resumeText: string): boolean {
+  const digits = phoneDigits(phone)
+  if (!digits) return false
+  return resumeText.replace(/\D/g, '').includes(digits)
 }
 
 export default defineEventHandler(async (event) => {
@@ -72,6 +84,9 @@ export default defineEventHandler(async (event) => {
   const formData = await readMultipartFormData(event)
   const fileParts = (formData ?? []).filter(part => (part.name === 'file' || part.name === 'files') && part.data && part.filename)
   if (!fileParts.length) throw createError({ statusCode: 400, statusMessage: 'Attach at least one PDF, DOC or DOCX resume.' })
+  if (fileParts.length > MAX_BULK_RESUMES) {
+    throw createError({ statusCode: 413, statusMessage: `Upload a maximum of ${MAX_BULK_RESUMES} resumes at a time.` })
+  }
 
   const config = await loadAiConfig(orgId, { purpose: 'analysis' })
   const providerConfig = {
@@ -91,12 +106,16 @@ export default defineEventHandler(async (event) => {
     let storedCandidateId: string | null = null
     try {
       const fileBuffer = filePart.data
+      if (fileBuffer.length === 0) throw new Error('Empty resume files cannot be uploaded')
       if (fileBuffer.length > MAX_FILE_SIZE) throw new Error(`File exceeds ${MAX_FILE_SIZE / 1024 / 1024} MB limit`)
 
       const detected = await fileTypeFromBuffer(fileBuffer)
       const mimeType = detectLegacyDoc(fileBuffer, detected?.mime)
       if (!mimeType || !ALLOWED_MIME_TYPES.includes(mimeType as typeof ALLOWED_MIME_TYPES[number])) {
         throw new Error('Invalid file type. Allowed: PDF, DOC, DOCX')
+      }
+      if (!isFilenameCompatibleWithMime(filePart.filename!, mimeType)) {
+        throw new Error('Filename extension does not match the detected file type')
       }
 
       const parsedContent = await parseDocument(fileBuffer, mimeType)
@@ -112,13 +131,16 @@ export default defineEventHandler(async (event) => {
       }
 
       try {
-        const aiIdentity = await extractCandidateIdentity(providerConfig, resumeText)
-        const aiNameSupported = isNameSupportedByResume(aiIdentity.firstName, aiIdentity.lastName, resumeText)
+        // Identity/contact details are normally near the resume header. Limiting the
+        // untrusted text reduces prompt-injection surface and unnecessary AI cost.
+        const identityText = resumeText.slice(0, 20_000)
+        const aiIdentity = await extractCandidateIdentity(providerConfig, identityText)
+        const aiNameSupported = isNameSupportedByResume(aiIdentity.firstName, aiIdentity.lastName, identityText)
         identity = {
           firstName: aiNameSupported ? aiIdentity.firstName : fallback.firstName,
           lastName: aiNameSupported ? aiIdentity.lastName : fallback.lastName,
-          email: aiIdentity.email || fallback.email,
-          phone: aiIdentity.phone || fallback.phone,
+          email: emailIsInResume(aiIdentity.email, identityText) ? aiIdentity.email : fallback.email,
+          phone: phoneIsInResume(aiIdentity.phone, identityText) ? aiIdentity.phone : fallback.phone,
         }
       } catch {
         // Deterministic extraction remains the safe fallback.
