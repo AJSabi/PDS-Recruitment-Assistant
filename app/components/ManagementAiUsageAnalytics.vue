@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Bot, CircleDollarSign, Cpu, Loader2, RefreshCw, TriangleAlert } from 'lucide-vue-next'
 
-const { data, status, error, refresh } = useFetch('/api/dashboard/ai-usage', {
+const { data, status, error, refresh: refreshData } = useFetch('/api/dashboard/ai-usage', {
   key: 'pds-management-ai-usage',
   headers: useRequestHeaders(['cookie']),
 })
+const refresh = () => refreshData()
 
 function formatNumber(value?: number | null) {
   return new Intl.NumberFormat().format(Number(value ?? 0))
