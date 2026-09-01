@@ -37,13 +37,23 @@ jobs:
       - name: Generate scoped Nuxt-family candidate
         shell: bash
         run: |
-          npm pkg set dependencies.nuxt=4.5.2
-          npm pkg set 'overrides.@nuxt/devtools=3.4.1'
-          npm pkg set 'overrides.@nuxt/vite-builder=4.5.2'
-          npm pkg set 'overrides.@nuxt/nitro-server=4.5.2'
-          npm pkg set 'overrides.@nuxt/kit=4.5.2'
-          npm pkg set 'overrides.@nuxt/schema=4.5.2'
-          npm pkg set 'overrides.@bomb.sh/tab.cac=6.7.14'
+          node <<'NODE'
+          const fs = require('node:fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          pkg.dependencies.nuxt = '4.5.2'
+          pkg.overrides = {
+            ...(pkg.overrides || {}),
+            '@nuxt/devtools': '3.4.1',
+            '@nuxt/vite-builder': '4.5.2',
+            '@nuxt/nitro-server': '4.5.2',
+            '@nuxt/kit': '4.5.2',
+            '@nuxt/schema': '4.5.2',
+            '@bomb.sh/tab': {
+              cac: '6.7.14'
+            }
+          }
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
+          NODE
           npm install --include=dev --ignore-scripts
           rm -rf node_modules
 
