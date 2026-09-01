@@ -52,6 +52,7 @@ jobs:
             '@nuxt/nitro-server': '4.5.2',
             '@nuxt/kit': '4.5.2',
             '@nuxt/schema': '4.5.2',
+            unhead: '3.4.0',
             '@bomb.sh/tab': {
               cac: '6.7.14'
             }
@@ -64,10 +65,10 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
-      - name: Verify cac and Nuxt graph
+      - name: Verify Nuxt dependency graph
         shell: bash
         run: |
-          npm ls cac --all
+          npm ls cac unhead --all
           npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all
 
       - name: Audit candidate
