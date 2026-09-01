@@ -1,8 +1,9 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray } from 'drizzle-orm'
 import {
   application,
   job,
   recruitmentApplicationProfile,
+  recruitmentEvidence,
   recruitmentRequirementState,
   recruiterScreeningSession,
   user,
@@ -11,6 +12,14 @@ import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const ACTIVE_REQUIREMENT_STATUSES = ['draft', 'open'] as const
 const TERMINAL_STAGES = ['closed', 'joined', 'not_proceeding'] as const
+const HISTORICAL_TELEMETRY_START = new Date('2026-09-01T05:28:41.000Z')
+
+type StageEventPayload = {
+  event?: unknown
+  from?: unknown
+  to?: unknown
+  source?: unknown
+}
 
 function startOfToday() {
   const value = new Date()
@@ -36,33 +45,111 @@ function stageGroup(stage?: string | null) {
   return 'closed_or_not_proceeding'
 }
 
+function percentage(numerator: number, denominator: number) {
+  return denominator ? Math.round((numerator / denominator) * 1000) / 10 : null
+}
+
+function buildHistoricalConversions(rows: Array<{ applicationId: string; payload: Record<string, unknown> | null }>) {
+  const reached = new Map<string, Set<string>>()
+  const stages = [
+    'hiring_manager_round_pending',
+    'offer_stage',
+    'offer_accepted',
+    'joined',
+  ] as const
+  for (const stage of stages) reached.set(stage, new Set())
+
+  for (const row of rows) {
+    const payload = (row.payload ?? {}) as StageEventPayload
+    if (payload.event !== 'stage_changed' && payload.event !== 'stage_confirmed') continue
+    if (typeof payload.to !== 'string') continue
+    reached.get(payload.to)?.add(row.applicationId)
+  }
+
+  const hmApplications = reached.get('hiring_manager_round_pending') ?? new Set<string>()
+  const offerApplications = reached.get('offer_stage') ?? new Set<string>()
+  const acceptedApplications = reached.get('offer_accepted') ?? new Set<string>()
+  const joinedApplications = reached.get('joined') ?? new Set<string>()
+
+  const offerFromHm = [...hmApplications].filter(id => offerApplications.has(id)).length
+  const acceptedFromOffer = [...offerApplications].filter(id => acceptedApplications.has(id)).length
+  const joinedFromAccepted = [...acceptedApplications].filter(id => joinedApplications.has(id)).length
+
+  return {
+    telemetryStartAt: HISTORICAL_TELEMETRY_START.toISOString(),
+    observedApplications: new Set(rows.map(row => row.applicationId)).size,
+    metrics: [
+      {
+        key: 'interviewToOffer',
+        label: 'Interview to Offer',
+        numerator: offerFromHm,
+        denominator: hmApplications.size,
+        rate: percentage(offerFromHm, hmApplications.size),
+        numeratorLabel: 'Reached Offer',
+        denominatorLabel: 'Reached Hiring Manager',
+      },
+      {
+        key: 'offerToAcceptance',
+        label: 'Offer to Acceptance',
+        numerator: acceptedFromOffer,
+        denominator: offerApplications.size,
+        rate: percentage(acceptedFromOffer, offerApplications.size),
+        numeratorLabel: 'Offer Accepted',
+        denominatorLabel: 'Reached Offer',
+      },
+      {
+        key: 'joiningConversion',
+        label: 'Joining Conversion',
+        numerator: joinedFromAccepted,
+        denominator: acceptedApplications.size,
+        rate: percentage(joinedFromAccepted, acceptedApplications.size),
+        numeratorLabel: 'Joined',
+        denominatorLabel: 'Offer Accepted',
+      },
+    ],
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['read'], candidate: ['read'], application: ['read'] })
   const orgId = session.session.activeOrganizationId
   const userId = session.user.id
   await assertRecruitmentAdmin(orgId, userId)
 
-  const requirementRows = await db.select({
-    jobId: job.id,
-    title: job.title,
-    status: job.status,
-    ownerUserId: recruitmentRequirementState.ownerUserId,
-    ownerName: user.name,
-    assignmentDate: recruitmentRequirementState.assignmentDate,
-    targetClosureDate: recruitmentRequirementState.targetClosureDate,
-    closedAt: recruitmentRequirementState.closedAt,
-  })
-    .from(job)
-    .leftJoin(recruitmentRequirementState, and(
-      eq(recruitmentRequirementState.jobId, job.id),
-      eq(recruitmentRequirementState.organizationId, orgId),
-    ))
-    .leftJoin(user, eq(user.id, recruitmentRequirementState.ownerUserId))
-    .where(and(
-      eq(job.organizationId, orgId),
-      inArray(job.status, [...ACTIVE_REQUIREMENT_STATUSES]),
-    ))
+  const [requirementRows, historicalStageRows] = await Promise.all([
+    db.select({
+      jobId: job.id,
+      title: job.title,
+      status: job.status,
+      ownerUserId: recruitmentRequirementState.ownerUserId,
+      ownerName: user.name,
+      assignmentDate: recruitmentRequirementState.assignmentDate,
+      targetClosureDate: recruitmentRequirementState.targetClosureDate,
+      closedAt: recruitmentRequirementState.closedAt,
+    })
+      .from(job)
+      .leftJoin(recruitmentRequirementState, and(
+        eq(recruitmentRequirementState.jobId, job.id),
+        eq(recruitmentRequirementState.organizationId, orgId),
+      ))
+      .leftJoin(user, eq(user.id, recruitmentRequirementState.ownerUserId))
+      .where(and(
+        eq(job.organizationId, orgId),
+        inArray(job.status, [...ACTIVE_REQUIREMENT_STATUSES]),
+      )),
+    db.select({
+      applicationId: recruitmentEvidence.applicationId,
+      payload: recruitmentEvidence.payload,
+    })
+      .from(recruitmentEvidence)
+      .where(and(
+        eq(recruitmentEvidence.organizationId, orgId),
+        eq(recruitmentEvidence.type, 'stage_change'),
+        gte(recruitmentEvidence.createdAt, HISTORICAL_TELEMETRY_START),
+      )),
+  ])
 
+  const historicalConversions = buildHistoricalConversions(historicalStageRows)
   const requirementIds = requirementRows.map(row => row.jobId)
   if (requirementIds.length === 0) {
     return {
@@ -79,11 +166,12 @@ export default defineEventHandler(async (event) => {
       },
       ageing: { days0To30: 0, days31To45: 0, days46To60: 0, days61Plus: 0, tatNotStarted: 0 },
       stageFunnel: [],
+      historicalConversions,
       recruiters: [],
       requirements: [],
       limitations: {
         sourceEffectiveness: 'Application source is not captured as a governed field yet.',
-        historicalConversion: 'Current stage is available, but complete historical stage-entry telemetry is not yet reliable enough for true conversion-rate reporting.',
+        historicalConversion: 'Historical conversion rates use governed stage-change events recorded from the telemetry baseline only. Earlier incomplete history is excluded.',
       },
     }
   }
@@ -246,6 +334,7 @@ export default defineEventHandler(async (event) => {
     },
     ageing,
     stageFunnel,
+    historicalConversions,
     recruiters,
     requirements: requirements.sort((a, b) => {
       if (a.overdue !== b.overdue) return a.overdue ? -1 : 1
@@ -254,7 +343,7 @@ export default defineEventHandler(async (event) => {
     }),
     limitations: {
       sourceEffectiveness: 'Application source is not captured as a governed field yet.',
-      historicalConversion: 'Current stage is available, but complete historical stage-entry telemetry is not yet reliable enough for true conversion-rate reporting.',
+      historicalConversion: 'Historical conversion rates use governed stage-change events recorded from the telemetry baseline only. Earlier incomplete history is excluded.',
     },
   }
 })
