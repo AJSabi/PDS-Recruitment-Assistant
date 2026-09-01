@@ -84,6 +84,7 @@ export function sanitizeLogString(value: string): string {
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]')
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]')
     .replace(/([?&](?:token|secret|password|key|code)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|api[_-]?key|token|secret|password|key|code)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
     .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, '$1[REDACTED]:[REDACTED]@')
 
   return redacted.length > MAX_LOG_STRING_LENGTH
@@ -225,7 +226,7 @@ export function logApiError(
   logError(body, {
     ...requestAttributes(event),
     posthog_distinct_id: session?.user?.id,
-    org_id: session?.session?.activeOrganizationId,
+    org_id: session?.session.activeOrganizationId,
     ...extra,
   })
 }
