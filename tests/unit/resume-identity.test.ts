@@ -73,6 +73,31 @@ describe('resume identity inference', () => {
     expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(true)
   })
 
+  it('supports extracted name plus phone and email without visual separators', () => {
+    const resume = `Rahul Sharma +91 98765 43210 rahul.sharma@example.com\nEnterprise Account Executive\nExperience`
+    expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(true)
+    const result = inferResumeIdentity(resume, 'resume.pdf')
+    expect(result.firstName).toBe('Rahul')
+    expect(result.lastName).toBe('Sharma')
+    expect(result.nameSource).toBe('header')
+  })
+
+  it('finds a corroborated name later in a layout-heavy extracted header', () => {
+    const resume = `+91 98765 43210\nrahul.sharma@example.com\nLinkedIn\nNew Delhi\nPortfolio\nCore Skills\nCisco\nCloud\nRahul Sharma\nEnterprise Account Executive\nExperience`
+    const result = inferResumeIdentity(resume, 'Rahul_Sharma_Resume.pdf')
+    expect(result.firstName).toBe('Rahul')
+    expect(result.lastName).toBe('Sharma')
+    expect(result.nameSource).toBe('header')
+    expect(result.nameConfidence).toBe('high')
+  })
+
+  it('does not trust a later name-like line without filename or email corroboration', () => {
+    const resume = `+91 98765 43210\ncontact@example.com\nLinkedIn\nNew Delhi\nPortfolio\nCore Skills\nCisco\nCloud\nRahul Sharma\nEnterprise Account Executive\nExperience`
+    const result = inferResumeIdentity(resume, 'resume.pdf')
+    expect(result.firstName).toBe('')
+    expect(result.lastName).toBe('')
+  })
+
   it('rejects an AI hallucinated name even when it looks syntactically valid', () => {
     const resume = `Rahul Sharma\nEnterprise Account Executive\nrahul.sharma@example.com\nExperience`
     expect(isNameSupportedByResume('Amit', 'Verma', resume)).toBe(false)
