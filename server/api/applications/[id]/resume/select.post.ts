@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { document, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -35,7 +36,18 @@ export default defineEventHandler(async (event) => {
   const nextAction = profile.lastStatus === 'reassess' ? 'Complete reassessment using the selected resume.' : 'Complete resume assessment against the approved requirement baseline.'
 
   const [updatedProfile] = await db.update(recruitmentApplicationProfile).set({ selectedResumeDocumentId: resume.id, lastStatus: nextStatus, ...(initialReceipt ? { statusDate: now } : {}), nextAction, lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
-  if (initialReceipt) await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'resume_received')
+  if (initialReceipt) {
+    await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'resume_received')
+    await recordRecruitmentStageChange({
+      organizationId: orgId,
+      applicationId,
+      from: profile.lastStatus,
+      to: 'resume_received',
+      actorId: session.user.id,
+      source: 'resume_selection',
+      metadata: { documentId: resume.id },
+    })
+  }
 
   const [evidence] = await db.insert(recruitmentEvidence).values({
     organizationId: orgId,
