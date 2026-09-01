@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { application, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
+import { application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
+import { applicationSourcePersistence } from '../../../utils/recruitmentSource'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -98,6 +99,14 @@ export default defineEventHandler(async (event) => {
   }).returning({ id: application.id })
   if (!createdApplication) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
 
+  const sourcePersistence = applicationSourcePersistence(body.source)
+  await db.insert(applicationSource).values({
+    organizationId: orgId,
+    applicationId: createdApplication.id,
+    channel: sourcePersistence.channel,
+    utmSource: sourcePersistence.utmSource,
+  })
+
   const [profile] = await db.insert(recruitmentApplicationProfile).values({
     organizationId: orgId,
     applicationId: createdApplication.id,
@@ -121,6 +130,7 @@ export default defineEventHandler(async (event) => {
       jobId,
       candidateEmail: candidateRecord.email,
       assignedRecruiterId: requirementState?.ownerUserId ?? null,
+      source: body.source,
       dedupeOrder: 'email_then_phone',
     },
   })
@@ -131,6 +141,7 @@ export default defineEventHandler(async (event) => {
     candidate: candidateRecord,
     applicationId: createdApplication.id,
     recruitmentProfileId: profile?.id ?? null,
+    source: body.source,
     nextStep: 'upload_resume',
   }
 })
