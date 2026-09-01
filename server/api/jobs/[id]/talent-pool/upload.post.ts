@@ -8,12 +8,13 @@ import {
   recruitmentRequirementState,
   talentPoolMatch,
 } from '../../../../database/schema'
-import { extractCandidateIdentity, type CandidateIdentity } from '../../../../utils/ai/pdsCandidateIdentity'
+import { extractCandidateIdentity } from '../../../../utils/ai/pdsCandidateIdentity'
 import { loadAiConfig } from '../../../../utils/ai/loadConfig'
 import { generatePdsResumeAssessment } from '../../../../utils/ai/pdsResumeAssessment'
 import type { SupportedProvider } from '../../../../utils/ai/provider'
 import { calculateProvisionalFit } from '../../../../utils/recruitmentScoring'
 import { parseDocument, extractResumeText } from '../../../../utils/resume-parser'
+import { inferResumeIdentity, isNameSupportedByResume } from '../../../../utils/resumeIdentity'
 import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import {
   ALLOWED_MIME_TYPES,
@@ -31,28 +32,6 @@ function detectLegacyDoc(buffer: Buffer, mimeType?: string) {
   if (mimeType) return mimeType
   const magic = Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
   return buffer.length >= 8 && Buffer.compare(buffer.subarray(0, 8), magic) === 0 ? 'application/msword' : undefined
-}
-
-function localIdentity(resumeText: string, filename: string): CandidateIdentity {
-  const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0]?.toLowerCase() ?? null
-  const phoneCandidate = resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/)?.[0]?.trim() ?? null
-  const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
-
-  const possibleName = resumeText.split('\n').slice(0, 15).map(line => line.trim()).find((line) => {
-    if (!line || line.length > 80 || /@|\d/.test(line)) return false
-    if (/resume|curriculum|profile|summary|experience|contact|email|phone/i.test(line)) return false
-    const words = line.split(/\s+/).filter(Boolean)
-    return words.length >= 2 && words.length <= 5 && words.every(word => /^[A-Za-z.'-]+$/.test(word))
-  })
-  const filenameName = filename.replace(/\.(pdf|docx?|rtf)$/i, '').replace(/[_-]+/g, ' ').trim()
-  const nameParts = (possibleName || filenameName).split(/\s+/).filter(Boolean)
-
-  return {
-    firstName: nameParts[0]?.slice(0, 100) || 'Candidate',
-    lastName: nameParts.slice(1).join(' ').slice(0, 100) || 'Unknown',
-    email,
-    phone,
-  }
 }
 
 function phoneDigits(phone?: string | null) {
@@ -124,18 +103,25 @@ export default defineEventHandler(async (event) => {
       const resumeText = extractResumeText(parsedContent)
       if (!parsedContent || !resumeText) throw new Error('No readable resume text could be extracted')
 
-      const fallback = localIdentity(resumeText, filename)
-      let identity = fallback
+      const fallback = inferResumeIdentity(resumeText, filename)
+      let identity = {
+        firstName: fallback.firstName,
+        lastName: fallback.lastName,
+        email: fallback.email,
+        phone: fallback.phone,
+      }
+
       try {
         const aiIdentity = await extractCandidateIdentity(providerConfig, resumeText)
+        const aiNameSupported = isNameSupportedByResume(aiIdentity.firstName, aiIdentity.lastName, resumeText)
         identity = {
-          firstName: aiIdentity.firstName || fallback.firstName,
-          lastName: aiIdentity.lastName || fallback.lastName,
+          firstName: aiNameSupported ? aiIdentity.firstName : fallback.firstName,
+          lastName: aiNameSupported ? aiIdentity.lastName : fallback.lastName,
           email: aiIdentity.email || fallback.email,
           phone: aiIdentity.phone || fallback.phone,
         }
       } catch {
-        identity = fallback
+        // Deterministic extraction remains the safe fallback.
       }
 
       const normalizedEmail = identity.email?.trim().toLowerCase() || null
@@ -161,6 +147,10 @@ export default defineEventHandler(async (event) => {
         if (!normalizedEmail) {
           throw new Error('No reliable email was found and the phone number does not match an existing candidate. Add contact details to the resume before importing this new candidate.')
         }
+        if (!identity.firstName) {
+          throw new Error('Candidate name could not be identified reliably. Rename the resume with the candidate name or enter the candidate manually rather than importing an uncertain identity.')
+        }
+
         const [createdCandidate] = await db.insert(candidate).values({
           organizationId: orgId,
           firstName: identity.firstName,
@@ -215,9 +205,6 @@ export default defineEventHandler(async (event) => {
         where: and(eq(talentPoolMatch.organizationId, orgId), eq(talentPoolMatch.jobId, jobId), eq(talentPoolMatch.candidateId, candidateRecord.id)),
       })
 
-      // Persist every completed AI assessment, including scores below 50%.
-      // The pool listing filters at 50%, so below-threshold rows remain hidden
-      // while preventing the same resume + requirement revision from being paid for again.
       const now = new Date()
       const values = {
         organizationId: orgId,
