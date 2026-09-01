@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BarChart3,
   Briefcase,
   ChevronDown,
   ChevronLeft,
@@ -49,7 +50,10 @@ const mainNav = computed(() => [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, exact: true },
   { label: 'Requirements', to: '/dashboard/jobs', icon: Briefcase, exact: false },
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
-  ...(canManageRequirements.value ? [{ label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true }] : []),
+  ...(canManageRequirements.value ? [
+    { label: 'Analytics', to: '/dashboard/management-analytics', icon: BarChart3, exact: true },
+    { label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true },
+  ] : []),
   canManageRequirements.value
     ? { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false }
     : { label: 'My Account', to: '/dashboard/settings/account', icon: UserRound, exact: true },
