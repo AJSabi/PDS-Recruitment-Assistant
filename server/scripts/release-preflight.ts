@@ -54,6 +54,10 @@ if (env.S3_ENDPOINT.startsWith('http://') && !env.S3_FORCE_PATH_STYLE) {
   fail('Managed production S3 endpoints must use HTTPS.')
 }
 
+if (!env.SMTP_HOST && !env.RESEND_API_KEY) {
+  fail('Production requires an email provider. Configure SMTP_HOST or RESEND_API_KEY; console email fallback is not permitted.')
+}
+
 if (process.env.GDPR_CLEANUP_ENABLED === 'true' && !env.CRON_SECRET) {
   fail('CRON_SECRET is required when GDPR_CLEANUP_ENABLED=true.')
 }
