@@ -16,7 +16,7 @@ definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Management Analytics', description: 'PDS recruitment management analytics' })
 
 const localePath = useLocalePath()
-const { summary, ageing, stageFunnel, historicalConversions, recruiters, requirements, limitations, status, error, refresh } = useManagementAnalytics()
+const { summary, ageing, stageFunnel, historicalConversions, sourceEffectiveness, recruiters, requirements, limitations, status, error, refresh } = useManagementAnalytics()
 
 const ageingRows = computed(() => [
   { label: '0–30 days', value: ageing.value.days0To30 },
@@ -32,6 +32,10 @@ const riskRequirements = computed(() => requirements.value.filter((row: any) => 
 function formatDate(value?: string | Date | null) {
   if (!value) return 'Not set'
   return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function rate(value?: number | null) {
+  return value == null ? '—' : `${value}%`
 }
 </script>
 
@@ -63,7 +67,7 @@ function formatDate(value?: string | Date | null) {
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9FD3F2]">Management Dashboard</p>
             <h1 class="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Recruitment Analytics</h1>
-            <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Organisation-wide visibility across requirement ageing, recruiter workload, candidate movement, screening completion, governed conversion and closure risk.</p>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Organisation-wide visibility across requirement ageing, recruiter workload, candidate movement, source effectiveness, governed conversion and closure risk.</p>
           </div>
           <button class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15" @click="refresh">
             <RefreshCw class="size-4" />Refresh
@@ -141,6 +145,24 @@ function formatDate(value?: string | Date | null) {
         </div>
         <div v-if="historicalConversions.observedApplications === 0" class="border-t border-surface-100 px-5 py-4 text-xs text-surface-500 dark:border-surface-800">
           No post-baseline stage events have accumulated yet. Conversion rates will populate as governed recruitment movements are recorded.
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
+        <div class="border-b border-surface-100 px-5 py-4 dark:border-surface-800">
+          <h2 class="font-bold text-[#102A43] dark:text-white">Source Effectiveness</h2>
+          <p class="mt-0.5 text-xs text-surface-400">Applications attributed through the governed source taxonomy from {{ formatDate(sourceEffectiveness.telemetryStartAt) }} onward.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[950px] text-left text-sm">
+            <thead class="bg-[#F7FBFE] text-xs uppercase tracking-wide text-surface-500 dark:bg-surface-800/50"><tr><th class="px-5 py-3">Source</th><th class="px-4 py-3 text-right">Profiles</th><th class="px-4 py-3 text-right">Screened</th><th class="px-4 py-3 text-right">Interview</th><th class="px-4 py-3 text-right">Offer</th><th class="px-4 py-3 text-right">Joined</th><th class="px-4 py-3 text-right">Screen Rate</th><th class="px-4 py-3 text-right">Interview Rate</th><th class="px-4 py-3 text-right">Offer Rate</th><th class="px-5 py-3 text-right">Join Rate</th></tr></thead>
+            <tbody class="divide-y divide-surface-100 dark:divide-surface-800">
+              <tr v-for="row in sourceEffectiveness.rows" :key="row.key" class="text-surface-700 dark:text-surface-300">
+                <td class="px-5 py-3.5 font-semibold text-[#102A43] dark:text-white">{{ row.label }}</td><td class="px-4 py-3.5 text-right">{{ row.profiles }}</td><td class="px-4 py-3.5 text-right">{{ row.screened }}</td><td class="px-4 py-3.5 text-right">{{ row.interviews }}</td><td class="px-4 py-3.5 text-right">{{ row.offers }}</td><td class="px-4 py-3.5 text-right">{{ row.joined }}</td><td class="px-4 py-3.5 text-right">{{ rate(row.screeningRate) }}</td><td class="px-4 py-3.5 text-right">{{ rate(row.interviewRate) }}</td><td class="px-4 py-3.5 text-right">{{ rate(row.offerRate) }}</td><td class="px-5 py-3.5 text-right">{{ rate(row.joiningRate) }}</td>
+              </tr>
+              <tr v-if="!sourceEffectiveness.rows.length"><td colspan="10" class="px-5 py-10 text-center text-surface-400">No post-baseline attributed applications yet.</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
