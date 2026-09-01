@@ -1,0 +1,47 @@
+export function useManagementAnalytics() {
+  const nuxtApp = useNuxtApp()
+  const { data, status, error, refresh } = useFetch('/api/dashboard/management', {
+    key: 'pds-management-analytics',
+    headers: useRequestHeaders(['cookie']),
+    getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
+  })
+
+  if (import.meta.client) {
+    onMounted(() => { void refresh() })
+  }
+
+  const summary = computed(() => data.value?.summary ?? {
+    openRequirements: 0,
+    unallocatedRequirements: 0,
+    activeCandidates: 0,
+    profilesSourced: 0,
+    screensCompleted: 0,
+    overdueRequirements: 0,
+    dueSoonRequirements: 0,
+    averageOpenDays: 0,
+  })
+  const ageing = computed(() => data.value?.ageing ?? {
+    days0To30: 0,
+    days31To45: 0,
+    days46To60: 0,
+    days61Plus: 0,
+    tatNotStarted: 0,
+  })
+  const stageFunnel = computed(() => data.value?.stageFunnel ?? [])
+  const recruiters = computed(() => data.value?.recruiters ?? [])
+  const requirements = computed(() => data.value?.requirements ?? [])
+  const limitations = computed(() => data.value?.limitations ?? {})
+
+  return {
+    data,
+    summary,
+    ageing,
+    stageFunnel,
+    recruiters,
+    requirements,
+    limitations,
+    status,
+    error,
+    refresh,
+  }
+}
