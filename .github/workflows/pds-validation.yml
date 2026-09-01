@@ -27,7 +27,27 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install dependencies
+      - name: Generate targeted security dependency candidate
+        shell: bash
+        run: |
+          npm pkg set 'dependencies.nuxt=^4.5.2'
+          npm pkg set 'dependencies.better-auth=^1.6.30'
+          npm pkg set 'dependencies.@better-auth/sso=^1.6.30'
+          npm pkg set 'overrides.tar=7.5.22'
+          npm pkg set 'overrides.axios=1.20.0'
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Upload security dependency candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-dependency-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Install candidate dependencies
         run: npm ci --include=dev
 
       - name: Dependency security audit summary
