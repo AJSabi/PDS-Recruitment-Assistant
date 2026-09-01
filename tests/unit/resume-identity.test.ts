@@ -50,14 +50,37 @@ describe('resume identity inference', () => {
     expect(result.lastName).toBe('')
   })
 
+  it('does not mistake a location for a candidate name', () => {
+    const result = inferResumeIdentity(`New Delhi India\nEnterprise Sales\ncontact@example.com\nProfessional Summary`, 'resume_final.pdf')
+    expect(result.firstName).toBe('')
+    expect(result.lastName).toBe('')
+    expect(result.nameSource).toBe('unresolved')
+  })
+
+  it('does not accept an uncorroborated name-like header line', () => {
+    const result = inferResumeIdentity(`Global Solutions Private Limited\nProfessional Summary\ncontact@example.com\nExperience`, 'resume.pdf')
+    expect(result.firstName).toBe('')
+    expect(result.lastName).toBe('')
+  })
+
   it('accepts an AI proposed name only when the resume supports it', () => {
     const resume = `Rahul Sharma\nEnterprise Account Executive\nrahul.sharma@example.com\nExperience`
+    expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(true)
+  })
+
+  it('supports a name segment sharing a visual line with contact details', () => {
+    const resume = `Rahul Sharma | +91 98765 43210 | rahul.sharma@example.com\nEnterprise Account Executive\nExperience`
     expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(true)
   })
 
   it('rejects an AI hallucinated name even when it looks syntactically valid', () => {
     const resume = `Rahul Sharma\nEnterprise Account Executive\nrahul.sharma@example.com\nExperience`
     expect(isNameSupportedByResume('Amit', 'Verma', resume)).toBe(false)
+  })
+
+  it('rejects AI names assembled from tokens on separate header lines', () => {
+    const resume = `Rahul Verma\nSharma Consulting\nrahul.verma@example.com\nExperience`
+    expect(isNameSupportedByResume('Rahul', 'Sharma', resume)).toBe(false)
   })
 
   it('rejects a designation supplied by AI as a name', () => {
