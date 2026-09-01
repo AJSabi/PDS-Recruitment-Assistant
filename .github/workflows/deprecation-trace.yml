@@ -47,5 +47,15 @@ jobs:
             echo
           done
 
-      - name: Show top-level dependency versions
-        run: npm ls --depth=0
+      - name: Check direct owner releases
+        shell: bash
+        run: |
+          for pkg in drizzle-kit better-sqlite3 googleapis @nuxtjs/i18n; do
+            echo "===== ${pkg} ====="
+            echo "installed: $(node -p "require('./node_modules/${pkg}/package.json').version")"
+            echo "latest:    $(npm view "${pkg}" version)"
+            echo
+          done
+
+      - name: Show top-level outdated packages
+        run: npm outdated || true
