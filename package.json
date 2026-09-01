@@ -12,6 +12,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "typecheck": "NODE_OPTIONS=--max-old-space-size=4096 nuxi typecheck",
+    "release:preflight": "npx tsx server/scripts/release-preflight.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
