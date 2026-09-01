@@ -1,0 +1,42 @@
+name: Security Nuxt Family Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+    paths:
+      - .github/workflows/security-nuxt-family-preview.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Inspect Nuxt 4.5.2 dependency family
+        shell: bash
+        run: |
+          echo 'Nuxt 4.5.2 dependencies:'
+          npm view nuxt@4.5.2 dependencies --json
+          echo 'Nuxt 4.5.2 optional dependencies:'
+          npm view nuxt@4.5.2 optionalDependencies --json || true
+          echo 'Target package versions and dependency metadata:'
+          for pkg in '@nuxt/devtools' '@nuxt/vite-builder' '@nuxt/nitro-server' 'rolldown'; do
+            echo "=== $pkg ==="
+            npm view "$pkg" version --json
+          done
+          echo 'Current Nuxt family:'
+          npm ci --include=dev >/dev/null
+          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server rolldown --all || true
