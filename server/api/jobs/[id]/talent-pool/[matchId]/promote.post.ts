@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import {
   application,
+  applicationSource,
   job,
   jobSkillMatrix,
   recruiterScreeningSession,
@@ -11,6 +12,7 @@ import {
   talentPoolMatch,
 } from '../../../../../database/schema'
 import { syncApplicationStatusForRecruitmentStage } from '../../../../../utils/recruitmentApplicationStatus'
+import { applicationSourcePersistence } from '../../../../../utils/recruitmentSource'
 import { assertRequirementAccess } from '../../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -89,6 +91,15 @@ export default defineEventHandler(async (event) => {
 
   if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create recruitment application.' })
 
+  const governedSource = match.source === 'database' ? 'existing_database' : 'recruiter_sourcing'
+  const sourcePersistence = applicationSourcePersistence(governedSource)
+  await db.insert(applicationSource).values({
+    organizationId: orgId,
+    applicationId: created.id,
+    channel: sourcePersistence.channel,
+    utmSource: sourcePersistence.utmSource,
+  })
+
   await db.insert(recruitmentApplicationProfile).values({
     organizationId: orgId,
     applicationId: created.id,
@@ -164,6 +175,7 @@ export default defineEventHandler(async (event) => {
       provisionalFitScore: match.score,
       priority: match.priority,
       source: match.source,
+      governedRecruitmentSource: governedSource,
       screeningQuestionsGenerated: 0,
       screeningQuestionsRequireExplicitRecruiterAction: true,
       assignedRecruiterId: requirementState?.ownerUserId ?? null,
@@ -177,6 +189,7 @@ export default defineEventHandler(async (event) => {
   return {
     applicationId: created.id,
     alreadyPromoted: false,
+    source: governedSource,
     screeningQuestions: 0,
     screeningQuestionsPending: true,
     aiCalls: 0,
