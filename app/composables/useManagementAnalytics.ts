@@ -28,6 +28,11 @@ export function useManagementAnalytics() {
     tatNotStarted: 0,
   })
   const stageFunnel = computed(() => data.value?.stageFunnel ?? [])
+  const historicalConversions = computed(() => data.value?.historicalConversions ?? {
+    telemetryStartAt: '',
+    observedApplications: 0,
+    metrics: [],
+  })
   const recruiters = computed(() => data.value?.recruiters ?? [])
   const requirements = computed(() => data.value?.requirements ?? [])
   const limitations = computed(() => data.value?.limitations ?? {
@@ -41,6 +46,7 @@ export function useManagementAnalytics() {
     summary,
     ageing,
     stageFunnel,
+    historicalConversions,
     recruiters,
     requirements,
     limitations,
