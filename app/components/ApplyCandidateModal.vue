@@ -20,15 +20,27 @@ const debouncedSearch = ref<string | undefined>(undefined)
 const selectedExistingCandidateId = ref<string | null>(null)
 const resumeFile = ref<File | null>(null)
 const isParsingResume = ref(false)
+const source = ref('recruiter_sourcing')
+const sourceOptions = [
+  { value: 'recruiter_sourcing', label: 'Recruiter Sourcing' },
+  { value: 'employee_referral', label: 'Employee Referral' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'naukri', label: 'Naukri' },
+  { value: 'career_site', label: 'Career Site' },
+  { value: 'existing_database', label: 'Existing Database' },
+  { value: 'agency', label: 'Agency' },
+  { value: 'other', label: 'Other' },
+]
 let debounceTimer: ReturnType<typeof setTimeout>
 
 watch(searchInput, (val) => {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => { debouncedSearch.value = val.trim() || undefined }, 300)
 })
-watch(mode, () => {
+watch(mode, (value) => {
   selectedExistingCandidateId.value = null
   resumeFile.value = null
+  source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'
 })
 
 const { data: candidateData, status: searchStatus } = useFetch('/api/candidates', {
@@ -138,7 +150,7 @@ async function attachCandidate(body: Record<string, unknown>) {
 
 async function applyExistingCandidate() {
   if (!selectedExistingCandidateId.value) return void (applyError.value = 'Select a candidate from the Candidate Database.')
-  await attachCandidate({ candidateId: selectedExistingCandidateId.value })
+  await attachCandidate({ candidateId: selectedExistingCandidateId.value, source: source.value })
 }
 
 async function createCandidate() {
@@ -152,6 +164,7 @@ async function createCandidate() {
     email,
     phone: newCandidate.phone.trim() || undefined,
     notes: newCandidate.notes.trim() || undefined,
+    source: source.value,
   })
 }
 </script>
@@ -219,6 +232,7 @@ async function createCandidate() {
               </div>
               <label class="block text-sm font-medium">Email <span class="text-danger-500">*</span><input v-model="newCandidate.email" :disabled="isApplying" type="email" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
               <label class="block text-sm font-medium">Phone<input v-model="newCandidate.phone" :disabled="isApplying" type="tel" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              <label class="block text-sm font-medium">Candidate source <span class="text-danger-500">*</span><select v-model="source" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm"><option v-for="option in sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
               <label class="block text-sm font-medium">Recruiter note <span class="font-normal text-surface-400">(optional)</span><textarea v-model="newCandidate.notes" :disabled="isApplying" rows="2" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
               <button :disabled="isApplying || isParsingResume" type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
             </form>
@@ -232,6 +246,7 @@ async function createCandidate() {
               <div v-if="searchStatus === 'pending'" class="p-4 text-center text-xs text-surface-400">Searching…</div>
               <div v-else-if="!candidates.length" class="p-4 text-center text-xs text-surface-400">No candidates found.</div>
             </div>
+            <label class="mt-4 block text-sm font-medium">Candidate source <span class="text-danger-500">*</span><select v-model="source" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm"><option v-for="option in sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
             <label class="mt-4 block rounded-xl border border-dashed border-surface-300 p-4 text-sm"><span class="font-semibold">Optional newer resume</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label>
             <button :disabled="isApplying || !selectedExistingCandidate" type="button" class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
           </div>
