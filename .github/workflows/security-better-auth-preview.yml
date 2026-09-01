@@ -1,4 +1,4 @@
-name: Security Better Auth Preview
+name: Promote Validated Better Auth Dependencies
 
 on:
   push:
@@ -6,13 +6,12 @@ on:
       - feature/pds-skill-matrix
     paths:
       - .github/workflows/security-better-auth-preview.yml
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  preview:
+  promote:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -22,6 +21,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: feature/pds-skill-matrix
+          fetch-depth: 2
+
+      - name: Guard promotion parent
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD^)" = "8f3ae160dd8fe167d4c728f820a6dbfd63d5daeb"
+          test "$(git branch --show-current)" = "feature/pds-skill-matrix"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,12 +42,7 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Inspect target package metadata
-        run: |
-          npm view better-auth@1.6.30 version dependencies peerDependencies --json
-          npm view @better-auth/sso@1.6.30 version dependencies peerDependencies --json
-
-      - name: Generate Better Auth candidate
+      - name: Generate validated Better Auth graph
         shell: bash
         run: |
           node <<'NODE'
@@ -62,10 +65,18 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
+      - name: Verify change scope
+        shell: bash
+        run: |
+          git diff --check
+          expected=$(printf '%s\n' package-lock.json package.json | sort)
+          actual=$(git diff --name-only | sort)
+          test "$actual" = "$expected"
+
       - name: Inspect resolved auth graph
         run: npm ls better-auth @better-auth/sso @better-auth/core @better-auth/utils @better-fetch/fetch better-call --all
 
-      - name: Audit candidate
+      - name: Audit validated graph
         shell: bash
         run: |
           npm audit --json > npm-audit.json || true
@@ -80,14 +91,8 @@ jobs:
           }
           const authNames = ['better-auth', '@better-auth/sso', '@better-auth/core', '@better-auth/utils', '@better-fetch/fetch', 'better-call']
           const vulnerableAuth = authNames.filter(name => vulnerabilities[name])
-          if (vulnerableAuth.length) {
-            console.error(`Better Auth family remains vulnerable: ${vulnerableAuth.join(', ')}`)
-            process.exit(1)
-          }
-          if ((counts.critical ?? 0) > 0 || (counts.high ?? 0) > 2 || (counts.moderate ?? 0) > 1 || (counts.total ?? 0) > 3) {
-            console.error('Candidate exceeded the known residual security ceiling.')
-            process.exit(1)
-          }
+          if (vulnerableAuth.length) process.exit(1)
+          if ((counts.critical ?? 0) > 0 || (counts.high ?? 0) > 2 || (counts.moderate ?? 0) > 1 || (counts.total ?? 0) > 3) process.exit(1)
           NODE
 
       - name: Typecheck
@@ -101,11 +106,11 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Upload candidate manifest and lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: better-auth-security-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Commit validated dependency graph
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: upgrade Better Auth family to 1.6.30"
+          git push origin HEAD:feature/pds-skill-matrix
