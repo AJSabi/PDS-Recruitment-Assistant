@@ -1,4 +1,4 @@
-name: Security Residual Trace
+name: Security Residual Remediation Preview
 
 on:
   push:
@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  trace:
+  preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
       BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
@@ -34,75 +34,67 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Clean install
-        run: npm ci --include=dev
+      - name: Confirm patched package versions
+        run: |
+          npm view brace-expansion@5.0.9 version
+          npm view js-yaml@4.3.1 version
+          npm view dompurify@3.4.14 version
 
-      - name: Trace residual dependency paths
+      - name: Generate residual security candidate
         shell: bash
         run: |
-          npm ls brace-expansion --all || true
-          npm ls js-yaml --all || true
-          npm ls dompurify --all || true
+          node <<'NODE'
+          const fs = require('node:fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          pkg.overrides = {
+            ...(pkg.overrides || {}),
+            'brace-expansion': '5.0.9',
+            'js-yaml': '4.3.1',
+            'dompurify': '3.4.14'
+          }
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`)
+          NODE
+          npm install --include=dev --ignore-scripts
+          rm -rf node_modules
 
-      - name: Capture audit detail
+      - name: Prove lockfile with clean install
+        run: npm ci --include=dev
+
+      - name: Verify patched dependency paths
+        run: |
+          npm ls brace-expansion js-yaml dompurify --all
+
+      - name: Require zero npm audit findings
         shell: bash
         run: |
           npm audit --json > npm-audit.json || true
           node <<'NODE'
           const fs = require('node:fs')
           const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
-          const targets = ['brace-expansion', 'js-yaml', 'dompurify']
-          for (const name of targets) {
-            const item = report.vulnerabilities?.[name]
-            console.log(`\n=== ${name} ===`)
-            if (!item) {
-              console.log('not vulnerable')
-              continue
-            }
-            console.log(JSON.stringify(item, null, 2))
+          const counts = report.metadata?.vulnerabilities ?? {}
+          console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
           }
+          if ((counts.total ?? 0) !== 0) process.exit(1)
           NODE
 
-      - name: Inspect parent package metadata
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs')
-          const path = require('node:path')
-          const targets = ['brace-expansion', 'js-yaml', 'dompurify']
-          function walk(dir, depth = 0) {
-            if (depth > 8) return
-            let entries = []
-            try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-            for (const entry of entries) {
-              if (!entry.isDirectory()) continue
-              const child = path.join(dir, entry.name)
-              if (entry.name === 'node_modules') {
-                const mods = fs.readdirSync(child, { withFileTypes: true })
-                for (const mod of mods) {
-                  if (!mod.isDirectory()) continue
-                  if (mod.name.startsWith('@')) {
-                    const scopeDir = path.join(child, mod.name)
-                    for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-                      if (!scoped.isDirectory()) continue
-                      inspectPackage(path.join(scopeDir, scoped.name))
-                    }
-                  } else {
-                    inspectPackage(path.join(child, mod.name))
-                  }
-                }
-              }
-              if (entry.name !== '.git' && entry.name !== '.nuxt') walk(child, depth + 1)
-            }
-          }
-          function inspectPackage(pkgDir) {
-            const pkgPath = path.join(pkgDir, 'package.json')
-            if (!fs.existsSync(pkgPath)) return
-            let pkg
-            try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) } catch { return }
-            const deps = { ...(pkg.dependencies || {}), ...(pkg.optionalDependencies || {}) }
-            const hits = targets.filter(t => Object.prototype.hasOwnProperty.call(deps, t))
-            if (hits.length) console.log(`${pkg.name}@${pkg.version} -> ${hits.map(t => `${t}@${deps[t]}`).join(', ')}`)
-          }
-          walk(process.cwd())
-          NODE
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Upload validated candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: residual-security-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
