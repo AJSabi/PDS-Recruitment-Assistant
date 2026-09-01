@@ -29,6 +29,11 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Use npm 11 resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
       - name: Generate pinned Nuxt-family candidate
         shell: bash
         run: |
