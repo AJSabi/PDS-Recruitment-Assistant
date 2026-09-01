@@ -16,7 +16,7 @@ definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Management Analytics', description: 'PDS recruitment management analytics' })
 
 const localePath = useLocalePath()
-const { summary, ageing, stageFunnel, recruiters, requirements, limitations, status, error, refresh } = useManagementAnalytics()
+const { summary, ageing, stageFunnel, historicalConversions, recruiters, requirements, limitations, status, error, refresh } = useManagementAnalytics()
 
 const ageingRows = computed(() => [
   { label: '0–30 days', value: ageing.value.days0To30 },
@@ -63,7 +63,7 @@ function formatDate(value?: string | Date | null) {
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#9FD3F2]">Management Dashboard</p>
             <h1 class="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Recruitment Analytics</h1>
-            <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Organisation-wide visibility across requirement ageing, recruiter workload, candidate movement, screening completion and closure risk.</p>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-[#D5E6F3]">Organisation-wide visibility across requirement ageing, recruiter workload, candidate movement, screening completion, governed conversion and closure risk.</p>
           </div>
           <button class="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15" @click="refresh">
             <RefreshCw class="size-4" />Refresh
@@ -128,6 +128,23 @@ function formatDate(value?: string | Date | null) {
       </section>
 
       <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
+        <div class="border-b border-surface-100 px-5 py-4 dark:border-surface-800">
+          <h2 class="font-bold text-[#102A43] dark:text-white">Governed Conversion Metrics</h2>
+          <p class="mt-0.5 text-xs text-surface-400">Only stage-change events recorded from {{ formatDate(historicalConversions.telemetryStartAt) }} are included. Earlier incomplete history is excluded.</p>
+        </div>
+        <div class="grid gap-4 p-5 md:grid-cols-3">
+          <div v-for="metric in historicalConversions.metrics" :key="metric.key" class="rounded-xl border border-surface-100 bg-[#F7FBFE] p-4 dark:border-surface-800 dark:bg-surface-800/40">
+            <p class="text-sm font-semibold text-surface-600 dark:text-surface-300">{{ metric.label }}</p>
+            <p class="mt-2 text-3xl font-bold text-[#102A43] dark:text-white">{{ metric.rate == null ? '—' : `${metric.rate}%` }}</p>
+            <p class="mt-2 text-xs text-surface-500">{{ metric.numerator }} {{ metric.numeratorLabel }} / {{ metric.denominator }} {{ metric.denominatorLabel }}</p>
+          </div>
+        </div>
+        <div v-if="historicalConversions.observedApplications === 0" class="border-t border-surface-100 px-5 py-4 text-xs text-surface-500 dark:border-surface-800">
+          No post-baseline stage events have accumulated yet. Conversion rates will populate as governed recruitment movements are recorded.
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-surface-100 px-5 py-4 dark:border-surface-800">
           <div><h2 class="font-bold text-[#102A43] dark:text-white">Recruiter Workload & Productivity</h2><p class="mt-0.5 text-xs text-surface-400">Open requirements, sourced profiles, completed screens and active candidate load.</p></div>
           <BarChart3 class="size-5 text-[#2E86C1]" />
@@ -160,7 +177,7 @@ function formatDate(value?: string | Date | null) {
 
       <section class="rounded-2xl border border-[#D9E6EF] bg-[#F7FBFE] p-5 dark:border-surface-800 dark:bg-surface-900">
         <h2 class="text-sm font-bold text-[#102A43] dark:text-white">Analytics coverage</h2>
-        <p class="mt-2 text-xs leading-5 text-surface-500">This batch intentionally reports only metrics supported by governed persisted data. {{ limitations.sourceEffectiveness }} {{ limitations.historicalConversion }}</p>
+        <p class="mt-2 text-xs leading-5 text-surface-500">This dashboard reports only metrics supported by governed persisted data. {{ limitations.sourceEffectiveness }} {{ limitations.historicalConversion }}</p>
       </section>
     </template>
   </div>
