@@ -1,4 +1,4 @@
-name: Security Nuxt Preview
+name: Security Override Preview
 
 on:
   workflow_dispatch:
@@ -32,10 +32,9 @@ jobs:
       - name: Generate targeted security candidate
         shell: bash
         run: |
-          npm pkg set dependencies.nuxt=4.5.2
           npm pkg set overrides.tar=7.5.22
           npm pkg set overrides.axios=1.20.0
-          npm update nuxt @nuxt/nitro-server @nuxt/vite-builder rolldown --package-lock-only --ignore-scripts
+          npm install --package-lock-only --ignore-scripts
 
       - name: Install candidate graph
         run: npm ci --include=dev
@@ -68,7 +67,7 @@ jobs:
       - name: Upload candidate manifest and lockfile
         uses: actions/upload-artifact@v4
         with:
-          name: nuxt-security-candidate
+          name: security-override-candidate
           path: |
             package.json
             package-lock.json
