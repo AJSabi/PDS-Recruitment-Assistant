@@ -1,4 +1,4 @@
-name: Deprecation Hardening Preview
+name: Promote Lucide Package Migration
 
 on:
   push:
@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  preview:
+  promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
       BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
@@ -22,6 +22,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Guard migration parent
+        shell: bash
+        run: |
+          if [ "${GITHUB_SHA}" != "820a089c5d6d27688bc8db790c8e7bb965f894c2" ]; then
+            echo "Unexpected migration parent: ${GITHUB_SHA}"
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -34,24 +44,51 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Generate unused Lucide removal candidate
+      - name: Confirm replacement package
         run: |
+          test "$(npm view @lucide/vue@1.37.0 version)" = "1.37.0"
+          npm view lucide-vue-next deprecated
+
+      - name: Migrate Lucide package and imports
+        shell: bash
+        run: |
+          before=$(git grep -l "lucide-vue-next" -- 'app/**/*.vue' 'app/**/*.ts' 'app/**/*.tsx' 'app/**/*.js' 'app/**/*.jsx' 2>/dev/null | wc -l)
+          echo "Source files to migrate: ${before}"
+          if [ "${before}" -lt 1 ]; then
+            echo 'Expected existing Lucide imports but found none'
+            exit 1
+          fi
+
+          git grep -Il -z "lucide-vue-next" -- 'app/**/*.vue' 'app/**/*.ts' 'app/**/*.tsx' 'app/**/*.js' 'app/**/*.jsx' 2>/dev/null \
+            | xargs -0 -r sed -i "s/from 'lucide-vue-next'/from '@lucide\/vue'/g; s/from \"lucide-vue-next\"/from \"@lucide\/vue\"/g"
+
+          if git grep -n "lucide-vue-next" -- app ':!package-lock.json' 2>/dev/null; then
+            echo 'Deprecated Lucide source imports remain after migration'
+            exit 1
+          fi
+
           npm pkg delete dependencies.lucide-vue-next
+          npm pkg set dependencies.@lucide/vue=1.37.0
           npm install --package-lock-only --ignore-scripts
 
-      - name: Prove candidate with clean install
+      - name: Prove migration with clean install
         run: |
           rm -rf node_modules
           npm ci --include=dev
 
-      - name: Verify deprecated Lucide package is absent
+      - name: Verify Lucide dependency graph
         shell: bash
         run: |
+          npm ls @lucide/vue --all
           if npm ls lucide-vue-next --all 2>/dev/null | grep -q 'lucide-vue-next@'; then
             echo 'Deprecated lucide-vue-next is still installed'
             exit 1
           fi
-          echo 'lucide-vue-next is absent from installed dependency graph'
+          node <<'NODE'
+          const pkg = require('./package.json')
+          if (pkg.dependencies?.['@lucide/vue'] !== '1.37.0') throw new Error('Expected @lucide/vue 1.37.0')
+          if (pkg.dependencies?.['lucide-vue-next']) throw new Error('Deprecated lucide-vue-next remains in package.json')
+          NODE
 
       - name: Require zero npm audit findings
         run: |
@@ -75,11 +112,26 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Upload validated candidate
-        uses: actions/upload-artifact@v6
-        with:
-          name: lucide-removal-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Verify migration diff scope
+        shell: bash
+        run: |
+          unexpected=$(git diff --name-only | grep -Ev '^(package\.json|package-lock\.json|app/.*\.(vue|ts|tsx|js|jsx))$' || true)
+          if [ -n "${unexpected}" ]; then
+            echo 'Unexpected changed files:'
+            echo "${unexpected}"
+            exit 1
+          fi
+          git diff --check
+          if git diff -- app | grep -E '^[+-]' | grep -vE '^(---|\+\+\+|[-+].*from ["'"'](@lucide/vue|lucide-vue-next)["'"'])'; then
+            echo 'Non-import source changes detected in Lucide migration'
+            exit 1
+          fi
+
+      - name: Commit validated Lucide migration
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json app
+          git commit -m 'chore: migrate to supported Lucide Vue package'
+          git push origin HEAD:feature/pds-skill-matrix
