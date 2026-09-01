@@ -1,0 +1,108 @@
+name: Security Residual Trace
+
+on:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+    paths:
+      - .github/workflows/security-residual-trace.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
+      BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
+      BETTER_AUTH_URL: http://localhost:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Use validated npm resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
+      - name: Clean install
+        run: npm ci --include=dev
+
+      - name: Trace residual dependency paths
+        shell: bash
+        run: |
+          npm ls brace-expansion --all || true
+          npm ls js-yaml --all || true
+          npm ls dompurify --all || true
+
+      - name: Capture audit detail
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
+          const targets = ['brace-expansion', 'js-yaml', 'dompurify']
+          for (const name of targets) {
+            const item = report.vulnerabilities?.[name]
+            console.log(`\n=== ${name} ===`)
+            if (!item) {
+              console.log('not vulnerable')
+              continue
+            }
+            console.log(JSON.stringify(item, null, 2))
+          }
+          NODE
+
+      - name: Inspect parent package metadata
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const targets = ['brace-expansion', 'js-yaml', 'dompurify']
+          function walk(dir, depth = 0) {
+            if (depth > 8) return
+            let entries = []
+            try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+            for (const entry of entries) {
+              if (!entry.isDirectory()) continue
+              const child = path.join(dir, entry.name)
+              if (entry.name === 'node_modules') {
+                const mods = fs.readdirSync(child, { withFileTypes: true })
+                for (const mod of mods) {
+                  if (!mod.isDirectory()) continue
+                  if (mod.name.startsWith('@')) {
+                    const scopeDir = path.join(child, mod.name)
+                    for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+                      if (!scoped.isDirectory()) continue
+                      inspectPackage(path.join(scopeDir, scoped.name))
+                    }
+                  } else {
+                    inspectPackage(path.join(child, mod.name))
+                  }
+                }
+              }
+              if (entry.name !== '.git' && entry.name !== '.nuxt') walk(child, depth + 1)
+            }
+          }
+          function inspectPackage(pkgDir) {
+            const pkgPath = path.join(pkgDir, 'package.json')
+            if (!fs.existsSync(pkgPath)) return
+            let pkg
+            try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) } catch { return }
+            const deps = { ...(pkg.dependencies || {}), ...(pkg.optionalDependencies || {}) }
+            const hits = targets.filter(t => Object.prototype.hasOwnProperty.call(deps, t))
+            if (hits.length) console.log(`${pkg.name}@${pkg.version} -> ${hits.map(t => `${t}@${deps[t]}`).join(', ')}`)
+          }
+          walk(process.cwd())
+          NODE
