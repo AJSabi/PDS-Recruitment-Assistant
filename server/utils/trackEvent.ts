@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { isDemoOrgId } from './demoOrg'
+import { sanitizeLogString } from './logger'
 
 interface TrackSession {
   user: { id: string }
@@ -124,9 +125,12 @@ export function trackServerError(
     const headers = getHeaders(event)
     const method = getMethod(event)
     const path = getRequestURL(event).pathname
+    const source = error instanceof Error ? error : new Error(String(error))
+    const safeError = new Error(sanitizeLogString(source.message), { cause: undefined })
+    safeError.name = source.name
 
     ph.captureException(
-      error instanceof Error ? error : new Error(String(error)),
+      safeError,
       userId,
       {
         $request_method: method,
