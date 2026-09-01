@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RECRUITMENT_SOURCE_VALUES } from '../recruitmentSource'
 
 export const candidateIntakeSchema = z.object({
   candidateId: z.string().min(1).optional(),
@@ -7,6 +8,7 @@ export const candidateIntakeSchema = z.object({
   email: z.string().trim().email().max(255).transform(v => v.toLowerCase()).optional(),
   phone: z.string().trim().max(50).optional(),
   notes: z.string().trim().max(2000).optional(),
+  source: z.enum(RECRUITMENT_SOURCE_VALUES).default('recruiter_sourcing'),
 }).superRefine((data, ctx) => {
   if (data.candidateId) return
   if (!data.firstName) ctx.addIssue({ code: 'custom', message: 'First name is required for a new candidate.', path: ['firstName'] })
