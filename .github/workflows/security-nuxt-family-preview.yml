@@ -1,4 +1,4 @@
-name: Security Nuxt Family Preview
+name: Promote Validated Nuxt 4.5 Dependencies
 
 on:
   push:
@@ -8,10 +8,10 @@ on:
       - .github/workflows/security-nuxt-family-preview.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  preview:
+  promote:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -21,6 +21,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: feature/pds-skill-matrix
+          fetch-depth: 2
+
+      - name: Guard promotion parent
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD^)" = "13b7d11c3d8e6ba13fd9d5618fbb1916f676e3e1"
+          test "$(git branch --show-current)" = "feature/pds-skill-matrix"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -62,11 +71,13 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
-      - name: Inspect Nuxt dependency graph
+      - name: Verify change scope
         shell: bash
         run: |
-          npm ls cac unhead @bomb.sh/tab --all || true
-          npm ls nuxt @nuxt/devtools @nuxt/vite-builder @nuxt/nitro-server @nuxt/kit @nuxt/schema rolldown --all || true
+          git diff --check
+          expected=$(printf '%s\n' package.json package-lock.json | sort)
+          actual=$(git diff --name-only | sort)
+          test "$actual" = "$expected"
 
       - name: Audit candidate
         shell: bash
@@ -77,9 +88,6 @@ jobs:
           const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
           const counts = report.metadata?.vulnerabilities ?? {}
           console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
-          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
-            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
-          }
           if ((counts.critical ?? 0) > 0 || (counts.high ?? 0) > 3 || (counts.total ?? 0) > 4) {
             console.error('Nuxt candidate did not meet the validated security ceiling.')
             process.exit(1)
@@ -97,11 +105,11 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Upload candidate manifest and lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: nuxt-family-security-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Commit validated dependency graph
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: upgrade Nuxt family to 4.5.2"
+          git push origin HEAD:feature/pds-skill-matrix
