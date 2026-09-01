@@ -34,14 +34,9 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Inspect target i18n dependency metadata
-        run: |
-          npm view @nuxtjs/i18n@10.6.0 version dependencies --json
-
-      - name: Generate deprecation cleanup candidate
+      - name: Generate unused Lucide removal candidate
         run: |
           npm pkg delete dependencies.lucide-vue-next
-          npm pkg set dependencies.@nuxtjs/i18n=10.6.0
           npm install --package-lock-only --ignore-scripts
 
       - name: Prove candidate with clean install
@@ -49,23 +44,14 @@ jobs:
           rm -rf node_modules
           npm ci --include=dev
 
-      - name: Verify deprecation targets
+      - name: Verify deprecated Lucide package is absent
         shell: bash
         run: |
           if npm ls lucide-vue-next --all 2>/dev/null | grep -q 'lucide-vue-next@'; then
             echo 'Deprecated lucide-vue-next is still installed'
             exit 1
           fi
-          npm ls @nuxtjs/i18n vue-i18n --all
-          node <<'NODE'
-          const fs = require('node:fs')
-          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
-          const vueI18n = lock.packages?.['node_modules/vue-i18n']?.version
-          console.log(`Resolved vue-i18n=${vueI18n ?? 'missing'}`)
-          if (!vueI18n || Number(vueI18n.split('.')[0]) < 11) {
-            throw new Error(`Expected vue-i18n 11+, got ${vueI18n ?? 'missing'}`)
-          }
-          NODE
+          echo 'lucide-vue-next is absent from installed dependency graph'
 
       - name: Require zero npm audit findings
         run: |
@@ -92,7 +78,7 @@ jobs:
       - name: Upload validated candidate
         uses: actions/upload-artifact@v6
         with:
-          name: deprecation-hardening-candidate
+          name: lucide-removal-candidate
           path: |
             package.json
             package-lock.json
