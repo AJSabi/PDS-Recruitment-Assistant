@@ -1,4 +1,4 @@
-name: Security Residual Remediation Preview
+name: Promote Zero-Audit Dependency Pins
 
 on:
   push:
@@ -6,13 +6,12 @@ on:
       - feature/pds-skill-matrix
     paths:
       - .github/workflows/security-residual-trace.yml
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  preview:
+  promote:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -22,6 +21,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard promotion parent
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD^)" = "79b6270089b4942c27570e41e336f49b8ab6d248"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,13 +40,7 @@ jobs:
           npm install --global npm@11.6.0
           npm --version
 
-      - name: Confirm patched package versions
-        run: |
-          npm view brace-expansion@5.0.9 version
-          npm view js-yaml@4.3.1 version
-          npm view dompurify@3.4.14 version
-
-      - name: Generate residual security candidate
+      - name: Generate validated zero-audit graph
         shell: bash
         run: |
           node <<'NODE'
@@ -60,9 +60,15 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
-      - name: Verify patched dependency paths
+      - name: Verify change scope
+        shell: bash
         run: |
-          npm ls brace-expansion js-yaml dompurify --all
+          changed="$(git status --porcelain | awk '{print $2}' | sort -u)"
+          printf '%s\n' "$changed"
+          test "$changed" = $'package-lock.json\npackage.json'
+
+      - name: Verify patched dependency paths
+        run: npm ls brace-expansion js-yaml dompurify --all
 
       - name: Require zero npm audit findings
         shell: bash
@@ -73,11 +79,9 @@ jobs:
           const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
           const counts = report.metadata?.vulnerabilities ?? {}
           console.log(`Audit counts: critical=${counts.critical ?? 0}, high=${counts.high ?? 0}, moderate=${counts.moderate ?? 0}, low=${counts.low ?? 0}, total=${counts.total ?? 0}`)
-          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
-            console.log(`[${String(item.severity).toUpperCase()}] ${name} | ${item.isDirect ? 'direct' : 'transitive'} | range=${item.range}`)
-          }
           if ((counts.total ?? 0) !== 0) process.exit(1)
           NODE
+          rm -f npm-audit.json
 
       - name: Typecheck
         run: npm run typecheck
@@ -90,11 +94,11 @@ jobs:
           NODE_ENV: production
         run: npm run build
 
-      - name: Upload validated candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: residual-security-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Commit validated dependency graph
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: eliminate residual npm audit findings"
+          git push origin HEAD:feature/pds-skill-matrix
