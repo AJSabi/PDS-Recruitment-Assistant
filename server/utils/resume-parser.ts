@@ -12,6 +12,7 @@
 import mammoth from 'mammoth'
 // @ts-ignore — word-extractor has no bundled type declarations
 import WordExtractor from 'word-extractor'
+import { MAX_FILE_SIZE } from './schemas/document'
 
 // pdfjs-dist uses browser APIs (DOMMatrix, Path2D, ImageData) at module scope.
 // In Node.js these don't exist, so we install minimal stubs before importing.
@@ -37,7 +38,8 @@ function ensurePdfjsPolyfills() {
   }
 }
 
-const PARSER_VERSION = '1.0'
+const PARSER_VERSION = '1.1'
+export const MAX_EXTRACTED_TEXT_LENGTH = 1_000_000
 
 export interface ParsedResume {
   /** Full extracted text content */
@@ -72,20 +74,42 @@ export async function parseDocument(
   buffer: Buffer,
   mimeType: string,
 ): Promise<ParsedResume | null> {
+  if (buffer.length === 0 || buffer.length > MAX_FILE_SIZE) {
+    logWarn('resume_parser.input_size_rejected', {
+      mime_type: mimeType,
+      size_bytes: buffer.length,
+    })
+    return null
+  }
+
   try {
+    let parsed: ParsedResume | null
     switch (mimeType) {
       case 'application/pdf':
-        return await parsePdf(buffer)
+        parsed = await parsePdf(buffer)
+        break
       case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        return await parseDocx(buffer)
+        parsed = await parseDocx(buffer)
+        break
       case 'application/msword':
-        return await parseDoc(buffer)
+        parsed = await parseDoc(buffer)
+        break
       default:
         logWarn('resume_parser.unsupported_mime_type', {
           mime_type: mimeType,
         })
         return null
     }
+
+    if (parsed && parsed.text.length > MAX_EXTRACTED_TEXT_LENGTH) {
+      logWarn('resume_parser.extracted_text_too_large', {
+        mime_type: mimeType,
+        character_count: parsed.text.length,
+      })
+      return null
+    }
+
+    return parsed
   }
   catch (error) {
     logError('resume_parser.parse_failed', {
@@ -99,36 +123,32 @@ export async function parseDocument(
 // ─── PDF Parser ───────────────────────────────────────────────────
 
 async function parsePdf(buffer: Buffer): Promise<ParsedResume | null> {
-  if (buffer.length === 0) return null
-
   // Polyfill browser globals before pdfjs-dist evaluates its module-level code
   ensurePdfjsPolyfills()
   const { PDFParse } = await import('pdf-parse')
 
   const parser = new PDFParse({ data: buffer })
-  const result = await parser.getText()
+  try {
+    const result = await parser.getText()
+    const text = normalizeText(result.text)
+    if (!text) return null
 
-  const text = normalizeText(result.text)
-  if (!text) {
+    return {
+      text,
+      sections: extractSections(text),
+      metadata: {
+        pageCount: result.total,
+        wordCount: countWords(text),
+        characterCount: text.length,
+        extractedAt: new Date().toISOString(),
+        parserVersion: PARSER_VERSION,
+        sourceFormat: 'pdf',
+      },
+    }
+  }
+  finally {
     await parser.destroy()
-    return null
   }
-
-  const parsed: ParsedResume = {
-    text,
-    sections: extractSections(text),
-    metadata: {
-      pageCount: result.total,
-      wordCount: countWords(text),
-      characterCount: text.length,
-      extractedAt: new Date().toISOString(),
-      parserVersion: PARSER_VERSION,
-      sourceFormat: 'pdf',
-    },
-  }
-
-  await parser.destroy()
-  return parsed
 }
 
 // ─── DOCX Parser ──────────────────────────────────────────────────
