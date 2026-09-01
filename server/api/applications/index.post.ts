@@ -1,7 +1,8 @@
 import { eq, and } from 'drizzle-orm'
-import { application, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema'
+import { application, applicationSource, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema'
 import { createApplicationSchema } from '../../utils/schemas/application'
 import { findActiveCandidate } from '../../utils/candidate-retention'
+import { applicationSourcePersistence } from '../../utils/recruitmentSource'
 import { assertRequirementAccess } from '../../utils/recruitmentVisibility'
 
 /**
@@ -56,6 +57,14 @@ export default defineEventHandler(async (event) => {
   })
   if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
 
+  const sourcePersistence = applicationSourcePersistence('recruiter_sourcing')
+  await db.insert(applicationSource).values({
+    organizationId: orgId,
+    applicationId: created.id,
+    channel: sourcePersistence.channel,
+    utmSource: sourcePersistence.utmSource,
+  })
+
   await db.insert(recruitmentApplicationProfile).values({
     organizationId: orgId,
     applicationId: created.id,
@@ -73,7 +82,7 @@ export default defineEventHandler(async (event) => {
     action: 'created',
     resourceType: 'application',
     resourceId: created.id,
-    metadata: { candidateId: body.candidateId, jobId: body.jobId, assignedRecruiterId: requirementState?.ownerUserId ?? null },
+    metadata: { candidateId: body.candidateId, jobId: body.jobId, assignedRecruiterId: requirementState?.ownerUserId ?? null, source: 'recruiter_sourcing' },
   })
 
   setResponseStatus(event, 201)
