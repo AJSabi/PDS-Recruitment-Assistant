@@ -25,11 +25,17 @@ export default defineEventHandler(async (event) => {
       { system: 'Respond with ok: true', prompt: 'Test connection', schema: testSchema, schemaName: 'TestConnection' },
     )
     return { success: true }
-  } catch (err: any) {
+  }
+  catch (err: any) {
     const message = err?.data?.statusMessage ?? err?.message ?? 'Unknown error'
+    logError('ai_config.connection_test_failed', {
+      provider: config.provider,
+      model: config.model,
+      error_message: typeof message === 'string' ? message : String(message),
+    })
     if (typeof message === 'string' && message.includes('decrypt')) {
       throw createError({ statusCode: 422, statusMessage: 'Failed to decrypt API key. If you recently rotated BETTER_AUTH_SECRET, re-enter the API key for this configuration.' })
     }
-    throw createError({ statusCode: 422, statusMessage: `Connection test failed: ${message}` })
+    throw createError({ statusCode: 422, statusMessage: 'Connection test failed. Verify the provider, model, endpoint, and API key, then try again.' })
   }
 })
