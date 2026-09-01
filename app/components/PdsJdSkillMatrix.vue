@@ -172,7 +172,7 @@ async function persist(approve: boolean) {
     <div v-if="jobFetchStatus === 'pending' || matrixFetchStatus === 'pending'" class="rounded-2xl border border-surface-200 bg-white py-12 text-center text-surface-400 dark:border-surface-800 dark:bg-surface-900">Loading JD and Skill Matrix…</div>
     <div v-else-if="jobError || matrixError" class="rounded-2xl border border-danger-200 bg-danger-50 p-4 text-danger-700">
       <p class="font-semibold">JD & Skill Matrix could not be loaded.</p>
-      <p class="mt-1 text-sm">{{ jobError?.data?.statusMessage ?? matrixError?.data?.statusMessage ?? 'Please retry. If this continues, the requirement API needs attention.' }}</p>
+      <p class="mt-1 text-sm">{{ (jobError?.data as { statusMessage?: string } | undefined)?.statusMessage ?? (matrixError?.data as { statusMessage?: string } | undefined)?.statusMessage ?? 'Please retry. If this continues, the requirement API needs attention.' }}</p>
     </div>
 
     <template v-else-if="job">

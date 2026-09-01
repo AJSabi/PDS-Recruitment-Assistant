@@ -89,7 +89,7 @@ useSeoMeta({ title: computed(() => jobData.value ? `Recruitment Pipeline — ${j
 <template>
   <div class="absolute inset-0 flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-950">
     <div v-if="isLoading" class="flex flex-1 items-center justify-center text-sm text-surface-400">Loading recruitment pipeline…</div>
-    <div v-else-if="jobError || appError" class="m-6 rounded-xl border border-danger-200 bg-danger-50 p-5 text-sm text-danger-700">{{ jobError ? 'Requirement could not be loaded.' : (appError?.data?.statusMessage ?? 'Candidate pipeline could not be loaded.') }}</div>
+    <div v-else-if="jobError || appError" class="m-6 rounded-xl border border-danger-200 bg-danger-50 p-5 text-sm text-danger-700">{{ jobError ? 'Requirement could not be loaded.' : ((appError?.data as { statusMessage?: string } | undefined)?.statusMessage ?? 'Candidate pipeline could not be loaded.') }}</div>
 
     <template v-else-if="jobData">
       <JobSubNavActions :job-id="jobId" />

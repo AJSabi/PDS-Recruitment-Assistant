@@ -86,7 +86,7 @@ function exportCsv() {
 
     <div v-if="status === 'pending'" class="py-12 text-center text-surface-400">Loading candidate register…</div>
     <div v-else-if="error" class="rounded-xl border border-danger-200 bg-danger-50 p-5 text-danger-700 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-300">
-      <div class="flex items-start gap-2"><AlertTriangle class="mt-0.5 size-5 shrink-0" /><div><p class="font-semibold">Candidate Register could not be loaded</p><p class="mt-1 text-sm">{{ error?.data?.statusMessage ?? error?.message ?? 'The server returned an error. Refresh the page or review access to this requirement.' }}</p></div></div>
+      <div class="flex items-start gap-2"><AlertTriangle class="mt-0.5 size-5 shrink-0" /><div><p class="font-semibold">Candidate Register could not be loaded</p><p class="mt-1 text-sm">{{ (error?.data as { statusMessage?: string } | undefined)?.statusMessage ?? error?.message ?? 'The server returned an error. Refresh the page or review access to this requirement.' }}</p></div></div>
     </div>
     <template v-else>
       <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
