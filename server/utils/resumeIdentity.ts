@@ -12,6 +12,10 @@ const NON_NAME_TERMS = /\b(?:resume|curriculum\s+vitae|cv|profile|summary|object
 const FILENAME_NOISE = /\b(?:resume|curriculum|vitae|cv|profile|updated|latest|final|new|copy|document|doc|pdf|docx|job|application|candidate|202\d|v\d+)\b/giu
 const HONORIFIC = /^(?:mr|mrs|ms|miss|dr|prof)\.?\s+/iu
 const HEADER_SEGMENT_SEPARATOR = /[|•·]+/u
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu
+const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/giu
+const LINKEDIN_PATTERN = /\b(?:linkedin(?:\.com)?\/in\/)?[A-Za-z0-9._-]+(?=\s*$)/iu
+const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{8,}\d)/gu
 
 function normalizeCandidateName(value: string): string {
   return value
@@ -87,41 +91,74 @@ function corroborates(candidate: string, other: string | null): boolean {
 }
 
 /**
- * Extract only self-contained header segments that could reasonably carry a name.
- * Contact/designation text on the same visual line is separated on common resume
- * delimiters before plausibility checks.
+ * Remove contact artifacts that PDF/DOCX text extraction often places on the same
+ * visual line as the candidate's name. We only remove strongly structured contact
+ * forms; arbitrary prose is never stripped into a name candidate.
  */
-function headerNameCandidates(resumeText: string, lineLimit = 25): string[] {
-  const candidates: string[] = []
-  const lines = resumeText.split('\n').slice(0, lineLimit).map(line => line.trim()).filter(Boolean)
+function stripContactNoise(value: string): string {
+  return value
+    .replace(EMAIL_PATTERN, ' ')
+    .replace(URL_PATTERN, ' ')
+    .replace(PHONE_PATTERN, ' ')
+    .replace(/\b(?:email|e-mail|mobile|phone|tel|telephone|contact)\s*[:\-]?\s*/giu, ' ')
+    .replace(/[,:;]+$/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-  for (const line of lines) {
+function addCandidate(target: string[], value: string) {
+  const normalized = normalizeCandidateName(stripContactNoise(value))
+  if (normalized.length <= 80 && isPlausibleResumeName(normalized)) target.push(normalized)
+}
+
+/**
+ * Extract self-contained header segments that could reasonably carry a name.
+ * The extended window supports two-column/layout-heavy resumes whose PDF text order
+ * emits contact/sidebar content before the visual name. Candidates beyond the early
+ * header are used only with filename/email corroboration by inferResumeIdentity.
+ */
+function headerNameCandidates(resumeText: string, lineLimit = 40): { name: string, lineIndex: number }[] {
+  const candidates: Array<{ name: string, lineIndex: number }> = []
+  const lines = resumeText.split('\n').slice(0, lineLimit).map(line => line.trim())
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex]
+    if (!line) continue
+
     const labelled = line.match(NAME_LABEL)?.[1]
     if (labelled) {
-      const normalized = normalizeCandidateName(labelled)
-      if (isPlausibleResumeName(normalized)) candidates.push(normalized)
+      const names: string[] = []
+      addCandidate(names, labelled)
+      for (const name of names) candidates.push({ name, lineIndex })
       continue
     }
 
     for (const segment of line.split(HEADER_SEGMENT_SEPARATOR)) {
-      const normalized = normalizeCandidateName(segment)
-      if (normalized.length <= 80 && isPlausibleResumeName(normalized)) candidates.push(normalized)
+      const names: string[] = []
+      addCandidate(names, segment)
+      for (const name of names) candidates.push({ name, lineIndex })
     }
   }
 
-  return [...new Set(candidates)]
+  const deduped = new Map<string, { name: string, lineIndex: number }>()
+  for (const candidate of candidates) {
+    const key = normalizedTokens(candidate.name).join(' ')
+    if (key && !deduped.has(key)) deduped.set(key, candidate)
+  }
+  return [...deduped.values()]
 }
 
 /**
  * Verify that an AI-proposed name is plausible and represented as one coherent
- * name-bearing segment in the resume header. Merely finding the individual name
- * tokens on unrelated header lines is not sufficient.
+ * name-bearing segment in the resume header. Merely finding individual name tokens
+ * on unrelated lines is insufficient. A wider layout window is allowed only when
+ * the complete proposed name appears on one coherent line/segment.
  */
 export function isNameSupportedByResume(firstName: string, lastName: string, resumeText: string): boolean {
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
   if (!isPlausibleResumeName(fullName)) return false
 
-  return headerNameCandidates(resumeText, 30).some(candidate => sameName(candidate, fullName))
+  return headerNameCandidates(resumeText, 40).some(candidate => sameName(candidate.name, fullName))
 }
 
 /**
@@ -133,11 +170,11 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
   const phoneCandidate = resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/u)?.[0]?.trim() ?? null
   const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
 
-  const lines = resumeText.split('\n').slice(0, 25).map(line => line.trim()).filter(Boolean)
+  const lines = resumeText.split('\n').slice(0, 40).map(line => line.trim()).filter(Boolean)
 
-  for (const line of lines) {
+  for (const line of lines.slice(0, 25)) {
     const match = line.match(NAME_LABEL)
-    const labelled = match?.[1] ? normalizeCandidateName(match[1]) : null
+    const labelled = match?.[1] ? normalizeCandidateName(stripContactNoise(match[1])) : null
     if (labelled && isPlausibleResumeName(labelled)) {
       return { ...splitName(labelled), email, phone, nameConfidence: 'high', nameSource: 'label' }
     }
@@ -145,18 +182,22 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
 
   const fromFilename = filenameName(filename)
   const fromEmail = emailLocalName(email)
-  const headerCandidates = headerNameCandidates(resumeText)
+  const headerCandidates = headerNameCandidates(resumeText, 40)
 
-  const corroboratedHeader = headerCandidates.find(name => corroborates(name, fromFilename) || corroborates(name, fromEmail))
+  const corroboratedHeader = headerCandidates.find(({ name }) => corroborates(name, fromFilename) || corroborates(name, fromEmail))
   if (corroboratedHeader) {
-    return { ...splitName(corroboratedHeader), email, phone, nameConfidence: 'high', nameSource: 'header' }
+    return { ...splitName(corroboratedHeader.name), email, phone, nameConfidence: 'high', nameSource: 'header' }
   }
 
-  // Do not fall back to the first superficially name-like header line. Locations,
-  // employers, qualifications and other short resume headers frequently satisfy
-  // syntactic name rules. Without corroboration, unresolved is safer than wrong.
+  // Only the early visual/header area may establish a name without external
+  // corroboration, and even there it must be a clean coherent name segment.
+  const uncorroboratedEarly = headerCandidates.filter(candidate => candidate.lineIndex < 8)
+  if (uncorroboratedEarly.length === 1 && !fromFilename && !fromEmail) {
+    return { ...splitName(uncorroboratedEarly[0].name), email, phone, nameConfidence: 'medium', nameSource: 'header' }
+  }
+
   if (fromFilename) {
-    const filenameAppearsInHeader = headerCandidates.some(name => sameName(name, fromFilename))
+    const filenameAppearsInHeader = headerCandidates.some(({ name }) => sameName(name, fromFilename))
     if (filenameAppearsInHeader || corroborates(fromFilename, fromEmail)) {
       return {
         ...splitName(fromFilename),
@@ -167,8 +208,8 @@ export function inferResumeIdentity(resumeText: string, filename: string): Infer
       }
     }
 
-    // A clean human-name filename remains a controlled fallback when the parsed
-    // header has no competing plausible identity at all (common for scanned/layout-heavy CVs).
+    // A clean human-name filename remains a controlled fallback when extraction
+    // produced no competing plausible identity at all.
     if (headerCandidates.length === 0 && !fromEmail) {
       return { ...splitName(fromFilename), email, phone, nameConfidence: 'medium', nameSource: 'filename' }
     }
