@@ -34,4 +34,9 @@ describe('PDS production release hardening', () => {
     expect(preflight).toContain("GDPR_CLEANUP_ENABLED === 'true'")
     expect(preflight).toContain('CRON_SECRET is required when GDPR_CLEANUP_ENABLED=true')
   })
+
+  it('requires a real production email provider instead of console fallback', () => {
+    expect(preflight).toContain('!env.SMTP_HOST && !env.RESEND_API_KEY')
+    expect(preflight).toContain('console email fallback is not permitted')
+  })
 })
