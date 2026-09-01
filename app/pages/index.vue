@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Github, Shield, Database, Users, Briefcase, ArrowRight } from 'lucide-vue-next'
+import { GitBranch, Shield, Database, Users, Briefcase, ArrowRight } from '@lucide/vue'
 
 const { t } = useI18n()
 const localePath = useLocalePath()
@@ -89,7 +89,7 @@ definePageMeta({ layout: false })
             rel="noopener noreferrer"
             class="flex items-center gap-1.5 text-[13px] text-surface-500 transition hover:text-surface-700 dark:hover:text-surface-300"
           >
-            <Github class="h-4 w-4" />
+            <GitBranch class="h-4 w-4" />
             {{ $t('home.footer.source') }}
           </a>
           <NuxtLink

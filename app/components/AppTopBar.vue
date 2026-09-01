@@ -16,7 +16,7 @@ import {
   UserRound,
   UserRoundCog,
   X,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const route = useRoute()
 const localePath = useLocalePath()

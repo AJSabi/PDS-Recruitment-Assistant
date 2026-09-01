@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, BriefcaseBusiness, CheckCircle2, FileText, Loader2, Sparkles, UploadCloud } from 'lucide-vue-next'
+import { ArrowLeft, BriefcaseBusiness, CheckCircle2, FileText, Loader2, Sparkles, UploadCloud } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'New Requirement', description: 'Create a PDS recruitment requirement from a JD' })

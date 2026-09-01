@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, BriefcaseBusiness, FileText, RefreshCw, Search, UserCheck, UsersRound } from 'lucide-vue-next'
+import { AlertTriangle, BriefcaseBusiness, FileText, RefreshCw, Search, UserCheck, UsersRound } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const localePath = useLocalePath()

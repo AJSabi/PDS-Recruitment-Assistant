@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, CheckCircle2, CircleDashed, ClipboardList, FileText, Sparkles, Target, UsersRound } from 'lucide-vue-next'
+import { ArrowLeft, CheckCircle2, CircleDashed, ClipboardList, FileText, Sparkles, Target, UsersRound } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'JD & Skill Matrix', robots: 'noindex, nofollow' })

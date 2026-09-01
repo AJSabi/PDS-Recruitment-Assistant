@@ -3,7 +3,7 @@ import {
   Sparkles, Send, Square, Paperclip, FileText, X, Brain,
   Briefcase, Globe, ChevronDown, Loader2, User2, Wrench, AlertCircle,
   Check, BookOpen, PanelRightClose, PanelRightOpen,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import MarkdownDescription from '~/components/MarkdownDescription.vue'
 
 definePageMeta({

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardCheck, Loader2, Save, Sparkles } from 'lucide-vue-next'
+import { ClipboardCheck, Loader2, Save, Sparkles } from '@lucide/vue'
 
 const props = defineProps<{
   applicationId: string

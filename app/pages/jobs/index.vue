@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, MapPin, Briefcase, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Search, MapPin, Briefcase, ChevronLeft, ChevronRight } from '@lucide/vue'
 
 definePageMeta({
   layout: 'public',

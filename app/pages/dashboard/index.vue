@@ -13,7 +13,7 @@ import {
   Target,
   UserRoundCheck,
   UsersRound,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Recruitment Dashboard', description: 'PDS recruitment control dashboard' })

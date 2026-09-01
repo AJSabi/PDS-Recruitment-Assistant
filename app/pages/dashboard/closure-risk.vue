@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Target } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Target } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Closure Risk' })

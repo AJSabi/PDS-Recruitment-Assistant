@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends Record<string, unknown>">
-import { Bookmark, Star, Trash2, Plus, Check, ChevronDown } from 'lucide-vue-next'
+import { Bookmark, Star, Trash2, Plus, Check, ChevronDown } from '@lucide/vue'
 import type { SavedView } from '~/composables/useSavedViews'
 
 const props = defineProps<{

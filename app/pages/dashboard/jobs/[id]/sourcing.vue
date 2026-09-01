@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, FileUp } from 'lucide-vue-next'
+import { ArrowLeft, FileUp } from '@lucide/vue'
 
 const route = useRoute()
 const jobId = route.params.id as string

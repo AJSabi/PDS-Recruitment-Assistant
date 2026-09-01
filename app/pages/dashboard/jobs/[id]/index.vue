@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, BrainCircuit, Briefcase, Clock, Mail, Search, UserPlus, UserRound } from 'lucide-vue-next'
+import { ArrowRight, BrainCircuit, Briefcase, Clock, Mail, Search, UserPlus, UserRound } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 

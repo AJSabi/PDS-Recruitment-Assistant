@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UserPlus, Pencil, Trash2, MoreHorizontal, Settings2, Search } from 'lucide-vue-next'
+import { UserPlus, Pencil, Trash2, MoreHorizontal, Settings2, Search } from '@lucide/vue'
 import { JOB_STATUS_TRANSITIONS } from '~~/shared/status-transitions'
 
 const props = defineProps<{

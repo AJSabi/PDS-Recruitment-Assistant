@@ -2,7 +2,7 @@
 import {
   Lock, Upload, FileText, GripVertical, Plus, Pencil, Trash2,
   ChevronUp, ChevronDown,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 /**
  * Live application builder: recruiter controls on the left, a real candidate

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, ClipboardList, Download, FileSearch, RefreshCw, Search, PhoneCall } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, ClipboardList, Download, FileSearch, RefreshCw, Search, PhoneCall } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()

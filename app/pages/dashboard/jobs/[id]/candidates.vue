@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Users, SlidersHorizontal, X, Check, ChevronsUpDown, ChevronUp, ChevronDown, UserRound } from 'lucide-vue-next'
+import { Users, SlidersHorizontal, X, Check, ChevronsUpDown, ChevronUp, ChevronDown, UserRound } from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

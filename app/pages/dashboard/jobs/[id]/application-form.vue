@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link2, ClipboardCopy, Plus, Copy, CheckCircle2, XCircle, ToggleLeft, ToggleRight, Trash2, Radio, ChevronDown, X } from 'lucide-vue-next'
+import { Link2, ClipboardCopy, Plus, Copy, CheckCircle2, XCircle, ToggleLeft, ToggleRight, Trash2, Radio, ChevronDown, X } from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

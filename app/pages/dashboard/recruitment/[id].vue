@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Briefcase, ClipboardList, FileSearch, Target, ShieldCheck, TrendingUp, AlertTriangle, Route, Mail, Sparkles, PhoneCall } from 'lucide-vue-next'
+import { ArrowLeft, Briefcase, ClipboardList, FileSearch, Target, ShieldCheck, TrendingUp, AlertTriangle, Route, Mail, Sparkles, PhoneCall } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 

@@ -8,7 +8,7 @@
 import {
   Brain, Plus, Loader2, AlertTriangle, Sparkles, BarChart3, Star,
   Pencil, Trash2, Zap, Check, KeyRound, Server,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({})
 

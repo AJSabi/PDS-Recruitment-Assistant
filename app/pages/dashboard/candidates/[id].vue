@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Download, Eye, FileText, Mail, Pencil, Phone, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Download, Eye, FileText, Mail, Pencil, Phone, Trash2, Upload, X } from '@lucide/vue'
 import { z } from 'zod'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 

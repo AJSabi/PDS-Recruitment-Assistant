@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, BrainCircuit, CheckCircle2, Clock3, FileSearch } from 'lucide-vue-next'
+import { ArrowRight, BrainCircuit, CheckCircle2, Clock3, FileSearch } from '@lucide/vue'
 
 const props = defineProps<{ applicationId: string }>()
 const localePath = useLocalePath()

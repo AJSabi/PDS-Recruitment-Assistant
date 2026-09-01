@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BrainCircuit, CheckCircle2, Clock3, Loader2, RefreshCw, ShieldCheck } from 'lucide-vue-next'
+import { BrainCircuit, CheckCircle2, Clock3, Loader2, RefreshCw, ShieldCheck } from '@lucide/vue'
 
 const props = defineProps<{ applicationId: string }>()
 const toast = useToast()

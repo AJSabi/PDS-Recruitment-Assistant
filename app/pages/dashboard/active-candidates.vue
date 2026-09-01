@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, ArrowRight, Loader2, UsersRound } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, Loader2, UsersRound } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Active Candidates' })

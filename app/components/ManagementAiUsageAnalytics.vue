@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, CircleDollarSign, Cpu, Loader2, RefreshCw, TriangleAlert } from 'lucide-vue-next'
+import { Bot, CircleDollarSign, Cpu, Loader2, RefreshCw, TriangleAlert } from '@lucide/vue'
 
 const { data, status, error, refresh: refreshData } = useFetch('/api/dashboard/ai-usage', {
   key: 'pds-management-ai-usage',

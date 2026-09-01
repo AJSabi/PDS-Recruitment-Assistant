@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Briefcase, UserRound } from 'lucide-vue-next'
+import { ArrowLeft, Briefcase, UserRound } from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

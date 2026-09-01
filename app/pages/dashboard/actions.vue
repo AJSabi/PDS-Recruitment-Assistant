@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Loader2 } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Pending Actions', description: 'Recruiter actions pending across allocated requirements' })

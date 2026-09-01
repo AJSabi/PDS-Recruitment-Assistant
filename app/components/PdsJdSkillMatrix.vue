@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, CheckCircle2, Database, FileText, Loader2, Plus, Save, ShieldCheck, Sparkles, Trash2, UserPlus, WandSparkles } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, Database, FileText, Loader2, Plus, Save, ShieldCheck, Sparkles, Trash2, UserPlus, WandSparkles } from '@lucide/vue'
 
 const route = useRoute()
 const jobId = route.params.id as string

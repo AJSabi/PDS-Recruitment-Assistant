@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Clipboard, Loader2, Save, Search, Sparkles } from 'lucide-vue-next'
+import { Clipboard, Loader2, Save, Search, Sparkles } from '@lucide/vue'
 
 const props = defineProps<{ jobId: string }>()
 const toast = useToast()

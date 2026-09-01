@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileText, Loader2, Search, Upload, UserPlus, UserRoundPlus, X } from 'lucide-vue-next'
+import { FileText, Loader2, Search, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 
 const props = withDefaults(defineProps<{

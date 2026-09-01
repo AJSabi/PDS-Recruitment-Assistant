@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Loader2, PhoneCall, Plus, Save, Sparkles, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, Loader2, PhoneCall, Plus, Save, Sparkles, Trash2 } from '@lucide/vue'
 
 const props = defineProps<{ applicationId: string; enabled: boolean; recruitmentStatus?: string | null }>()
 const emit = defineEmits<{ changed: [] }>()

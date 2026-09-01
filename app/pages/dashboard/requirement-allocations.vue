@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ArrowLeft, BriefcaseBusiness, CalendarDays, Loader2, RefreshCw, Search, UserRoundCog, UsersRound } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, BriefcaseBusiness, CalendarDays, Loader2, RefreshCw, Search, UserRoundCog, UsersRound } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'Requirement Allocation' })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, Briefcase } from 'lucide-vue-next'
+import { X, Briefcase } from '@lucide/vue'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 
 const props = defineProps<{

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Bot } from 'lucide-vue-next'
+import { ArrowLeft, Bot } from '@lucide/vue'
 
 definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 useSeoMeta({ title: 'AI Usage Analytics', description: 'PDS recruitment AI usage and configured-cost analytics' })

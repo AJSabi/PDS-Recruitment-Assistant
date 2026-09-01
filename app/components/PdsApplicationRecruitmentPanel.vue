@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCircle2, FileText, Loader2, ShieldCheck } from 'lucide-vue-next'
+import { CheckCircle2, FileText, Loader2, ShieldCheck } from '@lucide/vue'
 
 const props = defineProps<{
   applicationId: string

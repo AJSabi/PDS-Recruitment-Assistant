@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, UserRound, Briefcase,
   Pencil, Trash2, MapPin, Users, CalendarDays,
   Mail, ExternalLink,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',
