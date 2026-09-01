@@ -1,0 +1,99 @@
+name: Deprecation Hardening Preview
+
+on:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+    paths:
+      - .github/workflows/deprecation-hardening-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
+      BETTER_AUTH_SECRET: validation-only-secret-not-used-at-runtime
+      BETTER_AUTH_URL: http://localhost:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Use validated npm resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
+      - name: Inspect target i18n dependency metadata
+        run: |
+          npm view @nuxtjs/i18n@10.6.0 version dependencies --json
+
+      - name: Generate deprecation cleanup candidate
+        run: |
+          npm pkg delete dependencies.lucide-vue-next
+          npm pkg set dependencies.@nuxtjs/i18n=10.6.0
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Prove candidate with clean install
+        run: |
+          rm -rf node_modules
+          npm ci --include=dev
+
+      - name: Verify deprecation targets
+        shell: bash
+        run: |
+          if npm ls lucide-vue-next --all 2>/dev/null | grep -q 'lucide-vue-next@'; then
+            echo 'Deprecated lucide-vue-next is still installed'
+            exit 1
+          fi
+          npm ls @nuxtjs/i18n vue-i18n --all
+          node <<'NODE'
+          const fs = require('node:fs')
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'))
+          const vueI18n = lock.packages?.['node_modules/vue-i18n']?.version
+          console.log(`Resolved vue-i18n=${vueI18n ?? 'missing'}`)
+          if (!vueI18n || Number(vueI18n.split('.')[0]) < 11) {
+            throw new Error(`Expected vue-i18n 11+, got ${vueI18n ?? 'missing'}`)
+          }
+          NODE
+
+      - name: Require zero npm audit findings
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'))
+          const total = report.metadata?.vulnerabilities?.total ?? 0
+          console.log(`Audit total=${total}`)
+          if (total !== 0) process.exit(1)
+          NODE
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Upload validated candidate
+        uses: actions/upload-artifact@v6
+        with:
+          name: deprecation-hardening-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
