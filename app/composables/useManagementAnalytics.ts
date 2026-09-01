@@ -1,13 +1,13 @@
 export function useManagementAnalytics() {
   const nuxtApp = useNuxtApp()
-  const { data, status, error, refresh } = useFetch('/api/dashboard/management', {
+  const { data, status, error, refresh: refreshData } = useFetch('/api/dashboard/management', {
     key: 'pds-management-analytics',
     headers: useRequestHeaders(['cookie']),
     getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
   })
 
   if (import.meta.client) {
-    onMounted(() => { void refresh() })
+    onMounted(() => { void refreshData() })
   }
 
   const summary = computed(() => data.value?.summary ?? {
@@ -30,7 +30,11 @@ export function useManagementAnalytics() {
   const stageFunnel = computed(() => data.value?.stageFunnel ?? [])
   const recruiters = computed(() => data.value?.recruiters ?? [])
   const requirements = computed(() => data.value?.requirements ?? [])
-  const limitations = computed(() => data.value?.limitations ?? {})
+  const limitations = computed(() => data.value?.limitations ?? {
+    sourceEffectiveness: '',
+    historicalConversion: '',
+  })
+  const refresh = () => refreshData()
 
   return {
     data,
