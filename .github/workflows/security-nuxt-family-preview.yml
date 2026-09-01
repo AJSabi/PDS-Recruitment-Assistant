@@ -43,9 +43,10 @@ jobs:
           npm pkg set 'overrides.@nuxt/nitro-server=4.5.2'
           npm pkg set 'overrides.@nuxt/kit=4.5.2'
           npm pkg set 'overrides.@nuxt/schema=4.5.2'
-          npm install --package-lock-only --ignore-scripts
+          npm install --include=dev --ignore-scripts
+          rm -rf node_modules
 
-      - name: Install candidate graph
+      - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
       - name: Inspect resolved Nuxt family
