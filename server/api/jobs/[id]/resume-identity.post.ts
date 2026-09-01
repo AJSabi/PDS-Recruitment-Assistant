@@ -2,7 +2,7 @@ import { fileTypeFromBuffer } from 'file-type'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { parseDocument, extractResumeText } from '../../../utils/resume-parser'
 import { inferResumeIdentity } from '../../../utils/resumeIdentity'
-import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE, sanitizeFilename } from '../../../utils/schemas/document'
+import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE, sanitizeFilename, isFilenameCompatibleWithMime } from '../../../utils/schemas/document'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
@@ -34,6 +34,9 @@ export default defineEventHandler(async (event) => {
   const mimeType = detectLegacyDoc(filePart.data, detected?.mime)
   if (!mimeType || !ALLOWED_MIME_TYPES.includes(mimeType as typeof ALLOWED_MIME_TYPES[number])) {
     throw createError({ statusCode: 415, statusMessage: 'Invalid resume file type. Allowed: PDF, DOC and DOCX.' })
+  }
+  if (!isFilenameCompatibleWithMime(filePart.filename, mimeType)) {
+    throw createError({ statusCode: 415, statusMessage: 'Resume filename extension does not match the detected file type.' })
   }
 
   const parsed = await parseDocument(filePart.data, mimeType)
