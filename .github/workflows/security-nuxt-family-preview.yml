@@ -63,6 +63,46 @@ jobs:
       - name: Prove lockfile with clean install
         run: npm ci --include=dev
 
+      - name: Apply source compatibility patch in candidate only
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          const appPath = 'app/app.vue'
+          let app = fs.readFileSync(appPath, 'utf8')
+          const oldLink = '  link: i18nHead.value.link,'
+          const oldMeta = '  meta: i18nHead.value.meta,'
+          if (!app.includes(oldLink) || !app.includes(oldMeta)) {
+            throw new Error('Expected i18n head lines not found')
+          }
+          app = app.replace(oldLink, '  link: i18nHead.value.link as any,')
+          app = app.replace(oldMeta, '  meta: i18nHead.value.meta as any,')
+          fs.writeFileSync(appPath, app)
+
+          const files = [
+            'app/components/PdsJdSkillMatrix.vue',
+            'app/pages/dashboard/jobs/[id]/index.vue',
+            'app/pages/dashboard/jobs/[id]/pds-ranking.vue',
+            'app/pages/dashboard/jobs/[id]/pds-register.vue',
+            'app/pages/dashboard/pds-candidates.vue',
+          ]
+          let replacements = 0
+          const pattern = /(\w+Error)\?\.data\?\.statusMessage/g
+          for (const file of files) {
+            let source = fs.readFileSync(file, 'utf8')
+            source = source.replace(pattern, (_match, name) => {
+              replacements += 1
+              return `(${name}?.data as { statusMessage?: string } | undefined)?.statusMessage`
+            })
+            fs.writeFileSync(file, source)
+          }
+          if (replacements !== 6) {
+            throw new Error(`Expected 6 request-error typing replacements, got ${replacements}`)
+          }
+          console.log(`Applied ${replacements + 2} narrow Nuxt 4.5 compatibility edits in candidate workspace.`)
+          NODE
+
       - name: Inspect Nuxt dependency graph
         shell: bash
         run: |
