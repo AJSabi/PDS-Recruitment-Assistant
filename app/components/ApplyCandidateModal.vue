@@ -244,12 +244,20 @@ async function createCandidate() {
   if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {
     const existingCandidateId = identityConflictCheck.value.candidate.id
     const updatePayload: Record<string, string | null> = {}
+    const refreshedFields: Array<'name' | 'email' | 'phone'> = []
     if (identityUpdateFields.name) {
       updatePayload.firstName = firstName
       updatePayload.lastName = lastName
+      refreshedFields.push('name')
     }
-    if (identityUpdateFields.email) updatePayload.email = email
-    if (identityUpdateFields.phone) updatePayload.phone = phone ?? null
+    if (identityUpdateFields.email) {
+      updatePayload.email = email
+      refreshedFields.push('email')
+    }
+    if (identityUpdateFields.phone) {
+      updatePayload.phone = phone ?? null
+      refreshedFields.push('phone')
+    }
 
     if (Object.keys(updatePayload).length) {
       try {
@@ -261,7 +269,20 @@ async function createCandidate() {
       }
     }
 
-    await attachCandidate({ candidateId: existingCandidateId, source: source.value })
+    const identityConflictResolution = identityConflictCheck.value.requiresConfirmation
+      ? {
+          confirmed: true,
+          matchBasis: identityConflictCheck.value.matchBasis!,
+          conflictFields: identityConflictCheck.value.conflicts?.map(conflict => conflict.field) ?? [],
+          refreshedFields,
+        }
+      : undefined
+
+    await attachCandidate({
+      candidateId: existingCandidateId,
+      source: source.value,
+      ...(identityConflictResolution && { identityConflictResolution }),
+    })
     return
   }
 
