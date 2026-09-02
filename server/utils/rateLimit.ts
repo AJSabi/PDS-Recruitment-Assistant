@@ -1,23 +1,18 @@
 import type { H3Event } from 'h3'
+import { assertProcessLocalRateLimitDeploymentSafe } from './rateLimitDeployment'
 
 // ─────────────────────────────────────────────
 // In-memory sliding window rate limiter
 // ─────────────────────────────────────────────
 
-// Warn loudly at startup when the process appears to be running as one of
-// several replicas. Each replica holds its own in-memory state, so the
-// effective limit seen by any single client is maxRequests × replicaCount.
-// Under horizontal scaling, terminate rate limiting at the edge instead:
-// Cloudflare WAF, Caddy `rate_limit`, nginx `limit_req`, or a Redis-backed
-// limiter. See SELF-HOSTING.md → "Scaling horizontally".
-const _replicaCount = Number(process.env.RAILWAY_REPLICA_COUNT ?? 0)
-if (_replicaCount > 1) {
-  console.warn(
-    `[rateLimit] WARNING: RAILWAY_REPLICA_COUNT=${_replicaCount}. `
-    + 'The in-memory rate limiter is NOT shared across replicas — effective limits are '
-    + `${_replicaCount}× higher than configured. Move rate limiting to the edge.`,
-  )
-}
+// Public API abuse controls are process-local. Do not allow an explicitly
+// multi-replica production deployment to start with silently multiplied limits.
+// Horizontal scaling requires a shared/edge limiter first.
+assertProcessLocalRateLimitDeploymentSafe({
+  nodeEnv: process.env.NODE_ENV,
+  railwayEnvironmentName: process.env.RAILWAY_ENVIRONMENT_NAME,
+  railwayReplicaCount: process.env.RAILWAY_REPLICA_COUNT,
+})
 
 /**
  * Configuration for a rate limiter instance.
@@ -49,8 +44,8 @@ interface RateLimitEntry {
  * Reqcore is designed as a single-instance self-hosted app (Docker Compose
  * on one VPS). If you need to run multiple replicas behind a load balancer,
  * terminate rate limiting at the edge instead — Cloudflare WAF, Caddy
- * `rate_limit`, or nginx `limit_req`. See SELF-HOSTING.md → "Scaling
- * horizontally" for the rationale.
+ * `rate_limit`, nginx `limit_req`, or use a shared limiter. See
+ * SELF-HOSTING.md → "Scaling horizontally" for the rationale.
  *
  * @example
  * ```ts
