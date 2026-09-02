@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileText, Loader2, Search, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'
+import { CheckCircle2, FileText, Loader2, Search, ShieldCheck, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 
 const props = withDefaults(defineProps<{
@@ -20,6 +20,30 @@ const debouncedSearch = ref<string | undefined>(undefined)
 const selectedExistingCandidateId = ref<string | null>(null)
 const resumeFile = ref<File | null>(null)
 const isParsingResume = ref(false)
+type ParsedResumeIdentity = {
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  nameConfidence: 'high' | 'medium' | 'low'
+  nameSource: 'label' | 'header' | 'filename' | 'unresolved'
+}
+const resumeIdentity = ref<ParsedResumeIdentity | null>(null)
+const identityReviewed = ref(false)
+const applyingParsedIdentity = ref(false)
+
+function confidenceLabel(confidence?: ParsedResumeIdentity['nameConfidence']) {
+  if (confidence === 'high') return 'High confidence'
+  if (confidence === 'medium') return 'Review recommended'
+  return 'Manual review required'
+}
+
+function identitySourceLabel(source?: ParsedResumeIdentity['nameSource']) {
+  if (source === 'label') return 'Explicit resume name field'
+  if (source === 'header') return 'Resume header'
+  if (source === 'filename') return 'Filename/contact corroboration'
+  return 'Identity unresolved by parser'
+}
 const source = ref('recruiter_sourcing')
 const sourceOptions = [
   { value: 'recruiter_sourcing', label: 'Recruiter Sourcing' },
@@ -40,6 +64,8 @@ watch(searchInput, (val) => {
 watch(mode, (value) => {
   selectedExistingCandidateId.value = null
   resumeFile.value = null
+  resumeIdentity.value = null
+  identityReviewed.value = false
   source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'
 })
 
@@ -56,6 +82,12 @@ const { formatCandidateName } = useOrgSettings()
 const isApplying = ref(false)
 const applyError = ref('')
 const newCandidate = reactive({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
+watch(
+  () => [newCandidate.firstName, newCandidate.lastName, newCandidate.email, newCandidate.phone],
+  () => {
+    if (resumeFile.value && resumeIdentity.value && !applyingParsedIdentity.value) identityReviewed.value = false
+  },
+)
 const matchResult = ref<any | null>(null)
 const completedPayload = ref<{ applicationId?: string; created?: boolean; resumeUploaded?: boolean } | null>(null)
 function resetError() { applyError.value = '' }
@@ -66,14 +98,23 @@ async function parseResumeIdentity(file: File) {
     const form = new FormData()
     form.append('file', file)
     const result: any = await $fetch(`/api/jobs/${props.jobId}/resume-identity`, { method: 'POST', body: form })
-    const identity = result?.identity ?? {}
-    if (!newCandidate.firstName.trim() && identity.firstName) newCandidate.firstName = identity.firstName
-    if (!newCandidate.lastName.trim() && identity.lastName) newCandidate.lastName = identity.lastName
-    if (!newCandidate.email.trim() && identity.email) newCandidate.email = identity.email
-    if (!newCandidate.phone.trim() && identity.phone) newCandidate.phone = identity.phone
-    if (!identity.email) toast.info('Resume read', 'Name/contact details were only partially detected. Please review the fields before adding the candidate.')
+    const identity = result?.identity as ParsedResumeIdentity | undefined
+    resumeIdentity.value = identity ?? { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
+    identityReviewed.value = false
+    applyingParsedIdentity.value = true
+    try {
+      if (!newCandidate.firstName.trim() && identity?.firstName) newCandidate.firstName = identity.firstName
+      if (!newCandidate.lastName.trim() && identity?.lastName) newCandidate.lastName = identity.lastName
+      if (!newCandidate.email.trim() && identity?.email) newCandidate.email = identity.email
+      if (!newCandidate.phone.trim() && identity?.phone) newCandidate.phone = identity.phone
+    } finally {
+      applyingParsedIdentity.value = false
+    }
+    if (!identity?.email || identity.nameConfidence !== 'high') toast.info('Resume read', 'Please review the parsed candidate identity before creating the candidate.')
   } catch (err: any) {
-    toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually.')
+    resumeIdentity.value = { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
+    identityReviewed.value = false
+    toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually and confirm them before saving.')
   } finally {
     isParsingResume.value = false
   }
@@ -82,6 +123,8 @@ async function parseResumeIdentity(file: File) {
 async function onResumeSelected(event: Event) {
   const input = event.target as HTMLInputElement
   resumeFile.value = input.files?.[0] ?? null
+  resumeIdentity.value = null
+  identityReviewed.value = false
   resetError()
   if (mode.value === 'new' && resumeFile.value) await parseResumeIdentity(resumeFile.value)
 }
@@ -158,6 +201,7 @@ async function createCandidate() {
   const lastName = newCandidate.lastName.trim()
   const email = newCandidate.email.trim()
   if (!firstName || !lastName || !email) return void (applyError.value = 'First name, last name and email are required.')
+  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')
   await attachCandidate({
     firstName,
     lastName,
@@ -221,11 +265,32 @@ async function createCandidate() {
             <form class="space-y-4" @submit.prevent="createCandidate">
               <label class="block rounded-xl border border-dashed border-[#9FC7DF] bg-[#F7FBFE] p-4 text-sm">
                 <span class="flex items-center gap-2 font-semibold text-[#102A43]"><Upload class="size-4 text-[#2E86C1]" />Resume <span class="font-normal text-surface-400">(recommended)</span></span>
-                <span class="mt-1 block text-xs text-surface-500">PDF, DOC or DOCX. Candidate identity is parsed locally; AI is used only after save for the match assessment.</span>
+                <span class="mt-1 block text-xs text-surface-500">PDF, DOC or DOCX. Candidate identity is parsed locally and remains editable. Nothing is saved until you review the fields and add the candidate.</span>
                 <input :disabled="isApplying || isParsingResume" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="mt-3 block w-full text-xs" @change="onResumeSelected" />
                 <span v-if="isParsingResume" class="mt-2 flex items-center gap-1.5 text-xs text-brand-600"><Loader2 class="size-3.5 animate-spin" />Reading candidate details…</span>
                 <span v-else-if="resumeFile" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><FileText class="size-3.5" />{{ resumeFile.name }}</span>
               </label>
+              <div v-if="resumeFile && resumeIdentity && !isParsingResume" data-testid="resume-identity-review" class="rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="flex items-start gap-2">
+                    <ShieldCheck class="mt-0.5 size-4 text-[#2E86C1]" />
+                    <div>
+                      <p class="text-sm font-semibold text-[#102A43]">Review parsed candidate identity</p>
+                      <p class="mt-1 text-xs leading-5 text-surface-500">Check and correct the editable name, email and phone fields below. The reviewed values become the Candidate Database identity.</p>
+                    </div>
+                  </div>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#1F6FA3] shadow-sm">{{ confidenceLabel(resumeIdentity.nameConfidence) }}</span>
+                </div>
+                <div class="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs text-surface-600">
+                  <span class="font-semibold">Parser source:</span> {{ identitySourceLabel(resumeIdentity.nameSource) }}
+                  <span v-if="resumeIdentity.nameConfidence === 'low'" class="ml-1 text-[#976511]">— manually verify every identity field.</span>
+                </div>
+                <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-surface-200 bg-white p-3 text-xs text-surface-700">
+                  <input v-model="identityReviewed" data-testid="resume-identity-confirm" type="checkbox" class="mt-0.5 size-4" />
+                  <span><strong>I reviewed the candidate identity.</strong> I confirm the final name, email and phone shown below are correct before this candidate is created or linked.</span>
+                </label>
+                <p v-if="identityReviewed" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><CheckCircle2 class="size-3.5" />Identity reviewed. Editing an identity field will require confirmation again.</p>
+              </div>
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="text-sm font-medium">First name <span class="text-danger-500">*</span><input v-model="newCandidate.firstName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
                 <label class="text-sm font-medium">Last name <span class="text-danger-500">*</span><input v-model="newCandidate.lastName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
