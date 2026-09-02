@@ -5,6 +5,8 @@ const modal = readFileSync('app/components/ApplyCandidateModal.vue', 'utf8')
 const detail = readFileSync('app/pages/dashboard/candidates/[id].vue', 'utf8')
 const intake = readFileSync('server/api/jobs/[id]/candidate-intake.post.ts', 'utf8')
 const intakeSchema = readFileSync('server/utils/schemas/candidateIntake.ts', 'utf8')
+const documentUpload = readFileSync('server/api/candidates/[id]/documents/index.post.ts', 'utf8')
+const quickMatch = readFileSync('server/api/applications/[id]/quick-match.post.ts', 'utf8')
 
 describe('PDS duplicate candidate refresh workflow', () => {
   it('keeps the new resume as document history on the existing candidate', () => {
@@ -14,6 +16,32 @@ describe('PDS duplicate candidate refresh workflow', () => {
     expect(modal).toContain('uploadResume(candidateId)')
     expect(detail).toContain('Candidate Documents')
     expect(detail).toContain('uploadDocument(candidateId, file, selectedDocType.value)')
+  })
+
+  it('uploads the newly supplied resume even when intake reuses an existing candidate or application', () => {
+    const intakeCall = modal.indexOf('const result: any = await $fetch(`/api/jobs/${props.jobId}/candidate-intake`')
+    const uploadGuard = modal.indexOf('if (resumeFile.value)', intakeCall)
+    const uploadCall = modal.indexOf('await uploadResume(candidateId)', uploadGuard)
+    expect(intakeCall).toBeGreaterThanOrEqual(0)
+    expect(uploadGuard).toBeGreaterThan(intakeCall)
+    expect(uploadCall).toBeGreaterThan(uploadGuard)
+    expect(modal.slice(uploadGuard, uploadCall)).not.toContain('result.created')
+  })
+
+  it('creates a distinct document record instead of replacing an older resume', () => {
+    expect(documentUpload).toContain('const documentId = crypto.randomUUID()')
+    expect(documentUpload).toContain('await db.insert(document).values')
+    expect(documentUpload).toContain('candidateId,')
+    expect(documentUpload).toContain('type: documentType')
+    expect(documentUpload).not.toContain('db.update(document)')
+    expect(documentUpload).not.toContain('db.delete(document)')
+  })
+
+  it('uses the newest readable resume for the next AI assessment', () => {
+    expect(quickMatch).toContain("eq(document.type, 'resume')")
+    expect(quickMatch).toContain('orderBy: [desc(document.createdAt)]')
+    expect(quickMatch).toContain('const latestResume = resumeCandidates.find(resume => Boolean(extractResumeText(resume.parsedContent)))')
+    expect(quickMatch).toContain('selectedResumeDocumentId: latestResume.id')
   })
 
   it('lets the recruiter selectively request identity/contact refreshes without a separate PATCH', () => {
