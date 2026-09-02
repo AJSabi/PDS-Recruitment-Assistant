@@ -27,10 +27,11 @@ describe('PDS AI usage analytics governance', () => {
     expect(source).toContain('It is not a provider invoice')
   })
 
-  it('keeps the management navigation admin-scoped', () => {
+  it('keeps AI usage out of primary recruitment navigation while management analytics stay admin-scoped', () => {
     const source = readSource('app/components/AppTopBar.vue')
-    expect(source).toContain("label: 'AI Usage'")
-    expect(source).toContain("to: '/dashboard/management-ai-usage'")
-    expect(source).toContain('canManageRequirements.value')
+    expect(source).not.toContain("label: 'AI Usage'")
+    expect(source).not.toContain("to: '/dashboard/management-ai-usage'")
+    expect(source).toContain("label: 'Recruitment Analytics'")
+    expect(source).toContain('canManageRequirements.value ? [')
   })
 })
