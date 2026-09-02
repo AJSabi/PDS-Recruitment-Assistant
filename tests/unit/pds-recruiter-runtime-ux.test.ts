@@ -56,11 +56,12 @@ describe('PDS recruiter runtime UX safeguards', () => {
     expect(page).toContain('>Approved</div>')
   })
 
-  it('makes the dashboard Actions Pending card open a real recruiter work queue', () => {
+  it('makes the dashboard Actions Pending KPI open a real recruiter work queue', () => {
     const dashboard = source('app/pages/dashboard/index.vue')
     const queue = source('app/pages/dashboard/actions.vue')
     expect(dashboard).toContain("localePath('/dashboard/actions')")
-    expect(dashboard).toContain('Open recruiter action queue')
+    expect(dashboard).toContain('Actions Pending')
+    expect(dashboard).toContain('Candidate follow-ups')
     expect(queue).toContain("useFetch('/api/dashboard/pending-actions'")
     expect(queue).toContain('/dashboard/recruitment/${row.id}')
   })
