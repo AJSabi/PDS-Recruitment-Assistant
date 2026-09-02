@@ -30,6 +30,6 @@ describe('PDS resume identity review UX', () => {
     expect(intake).toContain('const matchedByEmail')
     expect(intake).toContain('const matchedByPhone = !matchedByEmail')
     expect(intake).toContain("dedupeOrder: 'email_then_phone'")
-    expect(schema).toContain('Last name is required for a new candidate.')
+    expect(schema).toContain('lastName: z.string().trim().max(100).optional()')
   })
 })

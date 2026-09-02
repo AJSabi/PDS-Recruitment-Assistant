@@ -14,7 +14,7 @@ const { candidate, status: fetchStatus, error, updateCandidate, refresh } = useC
 const { formatCandidateName, formatDate } = useOrgSettings()
 const { uploadDocument, downloadDocument, getPreviewUrl, deleteDocument } = useDocuments()
 
-useSeoMeta({ title: computed(() => candidate.value ? `${candidate.value.firstName} ${candidate.value.lastName}` : 'Candidate') })
+useSeoMeta({ title: computed(() => candidate.value ? formatCandidateName(candidate.value) : 'Candidate') })
 
 const activeTab = ref<'applications' | 'documents'>('applications')
 const isEditing = ref(false)
@@ -24,7 +24,7 @@ const editForm = ref({ firstName: '', lastName: '', displayName: '', email: '', 
 
 const editSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),
-  lastName: z.string().min(1, 'Last name is required').max(100),
+  lastName: z.string().trim().max(100),
   displayName: z.string().max(200).optional(),
   email: z.string().min(1, 'Email is required').email('Invalid email address').max(255),
   phone: z.string().max(50).optional(),
@@ -145,7 +145,7 @@ async function handleDeleteDoc(id: string) {
         <h2 class="font-bold text-[#102A43] dark:text-white">Edit Candidate</h2>
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
           <label class="text-sm">First name<input v-model="editForm.firstName" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /><span v-if="editErrors.firstName" class="text-xs text-danger-600">{{ editErrors.firstName }}</span></label>
-          <label class="text-sm">Last name<input v-model="editForm.lastName" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>
+          <label class="text-sm">Last name <span class="text-xs text-surface-400">(optional for single-name candidates)</span><input v-model="editForm.lastName" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>
           <label class="text-sm">Email<input v-model="editForm.email" type="email" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>
           <label class="text-sm">Phone<input v-model="editForm.phone" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>
           <label class="text-sm">Display name<input v-model="editForm.displayName" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>

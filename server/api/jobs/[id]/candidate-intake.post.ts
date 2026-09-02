@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
       const [createdCandidate] = await db.insert(candidate).values({
         organizationId: orgId,
         firstName: body.firstName!,
-        lastName: body.lastName!,
+        lastName: body.lastName ?? '',
         email,
         phone: body.phone,
       }).returning({ id: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, email: candidate.email })

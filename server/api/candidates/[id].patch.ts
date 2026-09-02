@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
     action: 'updated',
     resourceType: 'candidate',
     resourceId: id,
-    metadata: { name: `${updated.firstName} ${updated.lastName}` },
+    metadata: { name: [updated.firstName, updated.lastName].filter(Boolean).join(' ') },
   })
 
   return updated

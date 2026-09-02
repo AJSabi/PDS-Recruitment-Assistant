@@ -200,7 +200,7 @@ async function createCandidate() {
   const firstName = newCandidate.firstName.trim()
   const lastName = newCandidate.lastName.trim()
   const email = newCandidate.email.trim()
-  if (!firstName || !lastName || !email) return void (applyError.value = 'First name, last name and email are required.')
+  if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')
   if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')
   await attachCandidate({
     firstName,
@@ -293,7 +293,7 @@ async function createCandidate() {
               </div>
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="text-sm font-medium">First name <span class="text-danger-500">*</span><input v-model="newCandidate.firstName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
-                <label class="text-sm font-medium">Last name <span class="text-danger-500">*</span><input v-model="newCandidate.lastName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+                <label class="text-sm font-medium">Last name <span class="font-normal text-surface-400">(optional for single-name candidates)</span><input v-model="newCandidate.lastName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
               </div>
               <label class="block text-sm font-medium">Email <span class="text-danger-500">*</span><input v-model="newCandidate.email" :disabled="isApplying" type="email" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
               <label class="block text-sm font-medium">Phone<input v-model="newCandidate.phone" :disabled="isApplying" type="tel" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
