@@ -1,4 +1,8 @@
 import { envSchema } from '../utils/env'
+import {
+  assertProcessLocalRateLimitDeploymentSafe,
+  isProductionLikeRateLimitEnvironment,
+} from '../utils/rateLimitDeployment'
 
 const PLACEHOLDER_VALUES = [
   'change-me',
@@ -26,13 +30,22 @@ if (!parsed.success) {
 }
 
 const env = parsed.data
-const productionLike = process.env.NODE_ENV === 'production'
-  || process.env.RAILWAY_ENVIRONMENT_NAME?.toLowerCase() === 'production'
-  || process.env.RAILWAY_ENVIRONMENT_NAME?.toLowerCase() === 'prod'
+const rateLimitDeploymentEnvironment = {
+  nodeEnv: process.env.NODE_ENV,
+  railwayEnvironmentName: process.env.RAILWAY_ENVIRONMENT_NAME,
+  railwayReplicaCount: process.env.RAILWAY_REPLICA_COUNT,
+}
+const productionLike = isProductionLikeRateLimitEnvironment(rateLimitDeploymentEnvironment)
 
 if (!productionLike) {
   console.log('[release-preflight] Base environment validation passed (non-production environment).')
   process.exit(0)
+}
+
+try {
+  assertProcessLocalRateLimitDeploymentSafe(rateLimitDeploymentEnvironment)
+} catch (error) {
+  fail(error instanceof Error ? error.message : 'Process-local API rate-limit deployment safety check failed.')
 }
 
 if (isPlaceholder(env.BETTER_AUTH_SECRET)) {
