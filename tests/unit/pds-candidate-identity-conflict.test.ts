@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { findCandidateIdentityConflicts } from '../../server/utils/candidateIdentityConflict'
+
+const read = (path: string) => readFileSync(path, 'utf8')
+
+describe('PDS candidate identity conflict protection', () => {
+  it('detects materially different names on an existing database identity', () => {
+    const conflicts = findCandidateIdentityConflicts(
+      { firstName: 'Rahul', lastName: 'Sharma', email: 'rahul@example.com', phone: '+91 98765 43210' },
+      { firstName: 'Rakesh', lastName: 'Sharma', email: 'rahul@example.com', phone: '+91 98765 43210' },
+    )
+    expect(conflicts.map(c => c.field)).toContain('name')
+    expect(conflicts.map(c => c.field)).not.toContain('email')
+  })
+
+  it('normalizes case, whitespace and phone punctuation before comparing', () => {
+    expect(findCandidateIdentityConflicts(
+      { firstName: 'Cher', lastName: '', email: 'CHER@example.com', phone: '+91 98-7654-3210' },
+      { firstName: '  cher ', lastName: '', email: 'cher@example.com', phone: '919876543210' },
+    )).toEqual([])
+  })
+
+  it('checks email first and phone second in the preflight endpoint', () => {
+    const endpoint = read('server/api/jobs/[id]/candidate-identity-check.post.ts')
+    expect(endpoint).toContain('const matchedByEmail')
+    expect(endpoint).toContain('const matchedByPhone = !matchedByEmail')
+    expect(endpoint).toContain("matchBasis: matchedByEmail ? 'email' as const : 'phone' as const")
+  })
+
+  it('requires explicit recruiter confirmation before a conflicting existing identity is reused', () => {
+    const modal = read('app/components/ApplyCandidateModal.vue')
+    expect(modal).toContain('candidate-identity-conflict')
+    expect(modal).toContain('candidate-identity-conflict-confirm')
+    expect(modal).toContain('identityConflictConfirmed.value')
+    expect(modal).toContain('Use the existing Candidate Database identity.')
+    expect(modal).toContain('candidateId: identityConflictCheck.value.candidate.id')
+  })
+
+  it('enforces the conflict guard at the intake API and does not overwrite identity fields', () => {
+    const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
+    expect(intake).toContain('findCandidateIdentityConflicts(matchedCandidate, body)')
+    expect(intake).toContain('Review the conflict and explicitly use the existing candidate record')
+    expect(intake).not.toContain('db.update(candidate)')
+  })
+})

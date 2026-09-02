@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
+import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
 import { applicationSourcePersistence } from '../../../utils/recruitmentSource'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
@@ -54,6 +55,13 @@ export default defineEventHandler(async (event) => {
     }
 
     if (matchedCandidate) {
+      const identityConflicts = findCandidateIdentityConflicts(matchedCandidate, body)
+      if (identityConflicts.length) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'A Candidate Database record matches this email or phone, but its identity details differ. Review the conflict and explicitly use the existing candidate record instead of creating a new identity.',
+        })
+      }
       candidateRecord = { id: matchedCandidate.id, firstName: matchedCandidate.firstName, lastName: matchedCandidate.lastName, email: matchedCandidate.email }
     } else {
       const [createdCandidate] = await db.insert(candidate).values({

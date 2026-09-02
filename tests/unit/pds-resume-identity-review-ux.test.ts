@@ -31,5 +31,6 @@ describe('PDS resume identity review UX', () => {
     expect(intake).toContain('const matchedByPhone = !matchedByEmail')
     expect(intake).toContain("dedupeOrder: 'email_then_phone'")
     expect(schema).toContain('lastName: z.string().trim().max(100).optional()')
+    expect(read('server/api/jobs/[id]/candidate-identity-check.post.ts')).toContain('const matchedByEmail')
   })
 })

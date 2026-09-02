@@ -28,9 +28,18 @@ type ParsedResumeIdentity = {
   nameConfidence: 'high' | 'medium' | 'low'
   nameSource: 'label' | 'header' | 'filename' | 'unresolved'
 }
+type CandidateIdentityConflictCheck = {
+  matched: boolean
+  matchBasis?: 'email' | 'phone'
+  requiresConfirmation?: boolean
+  conflicts?: Array<{ field: 'name' | 'email' | 'phone'; existing: string; incoming: string }>
+  candidate?: { id: string; firstName: string; lastName: string; email: string; phone: string | null }
+}
 const resumeIdentity = ref<ParsedResumeIdentity | null>(null)
 const identityReviewed = ref(false)
 const applyingParsedIdentity = ref(false)
+const identityConflictCheck = ref<CandidateIdentityConflictCheck | null>(null)
+const identityConflictConfirmed = ref(false)
 
 function confidenceLabel(confidence?: ParsedResumeIdentity['nameConfidence']) {
   if (confidence === 'high') return 'High confidence'
@@ -66,6 +75,8 @@ watch(mode, (value) => {
   resumeFile.value = null
   resumeIdentity.value = null
   identityReviewed.value = false
+  identityConflictCheck.value = null
+  identityConflictConfirmed.value = false
   source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'
 })
 
@@ -86,6 +97,8 @@ watch(
   () => [newCandidate.firstName, newCandidate.lastName, newCandidate.email, newCandidate.phone],
   () => {
     if (resumeFile.value && resumeIdentity.value && !applyingParsedIdentity.value) identityReviewed.value = false
+    identityConflictCheck.value = null
+    identityConflictConfirmed.value = false
   },
 )
 const matchResult = ref<any | null>(null)
@@ -200,13 +213,37 @@ async function createCandidate() {
   const firstName = newCandidate.firstName.trim()
   const lastName = newCandidate.lastName.trim()
   const email = newCandidate.email.trim()
+  const phone = newCandidate.phone.trim() || undefined
   if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')
   if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')
+
+  if (!identityConflictCheck.value) {
+    try {
+      identityConflictCheck.value = await ($fetch as any)(`/api/jobs/${props.jobId}/candidate-identity-check`, {
+        method: 'POST',
+        body: { firstName, lastName, email, phone },
+      }) as CandidateIdentityConflictCheck
+    } catch (err: any) {
+      applyError.value = err?.data?.statusMessage ?? err?.message ?? 'Candidate identity could not be checked against the Candidate Database.'
+      return
+    }
+  }
+
+  if (identityConflictCheck.value.matched && identityConflictCheck.value.requiresConfirmation && !identityConflictConfirmed.value) {
+    applyError.value = 'A matching Candidate Database record has different identity details. Review the warning below and confirm before linking the existing record.'
+    return
+  }
+
+  if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {
+    await attachCandidate({ candidateId: identityConflictCheck.value.candidate.id, source: source.value })
+    return
+  }
+
   await attachCandidate({
     firstName,
     lastName,
     email,
-    phone: newCandidate.phone.trim() || undefined,
+    phone,
     notes: newCandidate.notes.trim() || undefined,
     source: source.value,
   })
@@ -290,6 +327,19 @@ async function createCandidate() {
                   <span><strong>I reviewed the candidate identity.</strong> I confirm the final name, email and phone shown below are correct before this candidate is created or linked.</span>
                 </label>
                 <p v-if="identityReviewed" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><CheckCircle2 class="size-3.5" />Identity reviewed. Editing an identity field will require confirmation again.</p>
+              </div>
+              <div v-if="identityConflictCheck?.matched && identityConflictCheck.requiresConfirmation" data-testid="candidate-identity-conflict" class="rounded-xl border border-warning-300 bg-warning-50 p-4 text-sm text-warning-900">
+                <p class="font-semibold">Possible duplicate identity conflict</p>
+                <p class="mt-1 text-xs leading-5">A Candidate Database record already matches this {{ identityConflictCheck.matchBasis }}. The existing identity will not be overwritten. Compare the details below before linking it.</p>
+                <div class="mt-3 space-y-2">
+                  <div v-for="conflict in identityConflictCheck.conflicts" :key="conflict.field" class="rounded-lg bg-white/80 px-3 py-2 text-xs">
+                    <span class="font-semibold capitalize">{{ conflict.field }}</span>: existing "{{ conflict.existing }}" vs entered "{{ conflict.incoming }}"
+                  </div>
+                </div>
+                <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-warning-200 bg-white p-3 text-xs">
+                  <input v-model="identityConflictConfirmed" data-testid="candidate-identity-conflict-confirm" type="checkbox" class="mt-0.5 size-4" />
+                  <span><strong>Use the existing Candidate Database identity.</strong> I reviewed the differences and confirm this resume/candidate belongs to that existing person.</span>
+                </label>
               </div>
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="text-sm font-medium">First name <span class="text-danger-500">*</span><input v-model="newCandidate.firstName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
