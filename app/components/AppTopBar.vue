@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   BarChart3,
-  Bot,
   Briefcase,
   ChevronDown,
   ChevronLeft,
@@ -48,13 +47,12 @@ async function handleSignOut() {
 }
 
 const mainNav = computed(() => [
-  { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, exact: true },
-  { label: 'Requirements', to: '/dashboard/jobs', icon: Briefcase, exact: false },
+  { label: 'Command Centre', to: '/dashboard', icon: LayoutDashboard, exact: true },
+  { label: 'Requisitions', to: '/dashboard/jobs', icon: Briefcase, exact: false },
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
   ...(canManageRequirements.value ? [
-    { label: 'Analytics', to: '/dashboard/management-analytics', icon: BarChart3, exact: true },
-    { label: 'AI Usage', to: '/dashboard/management-ai-usage', icon: Bot, exact: true },
-    { label: 'Allocations', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true },
+    { label: 'Recruitment Analytics', to: '/dashboard/management-analytics', icon: BarChart3, exact: true },
+    { label: 'Team Allocation', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true },
   ] : []),
   canManageRequirements.value
     ? { label: 'Settings', to: '/dashboard/settings', icon: Settings, exact: false }
@@ -92,11 +90,11 @@ const jobTabs = computed(() => {
   if (!activeJobId.value) return []
   const base = `/dashboard/jobs/${activeJobId.value}`
   return [
-    { id: 'pipeline', label: 'Pipeline', to: base },
+    { id: 'pipeline', label: 'Candidate Pipeline', to: base },
     { id: 'jd-skill-matrix', label: 'JD & Skill Matrix', to: `${base}/ai-analysis` },
-    { id: 'ai-candidate-pool', label: 'AI Candidate Pool', to: `${base}/pds-ranking` },
+    { id: 'ai-candidate-pool', label: 'Candidate Match', to: `${base}/pds-ranking` },
     { id: 'candidate-register', label: 'Candidate Register', to: `${base}/pds-register` },
-    { id: 'requirement-settings', label: 'Settings', to: `${base}/settings` },
+    { id: 'requirement-settings', label: 'Requisition Settings', to: `${base}/settings` },
   ]
 })
 
@@ -115,13 +113,13 @@ watch(() => route.path, () => {
             <img src="/eagle-mascot-logo.png" alt="PDS Recruitment Assistant" class="size-9 object-contain" />
             <span class="hidden text-[15px] font-bold leading-tight text-[#102A43] dark:text-surface-100 sm:block">PDS Recruitment<br />Assistant</span>
           </NuxtLink>
-          <nav class="hidden items-center gap-1 md:flex">
-            <NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors" :class="isActiveRoute(item.to, item.exact) ? 'bg-[#EAF4FB] text-[#1F6FA3] dark:bg-brand-950/40 dark:text-brand-300' : 'text-surface-600 hover:bg-[#F3F8FB] hover:text-[#102A43] dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100'"><component :is="item.icon" class="size-4" />{{ item.label }}</NuxtLink>
+          <nav class="hidden items-center gap-1 md:flex" aria-label="Recruitment navigation">
+            <NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium no-underline transition-colors" :class="isActiveRoute(item.to, item.exact) ? 'bg-[#E9F4F7] text-[#176B87] dark:bg-brand-950/40 dark:text-brand-300' : 'text-surface-600 hover:bg-[#F3F8FB] hover:text-[#102A43] dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100'"><component :is="item.icon" class="size-4" />{{ item.label }}</NuxtLink>
           </nav>
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <NuxtLink v-if="canManageRequirements" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-[#2E86C1] px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-[#2677AD]"><Plus class="size-4" /><span class="hidden sm:inline">New Requirement</span></NuxtLink>
+          <NuxtLink v-if="canManageRequirements" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-1.5 rounded-lg bg-[#176B87] px-4 py-2 text-sm font-semibold text-white no-underline shadow-sm hover:bg-[#125970]"><Plus class="size-4" /><span class="hidden sm:inline">New Requisition</span></NuxtLink>
           <div class="hidden lg:block"><LanguageSwitcher /></div>
           <button type="button" class="inline-flex size-9 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 dark:text-surface-400 dark:hover:bg-surface-800" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'" @click="toggleColorMode"><Sun v-if="isDark" class="size-4" /><Moon v-else class="size-4" /></button>
           <div class="relative">
@@ -131,15 +129,15 @@ watch(() => route.path, () => {
           <button type="button" class="inline-flex size-9 items-center justify-center rounded-lg text-surface-500 hover:bg-surface-100 md:hidden dark:text-surface-400 dark:hover:bg-surface-800" @click="showMobileMenu = !showMobileMenu"><X v-if="showMobileMenu" class="size-5" /><Menu v-else class="size-5" /></button>
         </div>
       </div>
-      <nav v-if="showMobileMenu" class="border-t border-surface-100 px-4 py-3 md:hidden dark:border-surface-800"><NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-[#F3F8FB] dark:text-surface-400 dark:hover:bg-surface-800"><component :is="item.icon" class="size-4" />{{ item.label }}</NuxtLink></nav>
+      <nav v-if="showMobileMenu" class="border-t border-surface-100 px-4 py-3 md:hidden dark:border-surface-800" aria-label="Mobile recruitment navigation"><NuxtLink v-for="item in mainNav" :key="item.to" :to="localePath(item.to)" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-surface-600 no-underline hover:bg-[#F3F8FB] dark:text-surface-400 dark:hover:bg-surface-800"><component :is="item.icon" class="size-4" />{{ item.label }}</NuxtLink></nav>
     </div>
 
     <div v-if="activeJobId" class="border-b border-[#D9E6EF] bg-[#F7FBFE]/95 dark:border-surface-800 dark:bg-surface-950/95">
       <div class="flex h-11 items-center gap-3 overflow-x-auto px-4 lg:px-6">
-        <a :href="localePath('/dashboard/jobs')" data-testid="requirement-tab-all" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-[#102A43] dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requirements</a>
-        <span class="hidden max-w-52 truncate text-sm font-semibold text-[#102A43] sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requirement' }}</span>
+        <a :href="localePath('/dashboard/jobs')" data-testid="requirement-tab-all" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-surface-500 no-underline hover:text-[#102A43] dark:text-surface-400 dark:hover:text-surface-100"><ChevronLeft class="size-3.5" />All Requisitions</a>
+        <span class="hidden max-w-52 truncate text-sm font-semibold text-[#102A43] sm:inline dark:text-surface-100">{{ activeJob?.title ?? 'Requisition' }}</span>
         <nav class="flex items-center gap-1" data-testid="requirement-tab-ribbon">
-          <a v-for="tab in jobTabs" :key="tab.to" :href="localePath(tab.to)" :data-testid="`requirement-tab-${tab.id}`" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-[#1F6FA3] dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</a>
+          <a v-for="tab in jobTabs" :key="tab.to" :href="localePath(tab.to)" :data-testid="`requirement-tab-${tab.id}`" class="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium no-underline" :class="isActiveRoute(tab.to, true) ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-800 dark:text-surface-100' : 'text-surface-500 hover:text-[#176B87] dark:text-surface-400 dark:hover:text-surface-100'">{{ tab.label }}</a>
         </nav>
         <div id="job-sub-nav-actions" class="ml-auto flex items-center gap-2" />
       </div>
