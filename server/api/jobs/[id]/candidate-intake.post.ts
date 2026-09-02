@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
+import { activityLog, application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
 import { applicationSourcePersistence } from '../../../utils/recruitmentSource'
@@ -77,6 +77,29 @@ export default defineEventHandler(async (event) => {
     candidateId = candidateRecord.id
   }
 
+  async function recordIdentityConflictResolution(applicationId: string) {
+    const resolution = body.identityConflictResolution
+    if (!resolution) return
+
+    await db.insert(activityLog).values({
+      organizationId: orgId,
+      actorId: session.user.id,
+      action: 'updated',
+      resourceType: 'candidate',
+      resourceId: candidateId!,
+      metadata: {
+        event: 'identity_conflict_resolved',
+        confirmation: true,
+        matchBasis: resolution.matchBasis,
+        conflictFields: resolution.conflictFields,
+        refreshedFields: resolution.refreshedFields,
+        source: 'resume_duplicate_review',
+        applicationId,
+        jobId,
+      },
+    })
+  }
+
   const duplicate = await db.query.application.findFirst({
     where: and(eq(application.organizationId, orgId), eq(application.candidateId, candidateId), eq(application.jobId, jobId)),
     columns: { id: true },
@@ -89,6 +112,7 @@ export default defineEventHandler(async (event) => {
     if (profile && requirementState?.ownerUserId && profile.assignedRecruiterId !== requirementState.ownerUserId) {
       await db.update(recruitmentApplicationProfile).set({ assignedRecruiterId: requirementState.ownerUserId, updatedAt: new Date() }).where(eq(recruitmentApplicationProfile.id, profile.id))
     }
+    await recordIdentityConflictResolution(duplicate.id)
     return {
       created: false,
       candidate: candidateRecord,
@@ -125,6 +149,8 @@ export default defineEventHandler(async (event) => {
     nextAction: 'Upload or verify the latest resume.',
     lastUpdatedBy: session.user.id,
   }).returning({ id: recruitmentApplicationProfile.id })
+
+  await recordIdentityConflictResolution(createdApplication.id)
 
   recordActivity({
     organizationId: orgId,
