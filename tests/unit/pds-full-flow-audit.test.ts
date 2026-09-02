@@ -33,12 +33,14 @@ describe('PDS full-flow audit safeguards', () => {
     expect(api).toContain('filter (where ${recruitmentRequirementState.id} is not null)')
   })
 
-  it('deduplicates direct candidate intake by email first and then phone', () => {
+  it('deduplicates direct candidate intake by canonical email first and then phone', () => {
     const api = source('server/api/jobs/[id]/candidate-intake.post.ts')
-    expect(api).toContain('matchedByEmail')
-    expect(api).toContain('matchedByPhone')
-    expect(api).toContain('matchedByEmail ?? matchedByPhone')
+    const matcher = source('server/utils/candidateIdentityMatch.ts')
+    expect(api).toContain('findCandidateIdentityMatch(orgId, { email, phone: body.phone })')
     expect(api).toContain("dedupeOrder: 'email_then_phone'")
+    expect(matcher.indexOf('const emailMatch')).toBeLessThan(matcher.indexOf('const phoneMatch'))
+    expect(matcher).toContain("if (emailMatch) return { basis: 'email'")
+    expect(matcher).toContain("if (phoneMatch) return { basis: 'phone'")
   })
 
   it('preserves existing target closure and closedAt when admin timing fields are omitted', () => {
