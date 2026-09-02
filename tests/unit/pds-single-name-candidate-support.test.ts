@@ -39,10 +39,11 @@ describe('PDS single-name candidate support', () => {
     expect(editPage).toContain('optional for single-name candidates')
   })
 
-  it('keeps email-first then phone dedupe unchanged', () => {
+  it('keeps email-first then phone dedupe unchanged through the shared matcher', () => {
     const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
-    expect(intake).toContain('const matchedByEmail')
-    expect(intake).toContain('const matchedByPhone = !matchedByEmail')
+    const matcher = read('server/utils/candidateIdentityMatch.ts')
+    expect(intake).toContain('findCandidateIdentityMatch(orgId, { email, phone: body.phone })')
     expect(intake).toContain("dedupeOrder: 'email_then_phone'")
+    expect(matcher.indexOf('const emailMatch')).toBeLessThan(matcher.indexOf('const phoneMatch'))
   })
 })
