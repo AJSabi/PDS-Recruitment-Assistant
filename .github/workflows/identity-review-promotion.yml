@@ -31,187 +31,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 10
 
-      - name: Guard validated parent
+      - name: Guard validated baseline and temporary scope
         shell: bash
         run: |
-          test "$(git rev-parse HEAD^)" = "dfed04c7f82c12e1fc30485b7eb6cbb1f31d05f3"
+          git merge-base --is-ancestor dfed04c7f82c12e1fc30485b7eb6cbb1f31d05f3 HEAD
+          unexpected="$(git diff --name-only dfed04c7f82c12e1fc30485b7eb6cbb1f31d05f3..HEAD | grep -vE '^\.github/(workflows/identity-review-promotion\.yml|scripts/identity_review_promotion\.py)$' || true)"
+          test -z "$unexpected"
 
       - name: Apply recruiter identity review UX
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          p = Path('app/components/ApplyCandidateModal.vue')
-          s = p.read_text()
-
-          def repl(old, new, count=1):
-              global s
-              if s.count(old) != count:
-                  raise SystemExit(f'Expected {count} occurrence(s), found {s.count(old)} for: {old[:100]!r}')
-              s = s.replace(old, new, count)
-
-          repl("import { FileText, Loader2, Search, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'",
-               "import { CheckCircle2, FileText, Loader2, Search, ShieldCheck, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'")
-
-          repl("const resumeFile = ref<File | null>(null)\nconst isParsingResume = ref(false)", """const resumeFile = ref<File | null>(null)
-const isParsingResume = ref(false)
-type ParsedResumeIdentity = {
-  firstName: string
-  lastName: string
-  email: string | null
-  phone: string | null
-  nameConfidence: 'high' | 'medium' | 'low'
-  nameSource: 'label' | 'header' | 'filename' | 'unresolved'
-}
-const resumeIdentity = ref<ParsedResumeIdentity | null>(null)
-const identityReviewed = ref(false)
-const applyingParsedIdentity = ref(false)
-
-function confidenceLabel(confidence?: ParsedResumeIdentity['nameConfidence']) {
-  if (confidence === 'high') return 'High confidence'
-  if (confidence === 'medium') return 'Review recommended'
-  return 'Manual review required'
-}
-
-function identitySourceLabel(source?: ParsedResumeIdentity['nameSource']) {
-  if (source === 'label') return 'Explicit resume name field'
-  if (source === 'header') return 'Resume header'
-  if (source === 'filename') return 'Filename/contact corroboration'
-  return 'Identity unresolved by parser'
-}""")
-
-          repl("  selectedExistingCandidateId.value = null\n  resumeFile.value = null\n  source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'", """  selectedExistingCandidateId.value = null
-  resumeFile.value = null
-  resumeIdentity.value = null
-  identityReviewed.value = false
-  source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'""")
-
-          repl("const newCandidate = reactive({ firstName: '', lastName: '', email: '', phone: '', notes: '' })\nconst matchResult", """const newCandidate = reactive({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
-watch(
-  () => [newCandidate.firstName, newCandidate.lastName, newCandidate.email, newCandidate.phone],
-  () => {
-    if (resumeFile.value && resumeIdentity.value && !applyingParsedIdentity.value) identityReviewed.value = false
-  },
-)
-const matchResult""")
-
-          old_parse = """    const result: any = await $fetch(`/api/jobs/${props.jobId}/resume-identity`, { method: 'POST', body: form })
-    const identity = result?.identity ?? {}
-    if (!newCandidate.firstName.trim() && identity.firstName) newCandidate.firstName = identity.firstName
-    if (!newCandidate.lastName.trim() && identity.lastName) newCandidate.lastName = identity.lastName
-    if (!newCandidate.email.trim() && identity.email) newCandidate.email = identity.email
-    if (!newCandidate.phone.trim() && identity.phone) newCandidate.phone = identity.phone
-    if (!identity.email) toast.info('Resume read', 'Name/contact details were only partially detected. Please review the fields before adding the candidate.')
-  } catch (err: any) {
-    toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually.')
-"""
-          new_parse = """    const result: any = await $fetch(`/api/jobs/${props.jobId}/resume-identity`, { method: 'POST', body: form })
-    const identity = result?.identity as ParsedResumeIdentity | undefined
-    resumeIdentity.value = identity ?? { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
-    identityReviewed.value = false
-    applyingParsedIdentity.value = true
-    try {
-      if (!newCandidate.firstName.trim() && identity?.firstName) newCandidate.firstName = identity.firstName
-      if (!newCandidate.lastName.trim() && identity?.lastName) newCandidate.lastName = identity.lastName
-      if (!newCandidate.email.trim() && identity?.email) newCandidate.email = identity.email
-      if (!newCandidate.phone.trim() && identity?.phone) newCandidate.phone = identity.phone
-    } finally {
-      applyingParsedIdentity.value = false
-    }
-    if (!identity?.email || identity.nameConfidence !== 'high') toast.info('Resume read', 'Please review the parsed candidate identity before creating the candidate.')
-  } catch (err: any) {
-    resumeIdentity.value = { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
-    identityReviewed.value = false
-    toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually and confirm them before saving.')
-"""
-          repl(old_parse, new_parse)
-
-          repl("  resumeFile.value = input.files?.[0] ?? null\n  resetError()", """  resumeFile.value = input.files?.[0] ?? null
-  resumeIdentity.value = null
-  identityReviewed.value = false
-  resetError()""")
-
-          repl("  if (!firstName || !lastName || !email) return void (applyError.value = 'First name, last name and email are required.')\n  await attachCandidate({", """  if (!firstName || !lastName || !email) return void (applyError.value = 'First name, last name and email are required.')
-  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')
-  await attachCandidate({""")
-
-          repl("                <span class=\"mt-1 block text-xs text-surface-500\">PDF, DOC or DOCX. Candidate identity is parsed locally; AI is used only after save for the match assessment.</span>",
-               "                <span class=\"mt-1 block text-xs text-surface-500\">PDF, DOC or DOCX. Candidate identity is parsed locally and remains editable. Nothing is saved until you review the fields and add the candidate.</span>")
-
-          marker = """              </label>
-              <div class="grid gap-4 sm:grid-cols-2">"""
-          card = """              </label>
-              <div v-if="resumeFile && resumeIdentity && !isParsingResume" data-testid="resume-identity-review" class="rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4">
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                  <div class="flex items-start gap-2">
-                    <ShieldCheck class="mt-0.5 size-4 text-[#2E86C1]" />
-                    <div>
-                      <p class="text-sm font-semibold text-[#102A43]">Review parsed candidate identity</p>
-                      <p class="mt-1 text-xs leading-5 text-surface-500">Check and correct the editable name, email and phone fields below. The reviewed values become the Candidate Database identity.</p>
-                    </div>
-                  </div>
-                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#1F6FA3] shadow-sm">{{ confidenceLabel(resumeIdentity.nameConfidence) }}</span>
-                </div>
-                <div class="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs text-surface-600">
-                  <span class="font-semibold">Parser source:</span> {{ identitySourceLabel(resumeIdentity.nameSource) }}
-                  <span v-if="resumeIdentity.nameConfidence === 'low'" class="ml-1 text-[#976511]">— manually verify every identity field.</span>
-                </div>
-                <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-surface-200 bg-white p-3 text-xs text-surface-700">
-                  <input v-model="identityReviewed" data-testid="resume-identity-confirm" type="checkbox" class="mt-0.5 size-4" />
-                  <span><strong>I reviewed the candidate identity.</strong> I confirm the final name, email and phone shown below are correct before this candidate is created or linked.</span>
-                </label>
-                <p v-if="identityReviewed" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><CheckCircle2 class="size-3.5" />Identity reviewed. Editing an identity field will require confirmation again.</p>
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">"""
-          repl(marker, card)
-
-          p.write_text(s)
-
-          test = Path('tests/unit/pds-resume-identity-review-ux.test.ts')
-          test.write_text("""import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-
-const read = (path: string) => readFileSync(path, 'utf8')
-
-describe('PDS resume identity review UX', () => {
-  it('shows parser confidence/source and requires recruiter confirmation before resume-backed creation', () => {
-    const modal = read('app/components/ApplyCandidateModal.vue')
-    expect(modal).toContain('resumeIdentity.nameConfidence')
-    expect(modal).toContain('identitySourceLabel(resumeIdentity.nameSource)')
-    expect(modal).toContain('data-testid=\"resume-identity-review\"')
-    expect(modal).toContain('data-testid=\"resume-identity-confirm\"')
-    expect(modal).toContain("if (resumeFile.value && !identityReviewed.value)")
-    expect(modal).toContain('Review and confirm the candidate identity before creating the candidate.')
-    expect(modal).toContain('Editing an identity field will require confirmation again.')
-  })
-
-  it('keeps parsed values editable and does not create a candidate from the parser endpoint', () => {
-    const modal = read('app/components/ApplyCandidateModal.vue')
-    const parserEndpoint = read('server/api/jobs/[id]/resume-identity.post.ts')
-    expect(modal).toContain('v-model=\"newCandidate.firstName\"')
-    expect(modal).toContain('v-model=\"newCandidate.email\"')
-    expect(parserEndpoint).toContain('identity: inferResumeIdentity')
-    expect(parserEndpoint).not.toContain('db.insert(candidate)')
-  })
-
-  it('preserves central candidate dedupe order and intake requirements', () => {
-    const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
-    const schema = read('server/utils/schemas/candidateIntake.ts')
-    expect(intake).toContain('const matchedByEmail')
-    expect(intake).toContain('const matchedByPhone = !matchedByEmail')
-    expect(intake).toContain("dedupeOrder: 'email_then_phone'")
-    expect(schema).toContain('Last name is required for a new candidate.')
-  })
-})
-""")
-          PY
+        run: python3 .github/scripts/identity_review_promotion.py
 
       - name: Verify change scope
         shell: bash
         run: |
-          git diff --exit-code -- . ':!app/components/ApplyCandidateModal.vue' ':!tests/unit/pds-resume-identity-review-ux.test.ts' ':!.github/workflows/identity-review-promotion.yml'
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' app/components/ApplyCandidateModal.vue tests/unit/pds-resume-identity-review-ux.test.ts | sort)"
+          test "$changed" = "$expected"
           git diff --check
 
       - name: Setup Node
@@ -250,6 +87,5 @@ describe('PDS resume identity review UX', () => {
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add app/components/ApplyCandidateModal.vue tests/unit/pds-resume-identity-review-ux.test.ts
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n' app/components/ApplyCandidateModal.vue tests/unit/pds-resume-identity-review-ux.test.ts | sort)"
           git commit -m "feat: require recruiter identity review"
           git push origin HEAD:feature/pds-skill-matrix
