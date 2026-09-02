@@ -93,6 +93,13 @@ replace(
     '<label class="text-sm">Last name <span class="text-xs text-surface-400">(optional for single-name candidates)</span><input v-model="editForm.lastName" class="mt-1 w-full rounded-lg border border-surface-300 px-3 py-2" /></label>',
 )
 
+# Update the prior identity-review regression so it protects the new single-name contract.
+replace(
+    'tests/unit/pds-resume-identity-review-ux.test.ts',
+    "    expect(schema).toContain('Last name is required for a new candidate.')",
+    "    expect(schema).toContain('lastName: z.string().trim().max(100).optional()')",
+)
+
 Path('tests/unit/pds-single-name-candidate-support.test.ts').write_text("""import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { candidateIntakeSchema } from '../../server/utils/schemas/candidateIntake'
