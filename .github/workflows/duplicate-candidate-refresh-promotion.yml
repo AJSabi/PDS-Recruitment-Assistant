@@ -1,0 +1,92 @@
+name: Duplicate Candidate Refresh Promotion
+
+on:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+    paths:
+      - .github/workflows/duplicate-candidate-refresh-promotion.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://validation:validation@127.0.0.1:5432/validation
+      BETTER_AUTH_SECRET: validation-release-secret-0123456789abcdef
+      BETTER_AUTH_URL: https://validation.example.com
+      S3_ENDPOINT: https://s3.validation.example.com
+      S3_ACCESS_KEY: validation-access-key
+      S3_SECRET_KEY: validation-secret-key
+      S3_BUCKET: validation-bucket
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: false
+      RESEND_API_KEY: re_validation_not_used_at_runtime_0123456789
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 10
+
+      - name: Guard validated baseline and temporary scope
+        shell: bash
+        run: |
+          git merge-base --is-ancestor 04cfae882b9982d12441d8ba6a1685ff6b3bb207 HEAD
+          unexpected="$(git diff --name-only 04cfae882b9982d12441d8ba6a1685ff6b3bb207..HEAD | grep -vE '^\.github/(workflows/duplicate-candidate-refresh-promotion\.yml|scripts/duplicate_candidate_refresh_promotion\.py)$' || true)"
+          test -z "$unexpected"
+
+      - name: Apply duplicate candidate refresh workflow
+        run: python3 .github/scripts/duplicate_candidate_refresh_promotion.py
+
+      - name: Verify change scope
+        shell: bash
+        run: |
+          changed="$(git status --porcelain | sed -E 's/^.. //' | sort)"
+          expected="$(printf '%s\n' app/components/ApplyCandidateModal.vue tests/unit/pds-duplicate-candidate-refresh.test.ts | sort)"
+          test "$changed" = "$expected"
+          git diff --check
+          test -z "$(git diff --name-only | grep '^server/database/migrations/' || true)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Use validated npm resolver
+        run: npm install --global npm@11.6.0
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Production release preflight
+        run: npm run release:preflight
+
+      - name: Security audit
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e "const r=require('./npm-audit.json'); if ((r.metadata?.vulnerabilities?.total ?? 0) !== 0) process.exit(1)"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit validated workflow
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/components/ApplyCandidateModal.vue tests/unit/pds-duplicate-candidate-refresh.test.ts
+          git commit -m "feat: refresh duplicate candidate documents and details"
+          git push origin HEAD:feature/pds-skill-matrix
