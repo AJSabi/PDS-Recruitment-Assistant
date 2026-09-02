@@ -2,10 +2,12 @@ import { and, eq, ne } from 'drizzle-orm'
 import { application, job } from '../../database/schema/app'
 import { member, user } from '../../database/schema/auth'
 import { recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema/recruitmentWorkflow'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const [members, profiles, states] = await Promise.all([
     db.select({ id: user.id, name: user.name, email: user.email, role: member.role })
