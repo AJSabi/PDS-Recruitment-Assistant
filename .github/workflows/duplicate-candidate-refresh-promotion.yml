@@ -93,3 +93,5 @@ jobs:
           git add app/components/ApplyCandidateModal.vue tests/unit/pds-candidate-identity-conflict.test.ts tests/unit/pds-duplicate-candidate-refresh.test.ts
           git commit -m "feat: refresh duplicate candidate documents and details"
           git push origin HEAD:feature/pds-skill-matrix
+
+      # Trigger marker: corrected candidate-id regression assertion.
