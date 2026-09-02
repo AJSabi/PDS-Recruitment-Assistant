@@ -26,11 +26,13 @@ describe('PDS resume identity review UX', () => {
 
   it('preserves central candidate dedupe order and intake requirements', () => {
     const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
+    const identityCheck = read('server/api/jobs/[id]/candidate-identity-check.post.ts')
+    const matcher = read('server/utils/candidateIdentityMatch.ts')
     const schema = read('server/utils/schemas/candidateIntake.ts')
-    expect(intake).toContain('const matchedByEmail')
-    expect(intake).toContain('const matchedByPhone = !matchedByEmail')
+    expect(intake).toContain('findCandidateIdentityMatch(orgId, { email, phone: body.phone })')
+    expect(identityCheck).toContain('findCandidateIdentityMatch(orgId, body)')
     expect(intake).toContain("dedupeOrder: 'email_then_phone'")
+    expect(matcher.indexOf('const emailMatch')).toBeLessThan(matcher.indexOf('const phoneMatch'))
     expect(schema).toContain('lastName: z.string().trim().max(100).optional()')
-    expect(read('server/api/jobs/[id]/candidate-identity-check.post.ts')).toContain('const matchedByEmail')
   })
 })
