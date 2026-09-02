@@ -3,12 +3,18 @@ import { RECRUITMENT_SOURCE_VALUES } from '../recruitmentSource'
 
 const identityFieldSchema = z.enum(['name', 'email', 'phone'])
 
+const reviewedIdentitySchema = z.object({
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().max(100).default(''),
+  email: z.string().trim().email().max(255).transform(value => value.toLowerCase()),
+  phone: z.string().trim().max(50).nullable().optional(),
+}).strict()
+
 const identityConflictResolutionSchema = z.object({
   confirmed: z.literal(true),
-  matchBasis: z.enum(['email', 'phone']),
-  conflictFields: z.array(identityFieldSchema).max(3).refine(values => new Set(values).size === values.length, 'Conflict fields must be unique.'),
   refreshedFields: z.array(identityFieldSchema).max(3).refine(values => new Set(values).size === values.length, 'Refreshed fields must be unique.'),
-})
+  reviewedIdentity: reviewedIdentitySchema,
+}).strict()
 
 export const candidateIntakeSchema = z.object({
   candidateId: z.string().min(1).optional(),
