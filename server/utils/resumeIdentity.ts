@@ -1,10 +1,18 @@
+export type IdentityConfidence = 'high' | 'medium' | 'low'
+
 export interface InferredResumeIdentity {
   firstName: string
   lastName: string
   email: string | null
   phone: string | null
-  nameConfidence: 'high' | 'medium' | 'low'
+  nameConfidence: IdentityConfidence
   nameSource: 'label' | 'header' | 'filename' | 'unresolved'
+  emailConfidence: IdentityConfidence
+  emailSource: 'resume_text' | 'unresolved'
+  phoneConfidence: IdentityConfidence
+  phoneSource: 'label' | 'resume_text' | 'unresolved'
+  reviewRequired: boolean
+  reviewReasons: string[]
 }
 
 const NAME_LABEL = /^(?:candidate\s+)?(?:full\s+)?name\s*[:\-–—]\s*(.+)$/iu
@@ -15,6 +23,7 @@ const HEADER_SEGMENT_SEPARATOR = /[|•·]+/u
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu
 const URL_PATTERN = /(?:https?:\/\/|www\.)\S+/giu
 const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{8,}\d)/gu
+const PHONE_LABEL_PATTERN = /\b(?:mobile|phone|tel|telephone|contact)\s*[:\-]?\s*(\+?\d[\d\s().-]{8,}\d)/iu
 
 function normalizeCandidateName(value: string): string {
   return value
@@ -89,11 +98,6 @@ function corroborates(candidate: string, other: string | null): boolean {
   return overlap >= Math.min(2, a.length, b.length)
 }
 
-/**
- * Remove contact artifacts that PDF/DOCX extraction often places on the same visual
- * line as a person's name. Only strongly structured contact forms are removed;
- * arbitrary prose is never transformed into a name candidate.
- */
 function stripContactNoise(value: string): string {
   return value
     .replace(EMAIL_PATTERN, ' ')
@@ -110,12 +114,6 @@ function candidateFromSegment(value: string): string | null {
   return normalized.length <= 80 && isPlausibleResumeName(normalized) ? normalized : null
 }
 
-/**
- * Extract self-contained header segments that could reasonably carry a name.
- * The wider window supports two-column/layout-heavy resumes whose extraction order
- * emits contact/sidebar content before the visual name. Later candidates still need
- * independent filename/email corroboration before inferResumeIdentity accepts them.
- */
 function headerNameCandidates(resumeText: string, lineLimit = 40): { name: string, lineIndex: number }[] {
   const candidates: Array<{ name: string, lineIndex: number }> = []
   const lines = resumeText.split('\n').slice(0, lineLimit).map(line => line.trim())
@@ -145,11 +143,6 @@ function headerNameCandidates(resumeText: string, lineLimit = 40): { name: strin
   return [...deduped.values()]
 }
 
-/**
- * Verify that an AI-proposed name is plausible and represented as one coherent
- * name-bearing segment in the resume header. Merely finding individual name tokens
- * on unrelated lines is insufficient.
- */
 export function isNameSupportedByResume(firstName: string, lastName: string, resumeText: string): boolean {
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
   if (!isPlausibleResumeName(fullName)) return false
@@ -157,61 +150,80 @@ export function isNameSupportedByResume(firstName: string, lastName: string, res
   return headerNameCandidates(resumeText, 40).some(candidate => sameName(candidate.name, fullName))
 }
 
+function buildIdentity(
+  name: { firstName: string; lastName: string; confidence: IdentityConfidence; source: InferredResumeIdentity['nameSource'] },
+  resumeText: string,
+): InferredResumeIdentity {
+  const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0]?.toLowerCase() ?? null
+  const labelledPhone = resumeText.match(PHONE_LABEL_PATTERN)?.[1]?.trim() ?? null
+  const phoneCandidate = labelledPhone ?? resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/u)?.[0]?.trim() ?? null
+  const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
+  const phoneConfidence: IdentityConfidence = phone ? (labelledPhone ? 'high' : 'medium') : 'low'
+  const reviewReasons: string[] = []
+
+  if (name.confidence !== 'high') reviewReasons.push(name.source === 'unresolved' ? 'Candidate name was not reliably resolved from the resume.' : 'Candidate name was inferred from a fallback source and should be verified.')
+  if (!email) reviewReasons.push('Email was not detected in the resume and must be entered manually.')
+  if (phone && phoneConfidence !== 'high') reviewReasons.push('Phone was detected without an explicit phone/mobile label and should be verified.')
+
+  return {
+    firstName: name.firstName,
+    lastName: name.lastName,
+    email,
+    phone,
+    nameConfidence: name.confidence,
+    nameSource: name.source,
+    emailConfidence: email ? 'high' : 'low',
+    emailSource: email ? 'resume_text' : 'unresolved',
+    phoneConfidence,
+    phoneSource: phone ? (labelledPhone ? 'label' : 'resume_text') : 'unresolved',
+    reviewRequired: reviewReasons.length > 0,
+    reviewReasons,
+  }
+}
+
 /**
  * Infer candidate identity conservatively from parsed resume text.
  * A wrong candidate name is more damaging than an unresolved one.
  */
 export function inferResumeIdentity(resumeText: string, filename: string): InferredResumeIdentity {
-  const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0]?.toLowerCase() ?? null
-  const phoneCandidate = resumeText.match(/(?:\+?\d[\d\s().-]{8,}\d)/u)?.[0]?.trim() ?? null
-  const phone = phoneCandidate && phoneCandidate.replace(/\D/g, '').length >= 10 ? phoneCandidate : null
-
   const lines = resumeText.split('\n').slice(0, 25).map(line => line.trim()).filter(Boolean)
 
   for (const line of lines) {
     const match = line.match(NAME_LABEL)
     const labelled = match?.[1] ? candidateFromSegment(match[1]) : null
     if (labelled) {
-      return { ...splitName(labelled), email, phone, nameConfidence: 'high', nameSource: 'label' }
+      const split = splitName(labelled)
+      return buildIdentity({ ...split, confidence: 'high', source: 'label' }, resumeText)
     }
   }
 
+  const email = resumeText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0]?.toLowerCase() ?? null
   const fromFilename = filenameName(filename)
   const fromEmail = emailLocalName(email)
   const headerCandidates = headerNameCandidates(resumeText, 40)
 
   const corroboratedHeader = headerCandidates.find(({ name }) => corroborates(name, fromFilename) || corroborates(name, fromEmail))
   if (corroboratedHeader) {
-    return { ...splitName(corroboratedHeader.name), email, phone, nameConfidence: 'high', nameSource: 'header' }
+    const split = splitName(corroboratedHeader.name)
+    return buildIdentity({ ...split, confidence: 'high', source: 'header' }, resumeText)
   }
 
-  // Never accept a superficially name-like header merely because it appears early.
-  // Locations, employers and other short text frequently satisfy syntactic name rules.
   if (fromFilename) {
     const filenameAppearsInHeader = headerCandidates.some(({ name }) => sameName(name, fromFilename))
     if (filenameAppearsInHeader || corroborates(fromFilename, fromEmail)) {
-      return {
-        ...splitName(fromFilename),
-        email,
-        phone,
-        nameConfidence: filenameAppearsInHeader && fromEmail ? 'high' : 'medium',
-        nameSource: 'filename',
-      }
+      const split = splitName(fromFilename)
+      return buildIdentity({
+        ...split,
+        confidence: filenameAppearsInHeader && fromEmail ? 'high' : 'medium',
+        source: 'filename',
+      }, resumeText)
     }
 
-    // A clean human-name filename remains a controlled fallback when extraction
-    // produced no competing plausible identity at all.
     if (headerCandidates.length === 0 && !fromEmail) {
-      return { ...splitName(fromFilename), email, phone, nameConfidence: 'medium', nameSource: 'filename' }
+      const split = splitName(fromFilename)
+      return buildIdentity({ ...split, confidence: 'medium', source: 'filename' }, resumeText)
     }
   }
 
-  return {
-    firstName: '',
-    lastName: '',
-    email,
-    phone,
-    nameConfidence: 'low',
-    nameSource: 'unresolved',
-  }
+  return buildIdentity({ firstName: '', lastName: '', confidence: 'low', source: 'unresolved' }, resumeText)
 }
