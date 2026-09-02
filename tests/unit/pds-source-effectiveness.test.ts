@@ -30,7 +30,7 @@ describe('PDS governed recruitment source effectiveness', () => {
     const intake = readSource('server/api/jobs/[id]/candidate-intake.post.ts')
     const legacy = readSource('server/api/applications/index.post.ts')
     const promotion = readSource('server/api/jobs/[id]/talent-pool/[matchId]/promote.post.ts')
-    expect(intake).toContain('db.insert(applicationSource)')
+    expect(intake).toContain('tx.insert(applicationSource)')
     expect(intake).toContain('applicationSourcePersistence(body.source)')
     expect(legacy).toContain("applicationSourcePersistence('recruiter_sourcing')")
     expect(promotion).toContain("match.source === 'database' ? 'existing_database' : 'recruiter_sourcing'")
