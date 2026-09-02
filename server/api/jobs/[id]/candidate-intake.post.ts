@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, ne } from 'drizzle-orm'
 import { activityLog, application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
@@ -8,12 +8,32 @@ import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
+type CandidateRecord = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string | null
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function normalizePhone(value: string | null | undefined) {
+  return value?.replace(/\D/g, '') ?? ''
+}
+
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create'], candidate: ['create'] })
   const orgId = session.session.activeOrganizationId
   const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, candidateIntakeSchema.parse)
+
+  if (body.identityConflictResolution) {
+    await requirePermission(event, { candidate: ['update'] })
+  }
 
   const [existingJob, requirementState] = await Promise.all([
     db.query.job.findFirst({
@@ -27,25 +47,101 @@ export default defineEventHandler(async (event) => {
   ])
   if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
-  let candidateId = body.candidateId
-  let candidateRecord: { id: string; firstName: string; lastName: string; email: string } | undefined
+  const sourcePersistence = applicationSourcePersistence(body.source)
+  let candidateRecord: CandidateRecord
+  let candidateId: string
+  let resolutionAudit: {
+    matchBasis: 'email' | 'phone'
+    conflictFields: Array<'name' | 'email' | 'phone'>
+    refreshedFields: Array<'name' | 'email' | 'phone'>
+    reviewedIdentity: {
+      firstName: string
+      lastName: string
+      email: string
+      phone: string | null
+    }
+  } | null = null
 
-  if (candidateId) {
-    candidateRecord = await db.query.candidate.findFirst({
-      where: and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt)),
-      columns: { id: true, firstName: true, lastName: true, email: true },
+  if (body.candidateId) {
+    const existingCandidate = await db.query.candidate.findFirst({
+      where: and(eq(candidate.id, body.candidateId), eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt)),
+      columns: { id: true, firstName: true, lastName: true, email: true, phone: true },
     })
-    if (!candidateRecord) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
+    if (!existingCandidate) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
+
+    candidateRecord = existingCandidate
+    candidateId = existingCandidate.id
+
+    if (body.identityConflictResolution) {
+      const reviewed = body.identityConflictResolution.reviewedIdentity
+      const reviewedIdentity = {
+        firstName: reviewed.firstName,
+        lastName: reviewed.lastName ?? '',
+        email: reviewed.email,
+        phone: reviewed.phone ?? null,
+      }
+
+      const emailMatches = normalizeEmail(existingCandidate.email) === normalizeEmail(reviewedIdentity.email)
+      const phoneMatches = Boolean(normalizePhone(existingCandidate.phone))
+        && normalizePhone(existingCandidate.phone) === normalizePhone(reviewedIdentity.phone)
+      const matchBasis: 'email' | 'phone' | null = emailMatches ? 'email' : phoneMatches ? 'phone' : null
+
+      if (!matchBasis) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'The selected Candidate Database record no longer matches the reviewed email or phone. Run the duplicate check again.',
+        })
+      }
+
+      const conflicts = findCandidateIdentityConflicts(existingCandidate, reviewedIdentity)
+      const conflictFields = conflicts.map(conflict => conflict.field)
+      if (conflictFields.length === 0) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'The Candidate Database identity changed while you were reviewing it. Run the duplicate check again before confirming.',
+        })
+      }
+
+      const refreshedFields = body.identityConflictResolution.refreshedFields
+      const invalidRefreshField = refreshedFields.find(field => !conflictFields.includes(field))
+      if (invalidRefreshField) {
+        throw createError({
+          statusCode: 422,
+          statusMessage: `Cannot refresh ${invalidRefreshField}; that field is not part of the current identity conflict.`,
+        })
+      }
+
+      if (refreshedFields.includes('email') && normalizeEmail(reviewedIdentity.email) !== normalizeEmail(existingCandidate.email)) {
+        const duplicateEmail = await db.query.candidate.findFirst({
+          where: and(
+            eq(candidate.organizationId, orgId),
+            eq(candidate.email, reviewedIdentity.email),
+            ne(candidate.id, candidateId),
+          ),
+          columns: { id: true },
+        })
+        if (duplicateEmail) {
+          throw createError({ statusCode: 409, statusMessage: 'A candidate with this email already exists' })
+        }
+      }
+
+      resolutionAudit = {
+        matchBasis,
+        conflictFields,
+        refreshedFields,
+        reviewedIdentity,
+      }
+    }
   } else {
     const email = body.email!
     const matchedByEmail = await db.query.candidate.findFirst({
       where: and(eq(candidate.organizationId, orgId), eq(candidate.email, email)),
-      columns: { id: true, firstName: true, lastName: true, email: true, quarantinedAt: true },
+      columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
     })
     const matchedByPhone = !matchedByEmail && body.phone
       ? await db.query.candidate.findFirst({
           where: and(eq(candidate.organizationId, orgId), eq(candidate.phone, body.phone)),
-          columns: { id: true, firstName: true, lastName: true, email: true, quarantinedAt: true },
+          columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
         })
       : undefined
     const matchedCandidate = matchedByEmail ?? matchedByPhone
@@ -62,120 +158,189 @@ export default defineEventHandler(async (event) => {
           statusMessage: 'A Candidate Database record matches this email or phone, but its identity details differ. Review the conflict and explicitly use the existing candidate record instead of creating a new identity.',
         })
       }
-      candidateRecord = { id: matchedCandidate.id, firstName: matchedCandidate.firstName, lastName: matchedCandidate.lastName, email: matchedCandidate.email }
+      candidateRecord = {
+        id: matchedCandidate.id,
+        firstName: matchedCandidate.firstName,
+        lastName: matchedCandidate.lastName,
+        email: matchedCandidate.email,
+        phone: matchedCandidate.phone,
+      }
+      candidateId = matchedCandidate.id
     } else {
-      const [createdCandidate] = await db.insert(candidate).values({
-        organizationId: orgId,
+      candidateId = crypto.randomUUID()
+      candidateRecord = {
+        id: candidateId,
         firstName: body.firstName!,
         lastName: body.lastName ?? '',
         email,
-        phone: body.phone,
-      }).returning({ id: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, email: candidate.email })
-      if (!createdCandidate) throw createError({ statusCode: 500, statusMessage: 'Failed to create candidate' })
-      candidateRecord = createdCandidate
+        phone: body.phone ?? null,
+      }
     }
-    candidateId = candidateRecord.id
   }
 
-  async function recordIdentityConflictResolution(applicationId: string) {
-    const resolution = body.identityConflictResolution
-    if (!resolution) return
+  const result = await db.transaction(async (tx) => {
+    const existingCandidateInDb = await tx.select({ id: candidate.id })
+      .from(candidate)
+      .where(and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)))
+      .limit(1)
 
-    await db.insert(activityLog).values({
+    if (existingCandidateInDb.length === 0) {
+      await tx.insert(candidate).values({
+        id: candidateId,
+        organizationId: orgId,
+        firstName: candidateRecord.firstName,
+        lastName: candidateRecord.lastName,
+        email: candidateRecord.email,
+        phone: candidateRecord.phone,
+      })
+    } else if (resolutionAudit) {
+      const updates: Record<string, string | null | Date> = { updatedAt: new Date() }
+      if (resolutionAudit.refreshedFields.includes('name')) {
+        updates.firstName = resolutionAudit.reviewedIdentity.firstName
+        updates.lastName = resolutionAudit.reviewedIdentity.lastName
+        candidateRecord.firstName = resolutionAudit.reviewedIdentity.firstName
+        candidateRecord.lastName = resolutionAudit.reviewedIdentity.lastName
+      }
+      if (resolutionAudit.refreshedFields.includes('email')) {
+        updates.email = resolutionAudit.reviewedIdentity.email
+        candidateRecord.email = resolutionAudit.reviewedIdentity.email
+      }
+      if (resolutionAudit.refreshedFields.includes('phone')) {
+        updates.phone = resolutionAudit.reviewedIdentity.phone
+        candidateRecord.phone = resolutionAudit.reviewedIdentity.phone
+      }
+      if (Object.keys(updates).length > 1) {
+        await tx.update(candidate)
+          .set(updates)
+          .where(and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)))
+      }
+    }
+
+    const [duplicate] = await tx.select({ id: application.id })
+      .from(application)
+      .where(and(eq(application.organizationId, orgId), eq(application.candidateId, candidateId), eq(application.jobId, jobId)))
+      .limit(1)
+
+    if (duplicate) {
+      const [profile] = await tx.select()
+        .from(recruitmentApplicationProfile)
+        .where(and(eq(recruitmentApplicationProfile.applicationId, duplicate.id), eq(recruitmentApplicationProfile.organizationId, orgId)))
+        .limit(1)
+
+      if (profile && requirementState?.ownerUserId && profile.assignedRecruiterId !== requirementState.ownerUserId) {
+        await tx.update(recruitmentApplicationProfile)
+          .set({ assignedRecruiterId: requirementState.ownerUserId, updatedAt: new Date() })
+          .where(eq(recruitmentApplicationProfile.id, profile.id))
+      }
+
+      if (resolutionAudit) {
+        await tx.insert(activityLog).values({
+          organizationId: orgId,
+          actorId: session.user.id,
+          action: 'updated',
+          resourceType: 'candidate',
+          resourceId: candidateId,
+          metadata: {
+            event: 'identity_conflict_resolved',
+            confirmation: true,
+            matchBasis: resolutionAudit.matchBasis,
+            conflictFields: resolutionAudit.conflictFields,
+            refreshedFields: resolutionAudit.refreshedFields,
+            source: 'candidate_identity_review',
+            applicationId: duplicate.id,
+            jobId,
+          },
+        })
+      }
+
+      return {
+        created: false as const,
+        applicationId: duplicate.id,
+        recruitmentProfileId: profile?.id ?? null,
+        nextStep: profile?.lastStatus === 'candidate_added' ? 'upload_resume' : 'continue_workflow',
+      }
+    }
+
+    const [createdApplication] = await tx.insert(application).values({
       organizationId: orgId,
-      actorId: session.user.id,
-      action: 'updated',
-      resourceType: 'candidate',
-      resourceId: candidateId!,
-      metadata: {
-        event: 'identity_conflict_resolved',
-        confirmation: true,
-        matchBasis: resolution.matchBasis,
-        conflictFields: resolution.conflictFields,
-        refreshedFields: resolution.refreshedFields,
-        source: 'resume_duplicate_review',
-        applicationId,
-        jobId,
-      },
-    })
-  }
-
-  const duplicate = await db.query.application.findFirst({
-    where: and(eq(application.organizationId, orgId), eq(application.candidateId, candidateId), eq(application.jobId, jobId)),
-    columns: { id: true },
-  })
-
-  if (duplicate) {
-    const profile = await db.query.recruitmentApplicationProfile.findFirst({
-      where: and(eq(recruitmentApplicationProfile.applicationId, duplicate.id), eq(recruitmentApplicationProfile.organizationId, orgId)),
-    })
-    if (profile && requirementState?.ownerUserId && profile.assignedRecruiterId !== requirementState.ownerUserId) {
-      await db.update(recruitmentApplicationProfile).set({ assignedRecruiterId: requirementState.ownerUserId, updatedAt: new Date() }).where(eq(recruitmentApplicationProfile.id, profile.id))
-    }
-    await recordIdentityConflictResolution(duplicate.id)
-    return {
-      created: false,
-      candidate: candidateRecord,
-      applicationId: duplicate.id,
-      recruitmentProfileId: profile?.id ?? null,
-      nextStep: profile?.lastStatus === 'candidate_added' ? 'upload_resume' : 'continue_workflow',
-    }
-  }
-
-  const [createdApplication] = await db.insert(application).values({
-    organizationId: orgId,
-    candidateId,
-    jobId,
-    notes: body.notes,
-    status: 'new',
-  }).returning({ id: application.id })
-  if (!createdApplication) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
-
-  const sourcePersistence = applicationSourcePersistence(body.source)
-  await db.insert(applicationSource).values({
-    organizationId: orgId,
-    applicationId: createdApplication.id,
-    channel: sourcePersistence.channel,
-    utmSource: sourcePersistence.utmSource,
-  })
-
-  const [profile] = await db.insert(recruitmentApplicationProfile).values({
-    organizationId: orgId,
-    applicationId: createdApplication.id,
-    assignedRecruiterId: requirementState?.ownerUserId ?? null,
-    currentFit: 'not_yet_assessed',
-    lastStatus: 'candidate_added',
-    statusDate: new Date(),
-    nextAction: 'Upload or verify the latest resume.',
-    lastUpdatedBy: session.user.id,
-  }).returning({ id: recruitmentApplicationProfile.id })
-
-  await recordIdentityConflictResolution(createdApplication.id)
-
-  recordActivity({
-    organizationId: orgId,
-    actorId: session.user.id,
-    action: 'created',
-    resourceType: 'application',
-    resourceId: createdApplication.id,
-    metadata: {
-      event: 'candidate_intake_created',
       candidateId,
       jobId,
-      candidateEmail: candidateRecord.email,
+      notes: body.notes,
+      status: 'new',
+    }).returning({ id: application.id })
+    if (!createdApplication) throw new Error('Failed to create application')
+
+    await tx.insert(applicationSource).values({
+      organizationId: orgId,
+      applicationId: createdApplication.id,
+      channel: sourcePersistence.channel,
+      utmSource: sourcePersistence.utmSource,
+    })
+
+    const [profile] = await tx.insert(recruitmentApplicationProfile).values({
+      organizationId: orgId,
+      applicationId: createdApplication.id,
       assignedRecruiterId: requirementState?.ownerUserId ?? null,
-      source: body.source,
-      dedupeOrder: 'email_then_phone',
-    },
+      currentFit: 'not_yet_assessed',
+      lastStatus: 'candidate_added',
+      statusDate: new Date(),
+      nextAction: 'Upload or verify the latest resume.',
+      lastUpdatedBy: session.user.id,
+    }).returning({ id: recruitmentApplicationProfile.id })
+
+    if (resolutionAudit) {
+      await tx.insert(activityLog).values({
+        organizationId: orgId,
+        actorId: session.user.id,
+        action: 'updated',
+        resourceType: 'candidate',
+        resourceId: candidateId,
+        metadata: {
+          event: 'identity_conflict_resolved',
+          confirmation: true,
+          matchBasis: resolutionAudit.matchBasis,
+          conflictFields: resolutionAudit.conflictFields,
+          refreshedFields: resolutionAudit.refreshedFields,
+          source: 'candidate_identity_review',
+          applicationId: createdApplication.id,
+          jobId,
+        },
+      })
+    }
+
+    return {
+      created: true as const,
+      applicationId: createdApplication.id,
+      recruitmentProfileId: profile?.id ?? null,
+      nextStep: 'upload_resume' as const,
+    }
   })
 
-  setResponseStatus(event, 201)
+  if (result.created) {
+    recordActivity({
+      organizationId: orgId,
+      actorId: session.user.id,
+      action: 'created',
+      resourceType: 'application',
+      resourceId: result.applicationId,
+      metadata: {
+        event: 'candidate_intake_created',
+        candidateId,
+        jobId,
+        assignedRecruiterId: requirementState?.ownerUserId ?? null,
+        source: body.source,
+        dedupeOrder: 'email_then_phone',
+      },
+    })
+    setResponseStatus(event, 201)
+  }
+
   return {
-    created: true,
+    created: result.created,
     candidate: candidateRecord,
-    applicationId: createdApplication.id,
-    recruitmentProfileId: profile?.id ?? null,
-    source: body.source,
-    nextStep: 'upload_resume',
+    applicationId: result.applicationId,
+    recruitmentProfileId: result.recruitmentProfileId,
+    ...(result.created ? { source: body.source } : {}),
+    nextStep: result.nextStep,
   }
 })
