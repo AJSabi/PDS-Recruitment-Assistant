@@ -1,10 +1,12 @@
 import { and, eq, ne } from 'drizzle-orm'
 import { application, job } from '../../database/schema/app'
 import { recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema/recruitmentWorkflow'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const jobs = await db.query.job.findMany({
     where: and(eq(job.organizationId, orgId), ne(job.status, 'closed')),
