@@ -112,4 +112,64 @@ describe('resume identity inference', () => {
     const resume = `Senior Network Security Engineer\nProfessional Summary\ncontact@example.com`
     expect(isNameSupportedByResume('Senior Network', 'Security Engineer', resume)).toBe(false)
   })
+
+  describe('Indian resume regression corpus', () => {
+    it('finds an uppercase candidate name after common Indian CV headings and city sidebar text', () => {
+      const resume = `CURRICULUM VITAE\nPERSONAL DETAILS\nAHMEDABAD\nMEERA NAIR\nSenior Sales Consultant\nmeera.nair@example.com\n+91 91234 56789\nPROFESSIONAL EXPERIENCE`
+      const result = inferResumeIdentity(resume, 'Resume_Final.pdf')
+      expect(result.firstName).toBe('MEERA')
+      expect(result.lastName).toBe('NAIR')
+      expect(result.nameSource).toBe('header')
+      expect(result.nameConfidence).toBe('high')
+    })
+
+    it('accepts an explicit full-name field despite declaration and academic headings', () => {
+      const resume = `DECLARATION\nACADEMIC QUALIFICATIONS\nFull Name: Devika Menon\nChandigarh\ndevika.menon@example.com\nKey Skills`
+      const result = inferResumeIdentity(resume, 'CV_Final.docx')
+      expect(result.firstName).toBe('Devika')
+      expect(result.lastName).toBe('Menon')
+      expect(result.nameSource).toBe('label')
+      expect(result.nameConfidence).toBe('high')
+    })
+
+    it('preserves Indian-style initials while suppressing personal-detail labels', () => {
+      const resume = `PERSONAL INFORMATION\nCandidate Name: R. K. Iyer\nNationality: Indian\nIndore\nr.k.iyer@example.com\nWork Experience`
+      const result = inferResumeIdentity(resume, 'Resume.pdf')
+      expect(result.firstName).toBe('R.')
+      expect(result.lastName).toBe('K. Iyer')
+      expect(result.nameSource).toBe('label')
+    })
+
+    it('keeps a genuine single-name candidate when nearby administrative labels are suppressed', () => {
+      const resume = `PERSONAL DETAILS\nName: Devika\nMarital Status\nKochi\ndevika@example.com\nEducation`
+      const result = inferResumeIdentity(resume, 'CV_Final.docx')
+      expect(result.firstName).toBe('Devika')
+      expect(result.lastName).toBe('')
+      expect(result.nameSource).toBe('label')
+    })
+
+    it.each([
+      ['Declaration', 'Resume.pdf'],
+      ['Academic Qualifications', 'CV_Final.docx'],
+      ['Ahmedabad', 'Resume_Final.pdf'],
+      ['Chandigarh', 'CV.pdf'],
+      ['Marital Status', 'Resume.pdf'],
+      ['Nationality', 'CV_Final.docx'],
+    ])('leaves heading or location-only identity unresolved: %s', (header, filename) => {
+      const result = inferResumeIdentity(`${header}\nProfessional Summary\ncontact@example.com\nExperience`, filename)
+      expect(result.firstName).toBe('')
+      expect(result.lastName).toBe('')
+      expect(result.nameSource).toBe('unresolved')
+      expect(result.nameConfidence).toBe('low')
+    })
+
+    it('does not use generic resume filenames as candidate identity', () => {
+      for (const filename of ['Resume.pdf', 'CV_Final.docx', 'Resume_Final.pdf']) {
+        const result = inferResumeIdentity(`Personal Details\nProfessional Summary\ncontact@example.com`, filename)
+        expect(result.firstName).toBe('')
+        expect(result.lastName).toBe('')
+        expect(result.nameSource).toBe('unresolved')
+      }
+    })
+  })
 })
