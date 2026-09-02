@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { recruitmentApplicationProfile } from '../../../../database/schema'
+import { assertActiveApplicationCandidate } from '../../../../utils/candidate-retention'
 import { updateRecruitmentProfileSchema } from '../../../../utils/schemas/recruitmentWorkflow'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
@@ -11,6 +12,7 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertApplicationAccess(orgId, session.user.id, applicationId)
+  await assertActiveApplicationCandidate(orgId, applicationId)
   const body = await readValidatedBody(event, updateRecruitmentProfileSchema.parse)
 
   const existing = await db.query.recruitmentApplicationProfile.findFirst({
