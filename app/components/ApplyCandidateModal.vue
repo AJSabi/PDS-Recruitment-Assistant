@@ -20,13 +20,20 @@ const debouncedSearch = ref<string | undefined>(undefined)
 const selectedExistingCandidateId = ref<string | null>(null)
 const resumeFile = ref<File | null>(null)
 const isParsingResume = ref(false)
+type IdentityConfidence = 'high' | 'medium' | 'low'
 type ParsedResumeIdentity = {
   firstName: string
   lastName: string
   email: string | null
   phone: string | null
-  nameConfidence: 'high' | 'medium' | 'low'
+  nameConfidence: IdentityConfidence
   nameSource: 'label' | 'header' | 'filename' | 'unresolved'
+  emailConfidence: IdentityConfidence
+  emailSource: 'resume_text' | 'unresolved'
+  phoneConfidence: IdentityConfidence
+  phoneSource: 'label' | 'resume_text' | 'unresolved'
+  reviewRequired: boolean
+  reviewReasons: string[]
 }
 type CandidateIdentityConflictCheck = {
   matched: boolean
@@ -42,7 +49,7 @@ const identityConflictCheck = ref<CandidateIdentityConflictCheck | null>(null)
 const identityConflictConfirmed = ref(false)
 const identityUpdateFields = reactive({ name: false, email: false, phone: false })
 
-function confidenceLabel(confidence?: ParsedResumeIdentity['nameConfidence']) {
+function confidenceLabel(confidence?: IdentityConfidence) {
   if (confidence === 'high') return 'High confidence'
   if (confidence === 'medium') return 'Review recommended'
   return 'Manual review required'
@@ -53,6 +60,33 @@ function identitySourceLabel(source?: ParsedResumeIdentity['nameSource']) {
   if (source === 'header') return 'Resume header'
   if (source === 'filename') return 'Filename/contact corroboration'
   return 'Identity unresolved by parser'
+}
+
+function emailSourceLabel(source?: ParsedResumeIdentity['emailSource']) {
+  return source === 'resume_text' ? 'Detected in resume text' : 'Email not resolved by parser'
+}
+
+function phoneSourceLabel(source?: ParsedResumeIdentity['phoneSource']) {
+  if (source === 'label') return 'Explicit phone/mobile field'
+  if (source === 'resume_text') return 'Number detected in resume text'
+  return 'Phone not resolved by parser'
+}
+
+function emptyResumeIdentity(): ParsedResumeIdentity {
+  return {
+    firstName: '',
+    lastName: '',
+    email: null,
+    phone: null,
+    nameConfidence: 'low',
+    nameSource: 'unresolved',
+    emailConfidence: 'low',
+    emailSource: 'unresolved',
+    phoneConfidence: 'low',
+    phoneSource: 'unresolved',
+    reviewRequired: true,
+    reviewReasons: ['Automatic identity extraction was unavailable. Manually verify the candidate identity.'],
+  }
 }
 const source = ref('recruiter_sourcing')
 const sourceOptions = [
@@ -119,7 +153,7 @@ async function parseResumeIdentity(file: File) {
     form.append('file', file)
     const result: any = await $fetch(`/api/jobs/${props.jobId}/resume-identity`, { method: 'POST', body: form })
     const identity = result?.identity as ParsedResumeIdentity | undefined
-    resumeIdentity.value = identity ?? { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
+    resumeIdentity.value = identity ?? emptyResumeIdentity()
     identityReviewed.value = false
     applyingParsedIdentity.value = true
     try {
@@ -130,9 +164,9 @@ async function parseResumeIdentity(file: File) {
     } finally {
       applyingParsedIdentity.value = false
     }
-    if (!identity?.email || identity.nameConfidence !== 'high') toast.info('Resume read', 'Please review the parsed candidate identity before creating the candidate.')
+    if (identity?.reviewRequired) toast.info('Resume read', 'Some candidate identity fields need recruiter verification. Review the extraction details before saving.')
   } catch (err: any) {
-    resumeIdentity.value = { firstName: '', lastName: '', email: null, phone: null, nameConfidence: 'low', nameSource: 'unresolved' }
+    resumeIdentity.value = emptyResumeIdentity()
     identityReviewed.value = false
     toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually and confirm them before saving.')
   } finally {
@@ -344,18 +378,35 @@ async function createCandidate() {
                     <ShieldCheck class="mt-0.5 size-4 text-[#2E86C1]" />
                     <div>
                       <p class="text-sm font-semibold text-[#102A43]">Review parsed candidate identity</p>
-                      <p class="mt-1 text-xs leading-5 text-surface-500">Check and correct the editable name, email and phone fields below. The reviewed values become the Candidate Database identity.</p>
+                      <p class="mt-1 text-xs leading-5 text-surface-500">Check each extraction signal against the resume and correct the editable fields below. Only the values you confirm become Candidate Database identity.</p>
                     </div>
                   </div>
-                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#1F6FA3] shadow-sm">{{ confidenceLabel(resumeIdentity.nameConfidence) }}</span>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold shadow-sm" :class="resumeIdentity.reviewRequired ? 'text-[#976511]' : 'text-[#13756F]'">{{ resumeIdentity.reviewRequired ? 'Verification required' : 'Extraction looks consistent' }}</span>
                 </div>
-                <div class="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs text-surface-600">
-                  <span class="font-semibold">Parser source:</span> {{ identitySourceLabel(resumeIdentity.nameSource) }}
-                  <span v-if="resumeIdentity.nameConfidence === 'low'" class="ml-1 text-[#976511]">— manually verify every identity field.</span>
+                <div data-testid="resume-field-confidence" class="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Name</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.nameConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ identitySourceLabel(resumeIdentity.nameSource) }}</p>
+                    <p class="mt-1 font-medium text-surface-700">{{ [resumeIdentity.firstName, resumeIdentity.lastName].filter(Boolean).join(' ') || 'Not resolved' }}</p>
+                  </div>
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Email</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.emailConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ emailSourceLabel(resumeIdentity.emailSource) }}</p>
+                    <p class="mt-1 break-all font-medium text-surface-700">{{ resumeIdentity.email || 'Not resolved' }}</p>
+                  </div>
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Phone</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.phoneConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ phoneSourceLabel(resumeIdentity.phoneSource) }}</p>
+                    <p class="mt-1 font-medium text-surface-700">{{ resumeIdentity.phone || 'Not detected (optional)' }}</p>
+                  </div>
+                </div>
+                <div v-if="resumeIdentity.reviewReasons.length" data-testid="resume-review-reasons" class="mt-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-900">
+                  <p class="font-semibold">Recruiter verification required for:</p>
+                  <ul class="mt-1 list-disc space-y-1 pl-4"><li v-for="reason in resumeIdentity.reviewReasons" :key="reason">{{ reason }}</li></ul>
                 </div>
                 <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-surface-200 bg-white p-3 text-xs text-surface-700">
                   <input v-model="identityReviewed" data-testid="resume-identity-confirm" type="checkbox" class="mt-0.5 size-4" />
-                  <span><strong>I reviewed the candidate identity.</strong> I confirm the final name, email and phone shown below are correct before this candidate is created or linked.</span>
+                  <span><strong>I reviewed the candidate identity.</strong> I compared the extracted name, email and phone with the resume and confirm the final editable values below are correct before this candidate is created or linked.</span>
                 </label>
                 <p v-if="identityReviewed" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><CheckCircle2 class="size-3.5" />Identity reviewed. Editing an identity field will require confirmation again.</p>
               </div>
@@ -392,7 +443,7 @@ async function createCandidate() {
           </div>
 
           <div v-else class="overflow-y-auto px-5 py-5">
-            <div class="mb-4 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 text-sm"><p class="font-semibold text-[#102A43]">Attach an existing Candidate Database record</p><p class="mt-1 text-xs leading-5 text-surface-500">The newest readable stored resume is used automatically for the immediate match. Upload a new resume only when you want to replace it with a newer version.</p></div>
+            <div class="mb-4 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 text-sm"><p class="font-semibold text-[#102A43]">Attach an existing Candidate Database record</p><p class="mt-1 text-xs leading-5 text-surface-500">The newest readable stored resume is used automatically for the immediate match. Upload a newer resume when available; it is added to Documents while previous resumes remain preserved.</p></div>
             <div class="flex items-center rounded-lg border border-surface-300 px-3"><Search class="size-4 text-surface-400" /><input v-model="searchInput" class="w-full px-2 py-2.5 text-sm outline-none" placeholder="Search by name or email" /></div>
             <div class="mt-3 max-h-56 overflow-y-auto rounded-lg border border-surface-200">
               <button v-for="candidate in candidates" :key="candidate.id" type="button" class="flex w-full items-start justify-between gap-3 border-b border-surface-100 px-3 py-3 text-left last:border-0" :class="selectedExistingCandidateId === candidate.id ? 'bg-brand-50' : 'hover:bg-surface-50'" @click="selectedExistingCandidateId = candidate.id"><div><p class="text-sm font-semibold">{{ formatCandidateName(candidate) }}</p><p class="text-xs text-surface-500">{{ candidate.email }}</p></div><span v-if="selectedExistingCandidateId === candidate.id" class="text-xs font-semibold text-brand-600">Selected</span></button>
@@ -400,7 +451,7 @@ async function createCandidate() {
               <div v-else-if="!candidates.length" class="p-4 text-center text-xs text-surface-400">No candidates found.</div>
             </div>
             <label class="mt-4 block text-sm font-medium">Candidate source <span class="text-danger-500">*</span><select v-model="source" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm"><option v-for="option in sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-            <label class="mt-4 block rounded-xl border border-dashed border-surface-300 p-4 text-sm"><span class="font-semibold">Optional newer resume</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label>
+            <label class="mt-4 block rounded-xl border border-dashed border-surface-300 p-4 text-sm"><span class="font-semibold">Optional newer resume</span><span class="mt-1 block text-xs text-surface-500">Added as a new resume document; earlier resumes are retained.</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label>
             <button :disabled="isApplying || !selectedExistingCandidate" type="button" class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
           </div>
         </template>
