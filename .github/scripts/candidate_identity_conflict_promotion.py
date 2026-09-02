@@ -119,7 +119,6 @@ export default defineEventHandler(async (event) => {
 })
 """)
 
-# Enforce the same guard at intake so a caller cannot bypass the recruiter preflight.
 replace(
     'server/api/jobs/[id]/candidate-intake.post.ts',
     "import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'\n",
@@ -131,7 +130,6 @@ replace(
     "    if (matchedCandidate) {\n      const identityConflicts = findCandidateIdentityConflicts(matchedCandidate, body)\n      if (identityConflicts.length) {\n        throw createError({\n          statusCode: 409,\n          statusMessage: 'A Candidate Database record matches this email or phone, but its identity details differ. Review the conflict and explicitly use the existing candidate record instead of creating a new identity.',\n        })\n      }\n      candidateRecord = { id: matchedCandidate.id, firstName: matchedCandidate.firstName, lastName: matchedCandidate.lastName, email: matchedCandidate.email }\n    } else {",
 )
 
-# Recruiter UI: preflight identity against the central database and require explicit confirmation on conflicts.
 replace(
     'app/components/ApplyCandidateModal.vue',
     "type ParsedResumeIdentity = {\n  firstName: string\n  lastName: string\n  email: string | null\n  phone: string | null\n  nameConfidence: 'high' | 'medium' | 'low'\n  nameSource: 'label' | 'header' | 'filename' | 'unresolved'\n}\n",
@@ -155,7 +153,7 @@ replace(
 replace(
     'app/components/ApplyCandidateModal.vue',
     "async function createCandidate() {\n  const firstName = newCandidate.firstName.trim()\n  const lastName = newCandidate.lastName.trim()\n  const email = newCandidate.email.trim()\n  if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')\n  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')\n  await attachCandidate({\n    firstName,\n    lastName,\n    email,\n    phone: newCandidate.phone.trim() || undefined,\n    notes: newCandidate.notes.trim() || undefined,\n    source: source.value,\n  })\n}\n",
-    "async function createCandidate() {\n  const firstName = newCandidate.firstName.trim()\n  const lastName = newCandidate.lastName.trim()\n  const email = newCandidate.email.trim()\n  const phone = newCandidate.phone.trim() || undefined\n  if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')\n  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')\n\n  if (!identityConflictCheck.value) {\n    try {\n      identityConflictCheck.value = await $fetch(`/api/jobs/${props.jobId}/candidate-identity-check`, {\n        method: 'POST',\n        body: { firstName, lastName, email, phone },\n      }) as CandidateIdentityConflictCheck\n    } catch (err: any) {\n      applyError.value = err?.data?.statusMessage ?? err?.message ?? 'Candidate identity could not be checked against the Candidate Database.'\n      return\n    }\n  }\n\n  if (identityConflictCheck.value.matched && identityConflictCheck.value.requiresConfirmation && !identityConflictConfirmed.value) {\n    applyError.value = 'A matching Candidate Database record has different identity details. Review the warning below and confirm before linking the existing record.'\n    return\n  }\n\n  if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {\n    await attachCandidate({ candidateId: identityConflictCheck.value.candidate.id, source: source.value })\n    return\n  }\n\n  await attachCandidate({\n    firstName,\n    lastName,\n    email,\n    phone,\n    notes: newCandidate.notes.trim() || undefined,\n    source: source.value,\n  })\n}\n",
+    "async function createCandidate() {\n  const firstName = newCandidate.firstName.trim()\n  const lastName = newCandidate.lastName.trim()\n  const email = newCandidate.email.trim()\n  const phone = newCandidate.phone.trim() || undefined\n  if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')\n  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')\n\n  if (!identityConflictCheck.value) {\n    try {\n      identityConflictCheck.value = await ($fetch as any)(`/api/jobs/${props.jobId}/candidate-identity-check`, {\n        method: 'POST',\n        body: { firstName, lastName, email, phone },\n      }) as CandidateIdentityConflictCheck\n    } catch (err: any) {\n      applyError.value = err?.data?.statusMessage ?? err?.message ?? 'Candidate identity could not be checked against the Candidate Database.'\n      return\n    }\n  }\n\n  if (identityConflictCheck.value.matched && identityConflictCheck.value.requiresConfirmation && !identityConflictConfirmed.value) {\n    applyError.value = 'A matching Candidate Database record has different identity details. Review the warning below and confirm before linking the existing record.'\n    return\n  }\n\n  if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {\n    await attachCandidate({ candidateId: identityConflictCheck.value.candidate.id, source: source.value })\n    return\n  }\n\n  await attachCandidate({\n    firstName,\n    lastName,\n    email,\n    phone,\n    notes: newCandidate.notes.trim() || undefined,\n    source: source.value,\n  })\n}\n",
 )
 replace(
     'app/components/ApplyCandidateModal.vue',
@@ -211,7 +209,6 @@ describe('PDS candidate identity conflict protection', () => {
 })
 """)
 
-# Extend the earlier identity-review regression to assert the new preflight rather than weakening it.
 replace(
     'tests/unit/pds-resume-identity-review-ux.test.ts',
     "    expect(schema).toContain('lastName: z.string().trim().max(100).optional()')\n",
