@@ -1,6 +1,6 @@
 import { eq, and, asc, sql } from 'drizzle-orm'
 import { fileTypeFromBuffer } from 'file-type'
-import { job, candidate, application, jobQuestion, questionResponse, document, organization, applicationSource, trackingLink } from '../../../../database/schema'
+import { job, candidate, application, jobQuestion, questionResponse, document, organization, applicationSource, trackingLink, retentionAudit } from '../../../../database/schema'
 import { publicApplicationSchema, publicJobSlugSchema } from '../../../../utils/schemas/publicApplication'
 import { createPreviewReadOnlyError } from '../../../../utils/previewReadOnly'
 import { autoScoreApplication } from '../../../../utils/ai/autoScore'
@@ -12,7 +12,6 @@ import {
   MIME_TO_EXTENSION,
   sanitizeFilename,
 } from '../../../../utils/schemas/document'
-import { restoreCandidateForPublicApplication } from '../../../../utils/candidate-retention'
 
 /** Rate limit: max 5 applications per IP per 15 minutes */
 const applyRateLimit = createRateLimiter({
@@ -405,21 +404,37 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (restoreFromQuarantine) {
-    await restoreCandidateForPublicApplication(orgId, candidateId)
-  }
-
   let newApplication: { id: string } | undefined
   try {
     newApplication = await db.transaction(async (tx) => {
       if (existingCandidate) {
-        const updates: Record<string, unknown> = { updatedAt: new Date() }
+        const now = new Date()
+        const updates: Record<string, unknown> = { updatedAt: now }
         if (!existingCandidate.firstName) updates.firstName = firstName
         if (!existingCandidate.lastName) updates.lastName = lastName
         if (!existingCandidate.phone && phone) updates.phone = phone
-        await tx.update(candidate)
+        if (restoreFromQuarantine) {
+          updates.quarantinedAt = null
+          updates.scheduledPurgeAt = null
+          updates.retentionReviewedAt = now
+        }
+
+        const [candidateUpdated] = await tx.update(candidate)
           .set(updates)
           .where(and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)))
+          .returning({ id: candidate.id })
+        if (!candidateUpdated) throw new Error('Candidate no longer exists')
+
+        if (restoreFromQuarantine) {
+          await tx.insert(retentionAudit).values({
+            organizationId: orgId,
+            candidateId,
+            action: 'restored',
+            result: 'success',
+            actorId: null,
+            metadata: { source: 'public_application' },
+          })
+        }
       } else {
         await tx.insert(candidate).values({
           id: candidateId,
@@ -481,6 +496,14 @@ export default defineEventHandler(async (event) => {
       error_message: transactionError instanceof Error ? transactionError.message : String(transactionError),
     })
     throw createError({ statusCode: 500, statusMessage: 'Your application could not be saved. Please try again.' })
+  }
+
+  if (restoreFromQuarantine) {
+    logInfo('retention.candidate_restored_on_application', {
+      org_id: orgId,
+      candidate_id: candidateId,
+      application_id: newApplication.id,
+    })
   }
 
   try {
