@@ -7,7 +7,7 @@ import {
   resumeAssessment,
 } from '../../../../database/schema'
 import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
-import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { coarseStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -97,24 +97,41 @@ export default defineEventHandler(async (event) => {
   // The recruiter manually confirms each sequential stage here. A note is optional for normal
   // progression and required only for governed exception/outcome decisions.
   const now = new Date()
-  const [updated] = await db.update(recruitmentApplicationProfile).set({
-    lastStatus: body.stage,
-    statusDate: now,
-    nextAction: holdResume?.action ?? body.nextAction ?? defaultNextActionByStage[body.stage] ?? profile.nextAction,
-    lastContactAt: body.contactOccurred ? now : profile.lastContactAt,
-    aiSummaryStale: true,
-    lastUpdatedBy: session.user.id,
-    updatedAt: now,
-  }).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
+  const coarseStatus = coarseStatusForRecruitmentStage(body.stage)
+  const updated = await db.transaction(async (tx) => {
+    const [profileUpdated] = await tx.update(recruitmentApplicationProfile).set({
+      lastStatus: body.stage,
+      statusDate: now,
+      nextAction: holdResume?.action ?? body.nextAction ?? defaultNextActionByStage[body.stage] ?? profile.nextAction,
+      lastContactAt: body.contactOccurred ? now : profile.lastContactAt,
+      aiSummaryStale: true,
+      lastUpdatedBy: session.user.id,
+      updatedAt: now,
+    }).where(and(
+      eq(recruitmentApplicationProfile.id, profile.id),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+    )).returning()
 
-  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, body.stage)
-  await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    applicationId,
-    type: 'stage_change',
-    summary: body.note ?? `Recruiter manually confirmed recruitment stage: ${body.stage}`,
-    payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage, manualStageMovement: true, ...(holdResume ? { holdResumeStage: holdResume.stage } : {}) },
-    createdBy: session.user.id,
+    if (!profileUpdated) throw createError({ statusCode: 409, statusMessage: 'Recruitment profile changed before this stage could be confirmed. Refresh and try again.' })
+
+    if (coarseStatus) {
+      const [applicationUpdated] = await tx.update(application)
+        .set({ status: coarseStatus, updatedAt: now })
+        .where(and(eq(application.id, applicationId), eq(application.organizationId, orgId)))
+        .returning({ id: application.id })
+      if (!applicationUpdated) throw createError({ statusCode: 409, statusMessage: 'Application changed before this stage could be confirmed. Refresh and try again.' })
+    }
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      applicationId,
+      type: 'stage_change',
+      summary: body.note ?? `Recruiter manually confirmed recruitment stage: ${body.stage}`,
+      payload: { event: 'stage_confirmed', from: profile.lastStatus, to: body.stage, manualStageMovement: true, ...(holdResume ? { holdResumeStage: holdResume.stage } : {}) },
+      createdBy: session.user.id,
+    })
+
+    return profileUpdated
   })
 
   return { profile: updated, changed: true }
