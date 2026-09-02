@@ -4,10 +4,17 @@ import { readFileSync } from 'node:fs'
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('PDS resume identity review UX', () => {
-  it('shows parser confidence/source and requires recruiter confirmation before resume-backed creation', () => {
+  it('shows field-level parser confidence/source and requires recruiter confirmation before resume-backed creation', () => {
     const modal = read('app/components/ApplyCandidateModal.vue')
     expect(modal).toContain('resumeIdentity.nameConfidence')
+    expect(modal).toContain('resumeIdentity.emailConfidence')
+    expect(modal).toContain('resumeIdentity.phoneConfidence')
     expect(modal).toContain('identitySourceLabel(resumeIdentity.nameSource)')
+    expect(modal).toContain('emailSourceLabel(resumeIdentity.emailSource)')
+    expect(modal).toContain('phoneSourceLabel(resumeIdentity.phoneSource)')
+    expect(modal).toContain('data-testid="resume-field-confidence"')
+    expect(modal).toContain('data-testid="resume-review-reasons"')
+    expect(modal).toContain('resumeIdentity.reviewReasons')
     expect(modal).toContain('data-testid="resume-identity-review"')
     expect(modal).toContain('data-testid="resume-identity-confirm"')
     expect(modal).toContain("if (resumeFile.value && !identityReviewed.value)")
@@ -22,6 +29,13 @@ describe('PDS resume identity review UX', () => {
     expect(modal).toContain('v-model="newCandidate.email"')
     expect(parserEndpoint).toContain('identity: inferResumeIdentity')
     expect(parserEndpoint).not.toContain('db.insert(candidate)')
+  })
+
+  it('preserves newer duplicate resume history instead of replacing the old resume', () => {
+    const modal = read('app/components/ApplyCandidateModal.vue')
+    expect(modal).toContain('it is added to Documents while previous resumes remain preserved')
+    expect(modal).toContain('Added as a new resume document; earlier resumes are retained.')
+    expect(modal).not.toContain('Upload a new resume only when you want to replace it with a newer version.')
   })
 
   it('preserves central candidate dedupe order and intake requirements', () => {
