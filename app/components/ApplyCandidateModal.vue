@@ -243,38 +243,21 @@ async function createCandidate() {
 
   if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {
     const existingCandidateId = identityConflictCheck.value.candidate.id
-    const updatePayload: Record<string, string | null> = {}
     const refreshedFields: Array<'name' | 'email' | 'phone'> = []
-    if (identityUpdateFields.name) {
-      updatePayload.firstName = firstName
-      updatePayload.lastName = lastName
-      refreshedFields.push('name')
-    }
-    if (identityUpdateFields.email) {
-      updatePayload.email = email
-      refreshedFields.push('email')
-    }
-    if (identityUpdateFields.phone) {
-      updatePayload.phone = phone ?? null
-      refreshedFields.push('phone')
-    }
-
-    if (Object.keys(updatePayload).length) {
-      try {
-        await $fetch(`/api/candidates/${existingCandidateId}`, { method: 'PATCH', body: updatePayload })
-        await refreshNuxtData('candidates')
-      } catch (err: any) {
-        applyError.value = err?.data?.statusMessage ?? err?.message ?? 'The existing candidate details could not be updated.'
-        return
-      }
-    }
+    if (identityUpdateFields.name) refreshedFields.push('name')
+    if (identityUpdateFields.email) refreshedFields.push('email')
+    if (identityUpdateFields.phone) refreshedFields.push('phone')
 
     const identityConflictResolution = identityConflictCheck.value.requiresConfirmation
       ? {
           confirmed: true,
-          matchBasis: identityConflictCheck.value.matchBasis!,
-          conflictFields: identityConflictCheck.value.conflicts?.map(conflict => conflict.field) ?? [],
           refreshedFields,
+          reviewedIdentity: {
+            firstName,
+            lastName,
+            email,
+            phone: phone ?? null,
+          },
         }
       : undefined
 
@@ -283,6 +266,7 @@ async function createCandidate() {
       source: source.value,
       ...(identityConflictResolution && { identityConflictResolution }),
     })
+    if (refreshedFields.length) await refreshNuxtData('candidates')
     return
   }
 
