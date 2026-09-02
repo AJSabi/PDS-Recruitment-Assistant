@@ -33,8 +33,10 @@ describe('PDS candidate identity conflict protection', () => {
     expect(modal).toContain('candidate-identity-conflict')
     expect(modal).toContain('candidate-identity-conflict-confirm')
     expect(modal).toContain('identityConflictConfirmed.value')
-    expect(modal).toContain('Use the existing Candidate Database identity.')
-    expect(modal).toContain('candidateId: identityConflictCheck.value.candidate.id')
+    expect(modal).toContain('Use this existing Candidate Database record.')
+    expect(modal).toContain('selected any fields that should be refreshed')
+    expect(modal).toContain('const existingCandidateId = identityConflictCheck.value.candidate.id')
+    expect(modal).toContain('candidateId: existingCandidateId')
   })
 
   it('enforces the conflict guard at the intake API and does not overwrite identity fields', () => {

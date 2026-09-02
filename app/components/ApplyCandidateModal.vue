@@ -40,6 +40,7 @@ const identityReviewed = ref(false)
 const applyingParsedIdentity = ref(false)
 const identityConflictCheck = ref<CandidateIdentityConflictCheck | null>(null)
 const identityConflictConfirmed = ref(false)
+const identityUpdateFields = reactive({ name: false, email: false, phone: false })
 
 function confidenceLabel(confidence?: ParsedResumeIdentity['nameConfidence']) {
   if (confidence === 'high') return 'High confidence'
@@ -77,6 +78,9 @@ watch(mode, (value) => {
   identityReviewed.value = false
   identityConflictCheck.value = null
   identityConflictConfirmed.value = false
+  identityUpdateFields.name = false
+  identityUpdateFields.email = false
+  identityUpdateFields.phone = false
   source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'
 })
 
@@ -99,6 +103,9 @@ watch(
     if (resumeFile.value && resumeIdentity.value && !applyingParsedIdentity.value) identityReviewed.value = false
     identityConflictCheck.value = null
     identityConflictConfirmed.value = false
+    identityUpdateFields.name = false
+    identityUpdateFields.email = false
+    identityUpdateFields.phone = false
   },
 )
 const matchResult = ref<any | null>(null)
@@ -235,7 +242,26 @@ async function createCandidate() {
   }
 
   if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {
-    await attachCandidate({ candidateId: identityConflictCheck.value.candidate.id, source: source.value })
+    const existingCandidateId = identityConflictCheck.value.candidate.id
+    const updatePayload: Record<string, string | null> = {}
+    if (identityUpdateFields.name) {
+      updatePayload.firstName = firstName
+      updatePayload.lastName = lastName
+    }
+    if (identityUpdateFields.email) updatePayload.email = email
+    if (identityUpdateFields.phone) updatePayload.phone = phone ?? null
+
+    if (Object.keys(updatePayload).length) {
+      try {
+        await $fetch(`/api/candidates/${existingCandidateId}`, { method: 'PATCH', body: updatePayload })
+        await refreshNuxtData('candidates')
+      } catch (err: any) {
+        applyError.value = err?.data?.statusMessage ?? err?.message ?? 'The existing candidate details could not be updated.'
+        return
+      }
+    }
+
+    await attachCandidate({ candidateId: existingCandidateId, source: source.value })
     return
   }
 
@@ -330,15 +356,22 @@ async function createCandidate() {
               </div>
               <div v-if="identityConflictCheck?.matched && identityConflictCheck.requiresConfirmation" data-testid="candidate-identity-conflict" class="rounded-xl border border-warning-300 bg-warning-50 p-4 text-sm text-warning-900">
                 <p class="font-semibold">Possible duplicate identity conflict</p>
-                <p class="mt-1 text-xs leading-5">A Candidate Database record already matches this {{ identityConflictCheck.matchBasis }}. The existing identity will not be overwritten. Compare the details below before linking it.</p>
+                <p class="mt-1 text-xs leading-5">A Candidate Database record already matches this {{ identityConflictCheck.matchBasis }}. This may be the same person returning with a newer resume. The existing record will be reused rather than creating a duplicate.</p>
+                <div class="mt-3 rounded-lg border border-[#CFE0ED] bg-[#F7FBFE] px-3 py-2 text-xs text-[#1F6FA3]">
+                  <strong>Document history:</strong> if a resume is attached, it will be added as a new document on the existing candidate profile. Older resumes remain available in Documents for history and comparison.
+                </div>
                 <div class="mt-3 space-y-2">
-                  <div v-for="conflict in identityConflictCheck.conflicts" :key="conflict.field" class="rounded-lg bg-white/80 px-3 py-2 text-xs">
-                    <span class="font-semibold capitalize">{{ conflict.field }}</span>: existing "{{ conflict.existing }}" vs entered "{{ conflict.incoming }}"
-                  </div>
+                  <label v-for="conflict in identityConflictCheck.conflicts" :key="conflict.field" class="flex items-start gap-2 rounded-lg bg-white/80 px-3 py-2 text-xs">
+                    <input v-model="identityUpdateFields[conflict.field]" type="checkbox" class="mt-0.5 size-4" />
+                    <span><span class="font-semibold capitalize">{{ conflict.field }}</span>: existing "{{ conflict.existing }}" → newer "{{ conflict.incoming }}"<br><span class="text-surface-500">Select to update this field on the existing Candidate Database profile.</span></span>
+                  </label>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <NuxtLink v-if="identityConflictCheck.candidate?.id" :to="localePath(`/dashboard/candidates/${identityConflictCheck.candidate.id}`)" target="_blank" class="rounded-lg border border-warning-300 bg-white px-3 py-2 text-xs font-semibold text-warning-900 no-underline">Open existing candidate profile / documents</NuxtLink>
                 </div>
                 <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-warning-200 bg-white p-3 text-xs">
                   <input v-model="identityConflictConfirmed" data-testid="candidate-identity-conflict-confirm" type="checkbox" class="mt-0.5 size-4" />
-                  <span><strong>Use the existing Candidate Database identity.</strong> I reviewed the differences and confirm this resume/candidate belongs to that existing person.</span>
+                  <span><strong>Use this existing Candidate Database record.</strong> I reviewed the differences, selected any fields that should be refreshed, and confirm the newer resume belongs to this person.</span>
                 </label>
               </div>
               <div class="grid gap-4 sm:grid-cols-2">
