@@ -21,11 +21,14 @@ describe('PDS candidate identity conflict protection', () => {
     )).toEqual([])
   })
 
-  it('checks email first and phone second in the preflight endpoint', () => {
+  it('checks email first and phone second through the shared preflight matcher', () => {
     const endpoint = read('server/api/jobs/[id]/candidate-identity-check.post.ts')
-    expect(endpoint).toContain('const matchedByEmail')
-    expect(endpoint).toContain('const matchedByPhone = !matchedByEmail')
-    expect(endpoint).toContain("matchBasis: matchedByEmail ? 'email' as const : 'phone' as const")
+    const matcher = read('server/utils/candidateIdentityMatch.ts')
+    expect(endpoint).toContain('findCandidateIdentityMatch(orgId, body)')
+    expect(endpoint).toContain('matchBasis: match.basis')
+    expect(matcher.indexOf('const emailMatch')).toBeLessThan(matcher.indexOf('const phoneMatch'))
+    expect(matcher).toContain("if (emailMatch) return { basis: 'email'")
+    expect(matcher).toContain("if (phoneMatch) return { basis: 'phone'")
   })
 
   it('requires explicit recruiter confirmation before a conflicting existing identity is reused', () => {
@@ -41,10 +44,11 @@ describe('PDS candidate identity conflict protection', () => {
 
   it('enforces the conflict guard at the intake API and recomputes match/conflict facts server-side', () => {
     const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
+    expect(intake).toContain('findCandidateIdentityMatch(orgId, { email, phone: body.phone })')
     expect(intake).toContain('findCandidateIdentityConflicts(matchedCandidate, body)')
     expect(intake).toContain('Review the conflict and explicitly use the existing candidate record')
-    expect(intake).toContain('const emailMatches = normalizeEmail(existingCandidate.email)')
-    expect(intake).toContain('const phoneMatches = Boolean(normalizePhone(existingCandidate.phone))')
+    expect(intake).toContain('const emailMatches = normalizeCandidateEmail(existingCandidate.email)')
+    expect(intake).toContain('const phoneMatches = Boolean(normalizeCandidatePhone(existingCandidate.phone))')
     expect(intake).toContain('const conflicts = findCandidateIdentityConflicts(existingCandidate, reviewedIdentity)')
     expect(intake).toContain('const invalidRefreshField = refreshedFields.find')
   })
