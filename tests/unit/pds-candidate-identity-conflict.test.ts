@@ -39,10 +39,21 @@ describe('PDS candidate identity conflict protection', () => {
     expect(modal).toContain('candidateId: existingCandidateId')
   })
 
-  it('enforces the conflict guard at the intake API and does not overwrite identity fields', () => {
+  it('enforces the conflict guard at the intake API and recomputes match/conflict facts server-side', () => {
     const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
     expect(intake).toContain('findCandidateIdentityConflicts(matchedCandidate, body)')
     expect(intake).toContain('Review the conflict and explicitly use the existing candidate record')
-    expect(intake).not.toContain('db.update(candidate)')
+    expect(intake).toContain('const emailMatches = normalizeEmail(existingCandidate.email)')
+    expect(intake).toContain('const phoneMatches = Boolean(normalizePhone(existingCandidate.phone))')
+    expect(intake).toContain('const conflicts = findCandidateIdentityConflicts(existingCandidate, reviewedIdentity)')
+    expect(intake).toContain('const invalidRefreshField = refreshedFields.find')
+  })
+
+  it('applies selected identity updates and audit evidence atomically', () => {
+    const intake = read('server/api/jobs/[id]/candidate-intake.post.ts')
+    expect(intake).toContain('const result = await db.transaction(async (tx) =>')
+    expect(intake).toContain('await tx.update(candidate)')
+    expect(intake).toContain('await tx.insert(activityLog).values')
+    expect(intake).toContain("event: 'identity_conflict_resolved'")
   })
 })
