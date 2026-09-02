@@ -82,11 +82,21 @@ export default defineEventHandler(async (event) => {
   const documentId = crypto.randomUUID()
   const extension = MIME_TO_EXTENSION[mimeType] ?? 'bin'
   const storageKey = `${orgId}/${candidateId}/${documentId}.${extension}`
-  await uploadToS3(storageKey, fileBuffer, mimeType)
-
-  const parsedContent = await parseDocument(fileBuffer, mimeType)
 
   try {
+    await uploadToS3(storageKey, fileBuffer, mimeType)
+
+    let parsedContent: Awaited<ReturnType<typeof parseDocument>> | null = null
+    try {
+      parsedContent = await parseDocument(fileBuffer, mimeType)
+    } catch (parseError) {
+      logWarn('document.parse_failed', {
+        candidate_id: candidateId,
+        document_id: documentId,
+        error_message: parseError instanceof Error ? parseError.message : String(parseError),
+      })
+    }
+
     const [created] = await db.insert(document).values({
       id: documentId,
       organizationId: orgId,
@@ -119,7 +129,7 @@ export default defineEventHandler(async (event) => {
 
     setResponseStatus(event, 201)
     return created
-  } catch (dbError) {
+  } catch (uploadOrDbError) {
     try {
       await deleteFromS3(storageKey)
     } catch (cleanupError) {
@@ -128,6 +138,6 @@ export default defineEventHandler(async (event) => {
         error_message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
       })
     }
-    throw dbError
+    throw uploadOrDbError
   }
 })
