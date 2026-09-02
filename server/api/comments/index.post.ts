@@ -1,12 +1,13 @@
 import { eq, and } from 'drizzle-orm'
 import { comment, candidate, application, job } from '../../database/schema'
 import { createCommentSchema } from '../../utils/schemas/comment'
+import { assertCommentTargetAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * POST /api/comments
  * Create a comment on a candidate, application, or job.
  * Requires comment:create permission.
- * The target must belong to the same organization (prevents IDOR).
+ * The target must belong to the same organization and be visible to the recruiter.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { comment: ['create'] })
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await readValidatedBody(event, createCommentSchema.parse)
 
-  // ── Verify the target belongs to this org ──
+  // Verify the target belongs to this org before applying recruitment visibility.
   let targetExists: { id: string } | undefined
 
   if (body.targetType === 'candidate') {
@@ -41,6 +42,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  await assertCommentTargetAccess(orgId, session.user.id, body.targetType, body.targetId)
+
   const [created] = await db.insert(comment).values({
     organizationId: orgId,
     authorId: session.user.id,
@@ -61,7 +64,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Failed to create comment' })
   }
 
-  // Record activity (fire-and-forget)
   recordActivity({
     organizationId: orgId,
     actorId: session.user.id,
