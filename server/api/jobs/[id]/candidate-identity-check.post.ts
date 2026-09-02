@@ -1,6 +1,5 @@
-import { and, eq } from 'drizzle-orm'
-import { candidate } from '../../../database/schema'
 import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
+import { findCandidateIdentityMatch } from '../../../utils/candidateIdentityMatch'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -19,19 +18,10 @@ export default defineEventHandler(async (event) => {
   await assertRequirementAccess(orgId, session.user.id, jobId)
   const body = await readValidatedBody(event, bodySchema.parse)
 
-  const matchedByEmail = await db.query.candidate.findFirst({
-    where: and(eq(candidate.organizationId, orgId), eq(candidate.email, body.email)),
-    columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
-  })
-  const matchedByPhone = !matchedByEmail && body.phone
-    ? await db.query.candidate.findFirst({
-        where: and(eq(candidate.organizationId, orgId), eq(candidate.phone, body.phone)),
-        columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
-      })
-    : undefined
-  const matchedCandidate = matchedByEmail ?? matchedByPhone
+  const match = await findCandidateIdentityMatch(orgId, body)
+  if (!match) return { matched: false as const }
 
-  if (!matchedCandidate) return { matched: false as const }
+  const matchedCandidate = match.candidate
   if (matchedCandidate.quarantinedAt) {
     throw createError({ statusCode: 409, statusMessage: 'A matching candidate is in retention quarantine and cannot be linked through recruiter intake.' })
   }
@@ -39,7 +29,7 @@ export default defineEventHandler(async (event) => {
   const conflicts = findCandidateIdentityConflicts(matchedCandidate, body)
   return {
     matched: true as const,
-    matchBasis: matchedByEmail ? 'email' as const : 'phone' as const,
+    matchBasis: match.basis,
     requiresConfirmation: conflicts.length > 0,
     conflicts,
     candidate: {
