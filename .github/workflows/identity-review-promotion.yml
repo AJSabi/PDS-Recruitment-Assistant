@@ -46,7 +46,7 @@ jobs:
       - name: Verify change scope
         shell: bash
         run: |
-          changed="$(git diff --name-only | sort)"
+          changed="$(git status --porcelain | sed -E 's/^.. //' | sort)"
           expected="$(printf '%s\n' app/components/ApplyCandidateModal.vue tests/unit/pds-resume-identity-review-ux.test.ts | sort)"
           test "$changed" = "$expected"
           git diff --check
