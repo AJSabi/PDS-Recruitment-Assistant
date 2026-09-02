@@ -1,5 +1,6 @@
 name: Candidate Identity Conflict Promotion
 
+# Validation rerun after narrowing the dynamic route fetch type.
 on:
   push:
     branches:
