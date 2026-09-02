@@ -6,6 +6,7 @@ import {
   recruiterScreeningSession,
   resumeAssessment,
 } from '../../../../database/schema'
+import { assertActiveApplicationCandidate } from '../../../../utils/candidate-retention'
 import { confirmRecruitmentStageSchema, CONFIRMED_STAGE_TRANSITIONS } from '../../../../utils/schemas/recruitmentStage'
 import { coarseStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
@@ -50,6 +51,7 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
   const { id: applicationId } = await getValidatedRouterParams(event, paramsSchema.parse)
   await assertApplicationAccess(orgId, session.user.id, applicationId)
+  await assertActiveApplicationCandidate(orgId, applicationId)
   const body = await readValidatedBody(event, confirmRecruitmentStageSchema.parse)
 
   const app = await db.query.application.findFirst({
