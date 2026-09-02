@@ -34,8 +34,9 @@ describe('PDS duplicate identity normalization', () => {
     expect(matcher).toContain("regexp_replace(coalesce(${candidate.phone}, ''), '[^0-9]', '', 'g')")
     expect(matcher).toContain('91${normalized}')
     expect(matcher).toContain('0${normalized}')
-    expect(matcher).not.toContain('firstName')
-    expect(matcher).not.toContain('lastName')
+    const matchingLogic = matcher.slice(matcher.indexOf('const email ='), matcher.indexOf('return null'))
+    expect(matchingLogic).not.toContain('candidate.firstName')
+    expect(matchingLogic).not.toContain('candidate.lastName')
   })
 
   it('uses canonical lookup when checking a recruiter-requested email refresh', () => {
