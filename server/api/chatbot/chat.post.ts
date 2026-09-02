@@ -17,6 +17,7 @@ import { requireChatbotAccess } from '../../utils/chatbotAccess'
 import { extractChatbotSources } from '../../utils/chatbotSources'
 import { createRateLimiter } from '../../utils/rateLimit'
 import { trackEvent } from '../../utils/trackEvent'
+import { assertRequirementAccess, getRequirementVisibility } from '../../utils/recruitmentVisibility'
 import {
   CHATBOT_MAX_ATTACHMENTS_PER_MESSAGE,
   CHATBOT_MAX_MESSAGES,
@@ -115,8 +116,20 @@ export default defineEventHandler(async (event) => {
   const orgId = session.session.activeOrganizationId
 
   const body = await readValidatedBody(event, bodySchema.parse)
+  const visibility = await getRequirementVisibility(orgId, session.user.id)
+  if (body.scope.kind === 'organization' && !visibility.canSeeAll) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Organization-wide assistant scope is available only to recruitment administrators. Select one of your allocated requirements.',
+    })
+  }
+  if (body.scope.kind === 'job') {
+    if (!body.scope.jobId) {
+      throw createError({ statusCode: 400, statusMessage: 'jobId required for job scope.' })
+    }
+    await assertRequirementAccess(orgId, session.user.id, body.scope.jobId)
+  }
 
-  // ── Load conversation (and verify ownership) ──
   const conversation = await db.query.chatbotConversation.findFirst({
     where: and(
       eq(chatbotConversation.id, body.conversationId),
@@ -128,7 +141,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Conversation not found.' })
   }
 
-  // ── Load AI config (override → conversation pin → org chatbot default) ──
   const preferredAiConfigId =
     body.aiConfigId !== undefined ? body.aiConfigId : conversation.aiConfigId
   const config = await loadAiConfig(orgId, {
@@ -136,12 +148,8 @@ export default defineEventHandler(async (event) => {
     preferId: preferredAiConfigId,
   })
 
-  // ── Resolve scope label ──
   let scopeLabel = 'entire organization'
   if (body.scope.kind === 'job') {
-    if (!body.scope.jobId) {
-      throw createError({ statusCode: 400, statusMessage: 'jobId required for job scope.' })
-    }
     const jobRow = await db.query.job.findFirst({
       where: (jobTable, { and: a, eq: e }) => a(
         e(jobTable.organizationId, orgId),
@@ -155,7 +163,6 @@ export default defineEventHandler(async (event) => {
     scopeLabel = `job "${jobRow.title}" (only)`
   }
 
-  // ── Resolve agent (effective agentId = body override → conversation default → none) ──
   const effectiveAgentId =
     body.agentId !== undefined ? body.agentId : conversation.agentId
   let agentPrompt: string | null = null
@@ -175,7 +182,6 @@ export default defineEventHandler(async (event) => {
     agentTemperature = agentRow.temperature ? Number(agentRow.temperature) : null
   }
 
-  // ── Resolve attachments referenced by the latest user message ──
   const lastUser = [...body.messages].reverse().find((m) => m.role === 'user')
   if (!lastUser) {
     throw createError({ statusCode: 400, statusMessage: 'No user message in request.' })
@@ -200,7 +206,6 @@ export default defineEventHandler(async (event) => {
     textLength: a.textLength,
   }))
 
-  // ── Persist the user message ──
   const [persistedUser] = await db.insert(chatbotMessage).values({
     conversationId: conversation.id,
     organizationId: orgId,
@@ -210,7 +215,6 @@ export default defineEventHandler(async (event) => {
     attachments: userAttachmentSnapshot.length ? userAttachmentSnapshot : null,
   }).returning({ id: chatbotMessage.id, createdAt: chatbotMessage.createdAt })
 
-  // ── Patch conversation metadata. Auto-title on the first user message. ──
   const isFirstMessage = !conversation.lastMessageAt
   let updatedTitle: string | undefined
   const conversationUpdates: Partial<typeof chatbotConversation.$inferInsert> = {
@@ -230,7 +234,6 @@ export default defineEventHandler(async (event) => {
     .set(conversationUpdates)
     .where(eq(chatbotConversation.id, conversation.id))
 
-  // ── Build model + tools ──
   const model = createLanguageModel({
     provider: config.provider as SupportedProvider,
     model: config.model,
@@ -249,7 +252,6 @@ export default defineEventHandler(async (event) => {
     content: m.content,
   }))
 
-  // ── Set SSE headers ──
   setResponseHeaders(event, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -274,7 +276,6 @@ export default defineEventHandler(async (event) => {
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`))
   }
 
-  // ── Accumulators for persistence ──
   let assistantContent = ''
   let assistantReasoning = ''
   const toolCallById = new Map<string, ChatbotToolCall>()
@@ -285,7 +286,6 @@ export default defineEventHandler(async (event) => {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      // Notify client of any conversation-level changes before streaming text.
       if (updatedTitle) {
         writeEvent(controller, {
           type: 'conversation-meta',
@@ -327,8 +327,6 @@ export default defineEventHandler(async (event) => {
               if (existing) {
                 existing.output = part.output
                 existing.status = 'success'
-
-                // Extract sources from the structured output.
                 for (const src of extractChatbotSources(existing.name, part.output)) {
                   if (seenSourceIds.has(src.id)) continue
                   seenSourceIds.add(src.id)
@@ -375,22 +373,17 @@ export default defineEventHandler(async (event) => {
               break
             }
             default:
-              // Ignore start/start-step/finish-step/text-start/etc. — they don't
-              // contribute to the visible message and would just bloat the wire.
               break
           }
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : 'Unknown streaming error'
-        // Surface to caller AND server log so failures don't go unnoticed.
         console.error('[chatbot] stream failed', err)
         writeEvent(controller, {
           type: 'error',
           error: errMsg,
         })
       } finally {
-        // Persist whatever we got, even on partial failure — so the user can
-        // reload the page and still see the partial answer.
         try {
           const orderedToolCalls = toolCallOrder
             .map((id) => toolCallById.get(id))
@@ -420,7 +413,6 @@ export default defineEventHandler(async (event) => {
               .where(eq(chatbotConversation.id, conversation.id))
           }
         } catch (persistErr) {
-          // Persistence failures must not crash the stream — log loudly.
           console.error('[chatbot] failed to persist assistant message', persistErr)
         }
         controller.close()
@@ -428,7 +420,6 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  // Fire-and-forget analytics — never block the stream.
   trackEvent(event, session, 'chatbot_message_sent', {
     scope: body.scope.kind,
     has_attachments: attachmentRecords.length > 0,
