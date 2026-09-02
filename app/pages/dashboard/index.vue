@@ -40,17 +40,17 @@ const scopeDescription = computed(() => scope.value.allocatedOnly
   ? 'Your allocated requirements, candidate movement and priority actions in one operational view.'
   : `Organisation-wide hiring health, pipeline movement and recruitment priorities for ${activeOrg.value?.name ?? 'PDS'}.`)
 
-const activePipeline = computed(() => pipeline.value.new + pipeline.value.screening + pipeline.value.interview + pipeline.value.offer)
-const terminalPipeline = computed(() => pipeline.value.hired + pipeline.value.rejected)
+const activePipeline = computed(() => (pipeline.value.new ?? 0) + (pipeline.value.screening ?? 0) + (pipeline.value.interview ?? 0) + (pipeline.value.offer ?? 0))
+const terminalPipeline = computed(() => (pipeline.value.hired ?? 0) + (pipeline.value.rejected ?? 0))
 const pipelineTotal = computed(() => activePipeline.value + terminalPipeline.value)
 const riskTotal = computed(() => recruitment.value.overdueRequirements + recruitment.value.dueSoonRequirements)
 const requirementsOnTrack = computed(() => Math.max(0, counts.value.openJobs - riskTotal.value))
 const pipelineStages = computed(() => [
-  { key: 'new', label: 'New / Sourced', value: pipeline.value.new },
-  { key: 'screening', label: 'Screening', value: pipeline.value.screening },
-  { key: 'interview', label: 'Interview', value: pipeline.value.interview },
-  { key: 'offer', label: 'Offer', value: pipeline.value.offer },
-  { key: 'hired', label: 'Hired', value: pipeline.value.hired },
+  { key: 'new', label: 'New / Sourced', value: pipeline.value.new ?? 0 },
+  { key: 'screening', label: 'Screening', value: pipeline.value.screening ?? 0 },
+  { key: 'interview', label: 'Interview', value: pipeline.value.interview ?? 0 },
+  { key: 'offer', label: 'Offer', value: pipeline.value.offer ?? 0 },
+  { key: 'hired', label: 'Hired', value: pipeline.value.hired ?? 0 },
 ])
 
 function pipelineWidth(value: number) {
@@ -150,11 +150,11 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
         </NuxtLink>
         <div class="rounded-2xl border border-surface-200 bg-white p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-9 items-center justify-center rounded-xl bg-[#EEF5FC] text-[#3D6D9A]"><CalendarClock class="size-4.5" /></span>
-          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.interview }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">In Interview</p><p class="mt-1 text-xs text-surface-400">Current pipeline stage</p>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.interview ?? 0 }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">In Interview</p><p class="mt-1 text-xs text-surface-400">Current pipeline stage</p>
         </div>
         <div class="rounded-2xl border border-surface-200 bg-white p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-9 items-center justify-center rounded-xl bg-[#EDF7EF] text-[#39784A]"><UserRoundCheck class="size-4.5" /></span>
-          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.offer }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Offers in Process</p><p class="mt-1 text-xs text-surface-400">Current offer stage</p>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.offer ?? 0 }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Offers in Process</p><p class="mt-1 text-xs text-surface-400">Current offer stage</p>
         </div>
       </section>
 
