@@ -33,12 +33,13 @@ describe('PDS recruiter runtime regression safeguards - follow-up', () => {
     expect(api).toContain("openDays:")
   })
 
-  it('makes all operational dashboard cards navigable and shows TAT', () => {
+  it('makes operational dashboard queues navigable and shows allocation-based TAT', () => {
     const page = source('app/pages/dashboard/index.vue')
     expect(page).toContain("localePath('/dashboard/active-candidates')")
     expect(page).toContain("localePath('/dashboard/actions')")
     expect(page).toContain("localePath('/dashboard/closure-risk')")
-    expect(page).toContain('Open for ${job.openDays}')
+    expect(page).toContain("if (!job.assignmentDate || job.openDays == null) return 'TAT not started'")
+    expect(page).toContain('`${job.openDays} day${Number(job.openDays) === 1 ? \'\' : \'s\'} in TAT`')
   })
 
   it('recovers historical completed screenings that explicitly recommended reassess', () => {
