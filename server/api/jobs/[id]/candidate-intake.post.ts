@@ -1,7 +1,8 @@
-import { and, eq, isNull, ne } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { activityLog, application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
+import { findCandidateIdentityMatch, normalizeCandidateEmail, normalizeCandidatePhone } from '../../../utils/candidateIdentityMatch'
 import { applicationSourcePersistence } from '../../../utils/recruitmentSource'
 import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
@@ -14,14 +15,6 @@ type CandidateRecord = {
   lastName: string
   email: string
   phone: string | null
-}
-
-function normalizeEmail(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? ''
-}
-
-function normalizePhone(value: string | null | undefined) {
-  return value?.replace(/\D/g, '') ?? ''
 }
 
 export default defineEventHandler(async (event) => {
@@ -81,9 +74,9 @@ export default defineEventHandler(async (event) => {
         phone: reviewed.phone ?? null,
       }
 
-      const emailMatches = normalizeEmail(existingCandidate.email) === normalizeEmail(reviewedIdentity.email)
-      const phoneMatches = Boolean(normalizePhone(existingCandidate.phone))
-        && normalizePhone(existingCandidate.phone) === normalizePhone(reviewedIdentity.phone)
+      const emailMatches = normalizeCandidateEmail(existingCandidate.email) === normalizeCandidateEmail(reviewedIdentity.email)
+      const phoneMatches = Boolean(normalizeCandidatePhone(existingCandidate.phone))
+        && normalizeCandidatePhone(existingCandidate.phone) === normalizeCandidatePhone(reviewedIdentity.phone)
       const matchBasis: 'email' | 'phone' | null = emailMatches ? 'email' : phoneMatches ? 'phone' : null
 
       if (!matchBasis) {
@@ -111,16 +104,13 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      if (refreshedFields.includes('email') && normalizeEmail(reviewedIdentity.email) !== normalizeEmail(existingCandidate.email)) {
-        const duplicateEmail = await db.query.candidate.findFirst({
-          where: and(
-            eq(candidate.organizationId, orgId),
-            eq(candidate.email, reviewedIdentity.email),
-            ne(candidate.id, candidateId),
-          ),
-          columns: { id: true },
-        })
-        if (duplicateEmail) {
+      if (refreshedFields.includes('email') && normalizeCandidateEmail(reviewedIdentity.email) !== normalizeCandidateEmail(existingCandidate.email)) {
+        const duplicateEmailMatch = await findCandidateIdentityMatch(
+          orgId,
+          { email: reviewedIdentity.email },
+          { excludeCandidateId: candidateId },
+        )
+        if (duplicateEmailMatch?.basis === 'email') {
           throw createError({ statusCode: 409, statusMessage: 'A candidate with this email already exists' })
         }
       }
@@ -134,17 +124,8 @@ export default defineEventHandler(async (event) => {
     }
   } else {
     const email = body.email!
-    const matchedByEmail = await db.query.candidate.findFirst({
-      where: and(eq(candidate.organizationId, orgId), eq(candidate.email, email)),
-      columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
-    })
-    const matchedByPhone = !matchedByEmail && body.phone
-      ? await db.query.candidate.findFirst({
-          where: and(eq(candidate.organizationId, orgId), eq(candidate.phone, body.phone)),
-          columns: { id: true, firstName: true, lastName: true, email: true, phone: true, quarantinedAt: true },
-        })
-      : undefined
-    const matchedCandidate = matchedByEmail ?? matchedByPhone
+    const match = await findCandidateIdentityMatch(orgId, { email, phone: body.phone })
+    const matchedCandidate = match?.candidate
 
     if (matchedCandidate?.quarantinedAt) {
       throw createError({ statusCode: 409, statusMessage: 'A matching candidate is in retention quarantine and cannot be linked through recruiter intake.' })
