@@ -1,5 +1,5 @@
 import { eq, and, desc, inArray } from 'drizzle-orm'
-import { application, candidate, job, recruitmentApplicationProfile } from '../../database/schema'
+import { application, candidate, job, recruitmentApplicationProfile, recruitmentEvidence } from '../../database/schema'
 import { applicationQuerySchema } from '../../utils/schemas/application'
 import { propertyFiltersArraySchema } from '../../utils/schemas/property'
 import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
@@ -103,16 +103,40 @@ export default defineEventHandler(async (event) => {
   const ids = data.map(a => a.id)
   const jobIds = [...new Set(data.map(a => a.jobId))]
   const entityJobIds = new Map(data.map(a => [a.id, a.jobId] as const))
-  const propertyMap = await loadPropertyEntriesForEntities({
-    organizationId: orgId,
-    entityType: 'application',
-    entityIds: ids,
-    jobIds,
-    entityJobIds,
-  })
+  const [propertyMap, movementRows] = await Promise.all([
+    loadPropertyEntriesForEntities({
+      organizationId: orgId,
+      entityType: 'application',
+      entityIds: ids,
+      jobIds,
+      entityJobIds,
+    }),
+    ids.length
+      ? db.select({
+          applicationId: recruitmentEvidence.applicationId,
+          createdAt: recruitmentEvidence.createdAt,
+        })
+          .from(recruitmentEvidence)
+          .where(and(
+            eq(recruitmentEvidence.organizationId, orgId),
+            eq(recruitmentEvidence.type, 'stage_change'),
+            inArray(recruitmentEvidence.applicationId, ids),
+          ))
+          .orderBy(desc(recruitmentEvidence.createdAt))
+      : Promise.resolve([]),
+  ])
+
+  const lastMovementByApplication = new Map<string, Date>()
+  for (const row of movementRows) {
+    if (!lastMovementByApplication.has(row.applicationId)) lastMovementByApplication.set(row.applicationId, row.createdAt)
+  }
 
   return {
-    data: data.map(a => ({ ...a, properties: propertyMap.get(a.id) ?? [] })),
+    data: data.map(a => ({
+      ...a,
+      lastMovementAt: lastMovementByApplication.get(a.id) ?? a.createdAt,
+      properties: propertyMap.get(a.id) ?? [],
+    })),
     total,
     page: query.page,
     limit: query.limit,
