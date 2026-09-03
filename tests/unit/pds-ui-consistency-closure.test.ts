@@ -23,6 +23,16 @@ describe('PDS final recruitment UI consistency', () => {
     expect(setup).not.toContain('>AI Candidate Pool</NuxtLink>')
   })
 
+  it('keeps requirement readiness actions on real consolidated routes', () => {
+    const overview = readSource('app/pages/dashboard/jobs/[id]/index.vue')
+
+    expect(overview).toContain("route: '/dashboard/requirement-allocations'")
+    expect(overview).toContain('route: `/dashboard/jobs/${jobId}/ai-analysis`')
+    expect(overview).toContain('route: `/dashboard/jobs/${jobId}/candidates`')
+    expect(overview).not.toContain("route: '/dashboard/team-allocation'")
+    expect(overview).not.toContain('route: `/dashboard/jobs/${jobId}/jd-upload`')
+  })
+
   it('provides a responsive candidate database rather than a desktop-only wide table', () => {
     const database = readSource('app/pages/dashboard/pds-candidates.vue')
 
