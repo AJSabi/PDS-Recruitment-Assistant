@@ -34,15 +34,15 @@ const steps = computed(() => [
   { label: 'Requirement Profile', detail: 'Recruitment context', complete: hasProfile.value },
   { label: 'Active JD', detail: 'Saved source document', complete: hasJd.value },
   { label: 'Skill Matrix', detail: matrixApproved.value ? 'Approved' : 'Review required', complete: matrixApproved.value },
-  { label: 'AI Candidate Pool', detail: matrixApproved.value ? 'Ready for matching' : 'Unlocks after approval', complete: matrixApproved.value },
+  { label: 'Candidate Match', detail: matrixApproved.value ? 'Ready for matching' : 'Unlocks after approval', complete: matrixApproved.value },
 ])
 </script>
 
 <template>
   <div class="mx-auto max-w-6xl space-y-6">
     <div class="flex flex-wrap items-center gap-2">
-      <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />Pipeline</NuxtLink>
-      <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/pds-ranking`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><UsersRound class="size-4" />AI Candidate Pool</NuxtLink>
+      <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ArrowLeft class="size-4" />Overview</NuxtLink>
+      <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/pds-ranking`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><UsersRound class="size-4" />Candidate Match</NuxtLink>
       <NuxtLink :to="localePath(`/dashboard/jobs/${jobId}/pds-register`)" class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 px-3 py-1.5 text-sm font-medium text-surface-600 hover:border-brand-400 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300"><ClipboardList class="size-4" />Candidate Register</NuxtLink>
     </div>
 
