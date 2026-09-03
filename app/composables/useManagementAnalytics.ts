@@ -5,9 +5,17 @@ export function useManagementAnalytics() {
     headers: useRequestHeaders(['cookie']),
     getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
   })
+  const { data: taLeadData, status: taLeadStatus, error: taLeadError, refresh: refreshTaLead } = useFetch('/api/dashboard/ta-lead-kpis', {
+    key: 'pds-ta-lead-kpis',
+    headers: useRequestHeaders(['cookie']),
+    getCachedData: key => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
+  })
 
   if (import.meta.client) {
-    onMounted(() => { void refreshData() })
+    onMounted(() => {
+      void refreshData()
+      void refreshTaLead()
+    })
   }
 
   const summary = computed(() => data.value?.summary ?? {
@@ -44,7 +52,15 @@ export function useManagementAnalytics() {
     sourceEffectiveness: '',
     historicalConversion: '',
   })
-  const refresh = () => refreshData()
+  const taLead = computed(() => taLeadData.value ?? {
+    date: '',
+    averageWindow: { days: 30, startDate: '', endDate: '' },
+    team: { daily: {}, average: {}, windowTotals: {} },
+    recruiters: [],
+    attributionNote: '',
+    scopeNote: '',
+  })
+  const refresh = () => Promise.all([refreshData(), refreshTaLead()])
 
   return {
     data,
@@ -56,6 +72,9 @@ export function useManagementAnalytics() {
     recruiters,
     requirements,
     limitations,
+    taLead,
+    taLeadStatus,
+    taLeadError,
     status,
     error,
     refresh,
