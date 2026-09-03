@@ -33,18 +33,18 @@ describe('PDS pre-sync audit hardening', () => {
     expect(pkg.scripts['start:railway']).not.toContain('db:reseed')
   })
 
-  it('routes the main requirement pipeline and legacy application links to the governed PDS Recruitment Workspace', () => {
-    const pipeline = readSource('app/pages/dashboard/jobs/[id]/index.vue')
+  it('routes requirement and legacy application links to the governed PDS Recruitment Workspace', () => {
+    const requirement = readSource('app/pages/dashboard/jobs/[id]/index.vue')
     const bridge = readSource('app/components/ScoreBreakdown.vue')
     const legacyDetail = readSource('app/pages/dashboard/applications/[id].vue')
-    expect(pipeline).toContain('/dashboard/recruitment/${selected.id}#recruiter-screening')
+    expect(requirement).toContain('/dashboard/recruitment/${app.id}')
     expect(bridge).toContain('/dashboard/recruitment/${applicationId}#recruiter-screening')
-    expect(pipeline).not.toContain('/dashboard/applications/${selected.id}#recruiter-screening')
+    expect(requirement).not.toContain('/dashboard/applications/${app.id}')
     expect(bridge).not.toContain('/dashboard/applications/${applicationId}#recruiter-screening')
     expect(legacyDetail).toContain('/dashboard/recruitment/${applicationId}')
     expect(legacyDetail).not.toContain('PdsInterviewEvidence')
-    expect(pipeline).toContain('Hiring Manager, HOD and HR interviews happen outside the application')
-    expect(pipeline).not.toContain('capture Hiring Manager/HOD/HR evidence')
+    expect(requirement).toContain('Requirement Command Centre')
+    expect(requirement).toContain('Open Candidate Pipeline')
   })
 
   it('keeps HM, HOD and HR progression manual and not evidence-gated in V1', () => {
