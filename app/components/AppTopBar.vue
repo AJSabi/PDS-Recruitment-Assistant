@@ -51,7 +51,7 @@ const mainNav = computed(() => [
   { label: 'Requisitions', to: '/dashboard/jobs', icon: Briefcase, exact: false },
   { label: 'Candidate Database', to: '/dashboard/pds-candidates', icon: Database, exact: false },
   ...(canManageRequirements.value ? [
-    { label: 'Recruitment Analytics', to: '/dashboard/management-analytics', icon: BarChart3, exact: true },
+    { label: 'TA Operations', to: '/dashboard/ta-operations', icon: BarChart3, exact: true },
     { label: 'Team Allocation', to: '/dashboard/requirement-allocations', icon: UserRoundCog, exact: true },
   ] : []),
   canManageRequirements.value
