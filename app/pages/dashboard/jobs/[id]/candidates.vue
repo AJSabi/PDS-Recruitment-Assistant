@@ -170,7 +170,7 @@ async function handleSidebarUpdated() {
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#9FD3F2]">Candidate Pipeline</p>
             <h1 class="mt-2 text-2xl font-bold tracking-tight">{{ jobData.title }}</h1>
-            <p class="mt-2 max-w-3xl text-sm text-[#D5E6F3]">Work candidates by governed recruitment stage. Fit information supports recruiter judgement; stage movement remains controlled through the candidate detail workflow.</p>
+            <p class="mt-2 max-w-3xl text-sm text-[#D5E6F3]">Work candidates by governed recruitment stage. Fit information supports recruiter judgement; stage movement remains controlled through the recruiter workspace.</p>
           </div>
           <div class="grid grid-cols-3 gap-2 text-center">
             <div class="rounded-xl bg-white/10 px-4 py-3"><p class="text-xl font-bold">{{ total }}</p><p class="text-[11px] text-[#D5E6F3]">Candidates</p></div>
@@ -257,7 +257,7 @@ async function handleSidebarUpdated() {
 
               <div class="mt-3 flex items-center justify-between border-t border-surface-100 pt-2.5 dark:border-surface-800">
                 <span v-if="movementDays(app.lastMovementAt) >= 3 && !['joined', 'closed'].includes(stageGroup(app.recruitmentStatus))" class="inline-flex items-center gap-1 text-[10px] font-semibold text-warning-700 dark:text-warning-300"><AlertTriangle class="size-3" />Follow-up due</span>
-                <span v-else class="inline-flex items-center gap-1 text-[10px] text-surface-400"><UserRound class="size-3" />Candidate details</span>
+                <span v-else class="inline-flex items-center gap-1 text-[10px] text-surface-400"><UserRound class="size-3" />Recruiter workspace</span>
                 <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-brand-600 dark:text-brand-400">Open <ArrowRight class="size-3" /></span>
               </div>
             </button>
@@ -268,6 +268,6 @@ async function handleSidebarUpdated() {
       </div>
     </template>
 
-    <CandidateDetailSidebar v-if="selectedAppId" :application-id="selectedAppId" :open="sidebarOpen" @close="closeSidebar" @updated="handleSidebarUpdated" />
+    <PdsRecruiterCandidateWorkspace v-if="selectedAppId" :application-id="selectedAppId" :open="sidebarOpen" @close="closeSidebar" @updated="handleSidebarUpdated" />
   </div>
 </template>
