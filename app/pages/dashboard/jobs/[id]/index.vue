@@ -52,9 +52,9 @@ const closureRisk = computed(() => {
 })
 
 const readiness = computed(() => [
-  { label: 'Recruiter allocated', ready: Boolean(profile.value?.allocated), route: '/dashboard/team-allocation' },
-  { label: 'JD available', ready: Boolean(profile.value?.hasActiveJd), route: `/dashboard/jobs/${jobId}/jd-upload` },
-  { label: 'Skill Matrix approved', ready: Boolean(profile.value?.skillMatrixApproved), route: `/dashboard/jobs/${jobId}/jd-upload` },
+  { label: 'Recruiter allocated', ready: Boolean(profile.value?.allocated), route: '/dashboard/requirement-allocations' },
+  { label: 'JD available', ready: Boolean(profile.value?.hasActiveJd), route: `/dashboard/jobs/${jobId}/ai-analysis` },
+  { label: 'Skill Matrix approved', ready: Boolean(profile.value?.skillMatrixApproved), route: `/dashboard/jobs/${jobId}/ai-analysis` },
   { label: 'Candidate pipeline active', ready: applications.value.length > 0, route: `/dashboard/jobs/${jobId}/candidates` },
 ])
 
@@ -98,7 +98,7 @@ function movementDays(app: any) {
 
 const quickActions = computed(() => [
   { label: 'Candidate Pipeline', description: `${applications.value.length} candidates`, route: `/dashboard/jobs/${jobId}/candidates` },
-  { label: 'JD & Skill Matrix', description: profile.value?.skillMatrixApproved ? 'Approved' : 'Needs review', route: `/dashboard/jobs/${jobId}/jd-upload` },
+  { label: 'JD & Skill Matrix', description: profile.value?.skillMatrixApproved ? 'Approved' : 'Needs review', route: `/dashboard/jobs/${jobId}/ai-analysis` },
   { label: 'Candidate Match', description: 'AI-assisted matching', route: `/dashboard/jobs/${jobId}/pds-ranking` },
   { label: 'Sourcing Toolkit', description: 'Build sourcing activity', route: `/dashboard/jobs/${jobId}/sourcing` },
   { label: 'Candidate Register', description: 'Requirement candidate record', route: `/dashboard/jobs/${jobId}/pds-register` },
