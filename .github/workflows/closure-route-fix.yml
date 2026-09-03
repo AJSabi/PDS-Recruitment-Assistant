@@ -1,0 +1,46 @@
+name: Closure Route Fix
+
+on:
+  push:
+    branches: [feature/pds-skill-matrix]
+    paths:
+      - '.github/workflows/closure-route-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/pds-skill-matrix
+          fetch-depth: 0
+      - name: Guard expected head
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/feature/pds-skill-matrix)"
+      - name: Correct requirement command routes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/pages/dashboard/jobs/[id]/index.vue')
+          text = path.read_text()
+          replacements = {
+              "route: '/dashboard/team-allocation'": "route: '/dashboard/requirement-allocations'",
+              "route: `/dashboard/jobs/${jobId}/jd-upload`": "route: `/dashboard/jobs/${jobId}/ai-analysis`",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Expected source not found: {old}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+      - name: Commit route corrections
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 'app/pages/dashboard/jobs/[id]/index.vue'
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: correct requirement readiness routes"
+          git push origin HEAD:feature/pds-skill-matrix
