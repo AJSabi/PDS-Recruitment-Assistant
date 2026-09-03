@@ -68,10 +68,6 @@ function addMetric(target: Metrics, row: EvidenceRow) {
   if (to === 'joined') target.joined++
 }
 
-function addMetrics(target: Metrics, source: Metrics) {
-  for (const key of Object.keys(target) as Array<keyof Metrics>) target[key] += source[key]
-}
-
 function dailyAverage(metrics: Metrics) {
   return Object.fromEntries(
     Object.entries(metrics).map(([key, value]) => [key, Number((value / AVERAGE_DAYS).toFixed(1))]),
