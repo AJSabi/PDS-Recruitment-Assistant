@@ -1,0 +1,33 @@
+name: Lock Refresh
+
+on:
+  push:
+    paths:
+      - '.github/workflows/lock-refresh.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Use validated npm resolver
+        run: npm install --global npm@11.6.0
+      - name: Refresh lock metadata only
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Verify locked security overrides
+        run: |
+          node -e "const l=require('./package-lock.json'); console.log('@xmldom/xmldom',l.packages['node_modules/@xmldom/xmldom']?.version); console.log('qs',l.packages['node_modules/qs']?.version)"
+      - name: Upload refreshed lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: refreshed-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
