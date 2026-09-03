@@ -1,9 +1,22 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { application, job, recruitmentApplicationProfile, recruitmentEvidence } from '../../database/schema'
+import { application, recruitmentEvidence } from '../../database/schema'
 import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 const TIME_ZONE = 'Asia/Kolkata'
 const AVERAGE_DAYS = 30
+
+const emptyStageMetrics = {
+  recruiterScreeningsCompleted: 0,
+  interviewsScheduled: 0,
+  interviewsCompleted: 0,
+  hiringManagerCompleted: 0,
+  hodCompleted: 0,
+  hrCompleted: 0,
+  offersRaised: 0,
+  offersAccepted: 0,
+  offersDeclined: 0,
+  joined: 0,
+}
 
 function dateInTimeZone(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -24,7 +37,7 @@ function shiftDate(date: string, days: number) {
   return value.toISOString().slice(0, 10)
 }
 
-function previousWorkingDay(date: string) {
+function previousWeekday(date: string) {
   let value = shiftDate(date, -1)
   while ([0, 6].includes(new Date(`${value}T00:00:00Z`).getUTCDay())) value = shiftDate(value, -1)
   return value
@@ -45,72 +58,45 @@ export default defineEventHandler(async (event) => {
   const visibleRequirementIds = await getVisibleRequirementIds(orgId, userId)
 
   const today = dateInTimeZone()
-  const lastWorkingDate = previousWorkingDay(today)
-  const averageStartDate = shiftDate(lastWorkingDate, -(AVERAGE_DAYS - 1))
+  const lastWeekdayDate = previousWeekday(today)
+  const averageStartDate = shiftDate(lastWeekdayDate, -(AVERAGE_DAYS - 1))
 
   if (visibleRequirementIds && visibleRequirementIds.length === 0) {
     return {
-      date: lastWorkingDate,
-      averageWindow: { days: AVERAGE_DAYS, startDate: averageStartDate, endDate: lastWorkingDate },
-      daily: {
-        candidatesSourced: 0,
-        recruiterScreeningsCompleted: 0,
-        interviewsScheduled: 0,
-        interviewsCompleted: 0,
-        hiringManagerCompleted: 0,
-        hodCompleted: 0,
-        hrCompleted: 0,
-        offersRaised: 0,
-        offersAccepted: 0,
-        offersDeclined: 0,
-        joined: 0,
-      },
-      average: {
-        candidatesSourced: 0,
-        recruiterScreeningsCompleted: 0,
-        interviewsScheduled: 0,
-        interviewsCompleted: 0,
-        hiringManagerCompleted: 0,
-        hodCompleted: 0,
-        hrCompleted: 0,
-        offersRaised: 0,
-        offersAccepted: 0,
-        offersDeclined: 0,
-        joined: 0,
-      },
-      attributionNote: 'Sourcing is currently attributed using the application recruiter ownership recorded today; historical stage movement uses immutable recruiter event telemetry.',
+      date: lastWeekdayDate,
+      averageWindow: { days: AVERAGE_DAYS, startDate: averageStartDate, endDate: lastWeekdayDate },
+      daily: { candidatesSourced: 0, ...emptyStageMetrics },
+      average: { candidatesSourced: 0, ...emptyStageMetrics },
+      attributionNote: 'Recruiter activity is based on immutable recruitment evidence. Historical sourcing before sourcing telemetry was introduced is intentionally not inferred from current assignment.',
     }
   }
 
-  const jobVisibility = visibleRequirementIds ? [inArray(application.jobId, visibleRequirementIds)] : []
-  const sourcedScope = and(
-    eq(application.organizationId, orgId),
-    eq(recruitmentApplicationProfile.assignedRecruiterId, userId),
-    ...jobVisibility,
-  )
+  const visibleApplicationCondition = visibleRequirementIds
+    ? inArray(application.jobId, visibleRequirementIds)
+    : undefined
   const evidenceScope = and(
     eq(recruitmentEvidence.organizationId, orgId),
     eq(recruitmentEvidence.createdBy, userId),
-    ...(visibleRequirementIds ? [inArray(application.jobId, visibleRequirementIds)] : []),
+    visibleApplicationCondition,
   )
 
   const [dailySourcedRows, averageSourcedRows, dailyStageRows, averageStageRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)` })
-      .from(application)
-      .innerJoin(recruitmentApplicationProfile, eq(recruitmentApplicationProfile.applicationId, application.id))
-      .innerJoin(job, eq(job.id, application.jobId))
+      .from(recruitmentEvidence)
+      .innerJoin(application, eq(application.id, recruitmentEvidence.applicationId))
       .where(and(
-        sourcedScope,
-        sql`(${application.createdAt} at time zone ${TIME_ZONE})::date = ${lastWorkingDate}::date`,
+        evidenceScope,
+        eq(recruitmentEvidence.type, 'sourcing'),
+        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date = ${lastWeekdayDate}::date`,
       )),
 
     db.select({ count: sql<number>`count(*)` })
-      .from(application)
-      .innerJoin(recruitmentApplicationProfile, eq(recruitmentApplicationProfile.applicationId, application.id))
-      .innerJoin(job, eq(job.id, application.jobId))
+      .from(recruitmentEvidence)
+      .innerJoin(application, eq(application.id, recruitmentEvidence.applicationId))
       .where(and(
-        sourcedScope,
-        sql`(${application.createdAt} at time zone ${TIME_ZONE})::date between ${averageStartDate}::date and ${lastWorkingDate}::date`,
+        evidenceScope,
+        eq(recruitmentEvidence.type, 'sourcing'),
+        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date between ${averageStartDate}::date and ${lastWeekdayDate}::date`,
       )),
 
     db.select({
@@ -130,7 +116,7 @@ export default defineEventHandler(async (event) => {
       .where(and(
         evidenceScope,
         eq(recruitmentEvidence.type, 'stage_change'),
-        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date = ${lastWorkingDate}::date`,
+        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date = ${lastWeekdayDate}::date`,
       )),
 
     db.select({
@@ -150,16 +136,16 @@ export default defineEventHandler(async (event) => {
       .where(and(
         evidenceScope,
         eq(recruitmentEvidence.type, 'stage_change'),
-        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date between ${averageStartDate}::date and ${lastWorkingDate}::date`,
+        sql`(${recruitmentEvidence.createdAt} at time zone ${TIME_ZONE})::date between ${averageStartDate}::date and ${lastWeekdayDate}::date`,
       )),
   ])
 
-  const dailyStage = dailyStageRows[0] ?? {}
-  const averageStage = averageStageRows[0] ?? {}
+  const dailyStage = { ...emptyStageMetrics, ...(dailyStageRows[0] ?? {}) }
+  const averageStage = { ...emptyStageMetrics, ...(averageStageRows[0] ?? {}) }
 
   return {
-    date: lastWorkingDate,
-    averageWindow: { days: AVERAGE_DAYS, startDate: averageStartDate, endDate: lastWorkingDate },
+    date: lastWeekdayDate,
+    averageWindow: { days: AVERAGE_DAYS, startDate: averageStartDate, endDate: lastWeekdayDate },
     daily: {
       candidatesSourced: numberValue(dailySourcedRows[0]?.count),
       recruiterScreeningsCompleted: numberValue(dailyStage.recruiterScreeningsCompleted),
@@ -186,6 +172,6 @@ export default defineEventHandler(async (event) => {
       offersDeclined: dailyAverage(averageStage.offersDeclined),
       joined: dailyAverage(averageStage.joined),
     },
-    attributionNote: 'Sourcing is currently attributed using the application recruiter ownership recorded today; historical stage movement uses immutable recruiter event telemetry.',
+    attributionNote: 'Recruiter activity is based on immutable recruitment evidence. Historical sourcing before sourcing telemetry was introduced is intentionally not inferred from current assignment.',
   }
 })
