@@ -33,6 +33,11 @@ const {
   refresh,
 } = useDashboard()
 
+const { data: recruiterKpiData, status: recruiterKpiStatus } = useFetch('/api/dashboard/recruiter-daily-kpis', {
+  key: 'recruiter-daily-kpis',
+  headers: useRequestHeaders(['cookie']),
+})
+
 const canCreateRequirement = computed(() => ['owner', 'admin'].includes(scope.value.role))
 const canSeeManagementAnalytics = computed(() => ['owner', 'admin'].includes(scope.value.role))
 const scopeLabel = computed(() => scope.value.allocatedOnly ? 'My Recruitment Command Centre' : 'Recruitment Command Centre')
@@ -53,6 +58,52 @@ const pipelineStages = computed(() => [
   { key: 'hired', label: 'Hired', value: pipeline.value.hired ?? 0 },
 ])
 
+const emptyRecruiterKpis = {
+  candidatesSourced: 0,
+  recruiterScreeningsCompleted: 0,
+  interviewsScheduled: 0,
+  interviewsCompleted: 0,
+  hiringManagerCompleted: 0,
+  hodCompleted: 0,
+  hrCompleted: 0,
+  offersRaised: 0,
+  offersAccepted: 0,
+  offersDeclined: 0,
+  joined: 0,
+}
+const recruiterDaily = computed(() => recruiterKpiData.value?.daily ?? emptyRecruiterKpis)
+const recruiterAverage = computed(() => recruiterKpiData.value?.average ?? emptyRecruiterKpis)
+const recruiterKpiGroups = computed(() => [
+  {
+    title: 'Sourcing & Screening',
+    description: 'Top-of-funnel activity completed by you',
+    items: [
+      { label: 'Candidates sourced', daily: recruiterDaily.value.candidatesSourced, average: recruiterAverage.value.candidatesSourced },
+      { label: 'Recruiter screenings', daily: recruiterDaily.value.recruiterScreeningsCompleted, average: recruiterAverage.value.recruiterScreeningsCompleted },
+    ],
+  },
+  {
+    title: 'Interview Movement',
+    description: 'Candidate movement through interview rounds',
+    items: [
+      { label: 'Rounds scheduled', daily: recruiterDaily.value.interviewsScheduled, average: recruiterAverage.value.interviewsScheduled },
+      { label: 'Rounds completed', daily: recruiterDaily.value.interviewsCompleted, average: recruiterAverage.value.interviewsCompleted },
+      { label: 'Hiring Manager', daily: recruiterDaily.value.hiringManagerCompleted, average: recruiterAverage.value.hiringManagerCompleted },
+      { label: 'HOD / HR', daily: recruiterDaily.value.hodCompleted + recruiterDaily.value.hrCompleted, average: Number((recruiterAverage.value.hodCompleted + recruiterAverage.value.hrCompleted).toFixed(1)) },
+    ],
+  },
+  {
+    title: 'Offer & Joining Movement',
+    description: 'Late-stage recruitment outcomes progressed by you',
+    items: [
+      { label: 'Offers raised', daily: recruiterDaily.value.offersRaised, average: recruiterAverage.value.offersRaised },
+      { label: 'Offers accepted', daily: recruiterDaily.value.offersAccepted, average: recruiterAverage.value.offersAccepted },
+      { label: 'Offers declined', daily: recruiterDaily.value.offersDeclined, average: recruiterAverage.value.offersDeclined },
+      { label: 'Joined', daily: recruiterDaily.value.joined, average: recruiterAverage.value.joined },
+    ],
+  },
+])
+
 function pipelineWidth(value: number) {
   if (!pipelineTotal.value || value <= 0) return '0%'
   return `${Math.max(5, Math.round((value / pipelineTotal.value) * 100))}%`
@@ -61,6 +112,11 @@ function pipelineWidth(value: number) {
 function formatDate(value?: string | Date | null) {
   if (!value) return 'Not set'
   return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatKpiDate(value?: string | null) {
+  if (!value) return 'Previous working day'
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' })
 }
 
 function daysTo(value?: string | Date | null) {
@@ -155,6 +211,37 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
         <div class="rounded-2xl border border-surface-200 bg-white p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-9 items-center justify-center rounded-xl bg-[#EDF7EF] text-[#39784A]"><UserRoundCheck class="size-4.5" /></span>
           <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.offer ?? 0 }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Offers in Process</p><p class="mt-1 text-xs text-surface-400">Current offer stage</p>
+        </div>
+      </section>
+
+      <section v-if="scope.allocatedOnly" class="overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="recruiter-daily-performance-pulse">
+        <div class="flex flex-col gap-2 border-b border-surface-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between dark:border-surface-800">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="font-bold text-[#102A43] dark:text-white">My Daily Recruitment Pulse</h2>
+              <span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[10px] font-semibold text-[#1F6FA3]">{{ formatKpiDate(recruiterKpiData?.date) }}</span>
+            </div>
+            <p class="mt-1 text-xs text-surface-400">Previous working day activity compared with your rolling 30-day daily average.</p>
+          </div>
+          <div class="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-surface-400"><span>Last working day</span><span>30-day avg/day</span></div>
+        </div>
+
+        <div v-if="recruiterKpiStatus === 'pending'" class="flex items-center justify-center gap-2 px-5 py-10 text-sm text-surface-400"><Loader2 class="size-4 animate-spin" />Loading recruiter performance…</div>
+        <div v-else class="grid lg:grid-cols-3">
+          <div v-for="(group, groupIndex) in recruiterKpiGroups" :key="group.title" class="p-5" :class="groupIndex ? 'border-t border-surface-100 lg:border-l lg:border-t-0 dark:border-surface-800' : ''">
+            <h3 class="text-sm font-bold text-surface-800 dark:text-surface-100">{{ group.title }}</h3>
+            <p class="mt-0.5 text-[11px] text-surface-400">{{ group.description }}</p>
+            <div class="mt-4 divide-y divide-surface-100 dark:divide-surface-800">
+              <div v-for="item in group.items" :key="item.label" class="grid grid-cols-[1fr_52px_62px] items-center gap-2 py-2.5">
+                <span class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ item.label }}</span>
+                <span class="text-right text-lg font-bold text-[#102A43] dark:text-white">{{ item.daily }}</span>
+                <span class="text-right text-xs font-semibold text-surface-400">{{ item.average }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="border-t border-surface-100 bg-[#F9FBFC] px-5 py-2.5 text-[10px] leading-4 text-surface-400 dark:border-surface-800 dark:bg-surface-950/30">
+          Daily averages use the 30 calendar days ending on the previous working day. Interview, offer and joining movement is based on recruiter stage-event history. Candidate sourcing currently follows the application's recruiter ownership until immutable sourcing attribution is added.
         </div>
       </section>
 
