@@ -39,3 +39,4 @@ jobs:
             typecheck.exit
           if-no-files-found: error
           retention-days: 1
+      # Temporary closure diagnostic; remove after exact-head validation.
