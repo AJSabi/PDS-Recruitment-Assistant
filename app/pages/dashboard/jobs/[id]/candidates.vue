@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Users, SlidersHorizontal, X, Check, ChevronsUpDown, ChevronUp, ChevronDown, UserRound } from '@lucide/vue'
+import { AlertTriangle, ArrowRight, Clock3, Mail, Search, UserRound, Users } from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',
@@ -8,12 +8,7 @@ definePageMeta({
 
 const route = useRoute()
 const jobId = route.params.id as string
-
 const { formatPersonName } = useOrgSettings()
-
-// ─────────────────────────────────────────────
-// Fetch job info for page header
-// ─────────────────────────────────────────────
 
 const { data: jobData, status: jobFetchStatus, error: jobError } = useFetch(
   () => `/api/jobs/${jobId}`,
@@ -24,58 +19,66 @@ const { data: jobData, status: jobFetchStatus, error: jobError } = useFetch(
 )
 
 useSeoMeta({
-  title: computed(() =>
-    jobData.value ? `Table — ${jobData.value.title}` : 'Table',
-  ),
+  title: computed(() => jobData.value ? `Candidate Pipeline — ${jobData.value.title}` : 'Candidate Pipeline'),
 })
 
-// ─────────────────────────────────────────────
-// Fetch applications for this job
-// ─────────────────────────────────────────────
-
-const STATUS_OPTIONS = ['new', 'screening', 'interview', 'offer', 'hired', 'rejected'] as const
-type Status = typeof STATUS_OPTIONS[number]
-
-// useState scoped to this job so state persists across sub-navigation
-const selectedStatuses = useState<Status[]>(`cand-filter-statuses-${jobId}`, () => [])
-const scoreMin = useState<number | undefined>(`cand-filter-score-min-${jobId}`, () => undefined)
-const scoreMax = useState<number | undefined>(`cand-filter-score-max-${jobId}`, () => undefined)
-const visibleCols = useState(`cand-visible-cols-${jobId}`, () => ({
-  email: true,
-  score: true,
-  status: true,
-  createdAt: true,
-}))
-
-// Only send a single status to the API when exactly one is selected; otherwise fetch all and filter client-side
-const apiStatusFilter = computed(() =>
-  selectedStatuses.value.length === 1 ? selectedStatuses.value[0] : undefined,
-)
-
 const { data: appData, status: appFetchStatus, error: appError, refresh: refreshApps } = useFetch('/api/applications', {
-  key: `candidates-table-apps-${jobId}`,
-  query: computed(() => ({
-    jobId,
-    limit: 100,
-    ...(apiStatusFilter.value && { status: apiStatusFilter.value }),
-  })),
+  key: `candidate-pipeline-apps-${jobId}`,
+  query: computed(() => ({ jobId, limit: 100 })),
   headers: useRequestHeaders(['cookie']),
 })
 
 const applications = computed(() => appData.value?.data ?? [])
 const total = computed(() => appData.value?.total ?? 0)
+const search = ref('')
+const selectedStage = ref('all')
+const selectedAppId = ref<string | null>(null)
+const sidebarOpen = computed(() => Boolean(selectedAppId.value))
+const isLoading = computed(() => jobFetchStatus.value === 'pending' || appFetchStatus.value === 'pending')
 
-// ─────────────────────────────────────────────
-// Status & badge helpers
-// ─────────────────────────────────────────────
+const stageGroups = [
+  { key: 'intake', label: 'New / Intake', description: 'Resume received and initial review' },
+  { key: 'screening', label: 'Recruiter Screening', description: 'Recruiter validation and reassessment' },
+  { key: 'interview', label: 'Interview', description: 'Hiring Manager, HOD and HR rounds' },
+  { key: 'offer', label: 'Offer', description: 'Offer preparation and candidate decision' },
+  { key: 'joined', label: 'Joined', description: 'Successful joining' },
+  { key: 'closed', label: 'Closed', description: 'Closed or not proceeding' },
+] as const
 
-const statusBadgeClasses: Record<string, string> = {
-  new: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/50 dark:text-blue-400 dark:ring-blue-800',
-  screening: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/50 dark:text-violet-400 dark:ring-violet-800',
-  interview: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:ring-amber-800',
-  offer: 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-400 dark:ring-teal-800',
-  hired: 'bg-green-50 text-green-700 ring-green-200 dark:bg-green-950/50 dark:text-green-400 dark:ring-green-800',
-  rejected: 'bg-surface-100 text-surface-500 ring-surface-200 dark:bg-surface-800/50 dark:text-surface-400 dark:ring-surface-700',
+type StageGroupKey = typeof stageGroups[number]['key']
+
+function stageGroup(stage?: string | null): StageGroupKey {
+  if (!stage || ['candidate_added', 'resume_received', 'resume_reviewed'].includes(stage)) return 'intake'
+  if (['recruiter_screening_pending', 'recruiter_screening_completed', 'reassess', 'hold_for_comparison'].includes(stage)) return 'screening'
+  if (stage.startsWith('hiring_manager_') || stage.startsWith('hod_') || stage.startsWith('hr_')) return 'interview'
+  if (['offer_stage', 'offer_accepted', 'offer_declined'].includes(stage)) return 'offer'
+  if (stage === 'joined') return 'joined'
+  return 'closed'
+}
+
+function stageLabel(stage?: string | null) {
+  const labels: Record<string, string> = {
+    candidate_added: 'Candidate Added',
+    resume_received: 'Resume Received',
+    resume_reviewed: 'Resume Reviewed',
+    recruiter_screening_pending: 'Screening Pending',
+    recruiter_screening_completed: 'Screening Completed',
+    reassess: 'Reassess',
+    hold_for_comparison: 'Hold for Comparison',
+    hiring_manager_round_pending: 'Hiring Manager Pending',
+    hiring_manager_round_completed: 'Hiring Manager Completed',
+    hod_round_pending: 'HOD Pending',
+    hod_round_completed: 'HOD Completed',
+    hr_round_pending: 'HR Pending',
+    hr_round_completed: 'HR Completed',
+    offer_stage: 'Offer Stage',
+    offer_accepted: 'Offer Accepted',
+    offer_declined: 'Offer Declined',
+    joined: 'Joined',
+    not_proceeding: 'Not Proceeding',
+    closed: 'Closed',
+  }
+  return stage ? (labels[stage] ?? stage.replaceAll('_', ' ')) : 'Candidate Added'
 }
 
 function getCandidateInitials(firstName?: string, lastName?: string) {
@@ -84,136 +87,69 @@ function getCandidateInitials(firstName?: string, lastName?: string) {
   return `${first}${last}`.toUpperCase() || 'C'
 }
 
-const statusLabels: Record<Status, string> = {
-  new: 'New',
-  screening: 'Screening',
-  interview: 'Interview',
-  offer: 'Offer',
-  hired: 'Hired',
-  rejected: 'Rejected',
+function movementDays(value: string | Date) {
+  return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000))
 }
 
-function toggleStatus(s: Status) {
-  if (selectedStatuses.value.includes(s)) {
-    selectedStatuses.value = selectedStatuses.value.filter(x => x !== s)
-  }
-  else {
-    selectedStatuses.value = [...selectedStatuses.value, s]
-  }
+function movementText(value: string | Date) {
+  const days = movementDays(value)
+  if (days === 0) return 'Moved today'
+  if (days === 1) return '1 day in stage'
+  return `${days} days in stage`
 }
 
-// ─────────────────────────────────────────────
-// Column picker panel
-// ─────────────────────────────────────────────
-
-const panelOpen = ref(false)
-const panelRef = ref<HTMLElement | null>(null)
-
-function handleOutsideClick(e: MouseEvent) {
-  if (panelRef.value && !panelRef.value.contains(e.target as Node)) {
-    panelOpen.value = false
-  }
+function movementClass(value: string | Date) {
+  const days = movementDays(value)
+  if (days >= 7) return 'text-danger-700 bg-danger-50 ring-danger-200 dark:bg-danger-950/40 dark:text-danger-300 dark:ring-danger-900'
+  if (days >= 3) return 'text-warning-700 bg-warning-50 ring-warning-200 dark:bg-warning-950/40 dark:text-warning-300 dark:ring-warning-900'
+  return 'text-surface-600 bg-surface-100 ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700'
 }
-onMounted(() => document.addEventListener('mousedown', handleOutsideClick))
-onUnmounted(() => document.removeEventListener('mousedown', handleOutsideClick))
 
-const activeFilterCount = computed(() => {
-  let n = selectedStatuses.value.length
-  if (scoreMin.value != null) n++
-  if (scoreMax.value != null) n++
-  return n
+function priorityClass(priority?: string | null) {
+  if (priority === 'high') return 'bg-danger-50 text-danger-700 ring-danger-200 dark:bg-danger-950/40 dark:text-danger-300 dark:ring-danger-900'
+  if (priority === 'medium') return 'bg-warning-50 text-warning-700 ring-warning-200 dark:bg-warning-950/40 dark:text-warning-300 dark:ring-warning-900'
+  return 'bg-surface-100 text-surface-600 ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700'
+}
+
+function fitLabel(fit?: string | null) {
+  if (!fit) return 'Fit not assessed'
+  return fit.replaceAll('_', ' ')
+}
+
+const filteredApplications = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  return applications.value.filter((app) => {
+    if (selectedStage.value !== 'all' && stageGroup(app.recruitmentStatus) !== selectedStage.value) return false
+    if (!query) return true
+    const haystack = [app.candidateFirstName, app.candidateLastName, app.candidateEmail, app.recruitmentStatus, app.nextAction]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(query)
+  })
 })
 
-function clearFilters() {
-  selectedStatuses.value = []
-  scoreMin.value = undefined
-  scoreMax.value = undefined
-}
-
-// ─────────────────────────────────────────────
-// Sorting
-// ─────────────────────────────────────────────
-
-type SortKey = 'name' | 'email' | 'score' | 'status' | 'createdAt'
-type SortDir = 'asc' | 'desc'
-
-const sortKey = useState<SortKey>(`cand-sort-key-${jobId}`, () => 'score')
-const sortDir = useState<SortDir>(`cand-sort-dir-${jobId}`, () => 'desc')
-
-function toggleSort(key: SortKey) {
-  if (sortKey.value === key) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  }
-  else {
-    sortKey.value = key
-    sortDir.value = key === 'score' ? 'desc' : 'asc'
-  }
-}
-
-// ─────────────────────────────────────────────
-// Filtered + sorted list
-// ─────────────────────────────────────────────
-
-const sorted = computed(() => {
-  return [...applications.value]
-    .filter((app) => {
-      if (selectedStatuses.value.length > 1 && !selectedStatuses.value.includes(app.status as Status)) return false
-      if (scoreMin.value != null && (app.score ?? 0) < scoreMin.value) return false
-      if (scoreMax.value != null && (app.score ?? 0) > scoreMax.value) return false
-      return true
-    })
+const pipelineGroups = computed(() => stageGroups.map(group => ({
+  ...group,
+  applications: filteredApplications.value
+    .filter(app => stageGroup(app.recruitmentStatus) === group.key)
     .sort((a, b) => {
-      let cmp = 0
-      switch (sortKey.value) {
-        case 'name':
-          cmp = `${a.candidateFirstName} ${a.candidateLastName}`.localeCompare(`${b.candidateFirstName} ${b.candidateLastName}`)
-          break
-        case 'email':
-          cmp = (a.candidateEmail ?? '').localeCompare(b.candidateEmail ?? '')
-          break
-        case 'score':
-          cmp = (a.score ?? -1) - (b.score ?? -1)
-          break
-        case 'status':
-          cmp = a.status.localeCompare(b.status)
-          break
-        case 'createdAt':
-          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          break
-      }
-      return sortDir.value === 'asc' ? cmp : -cmp
-    })
-})
+      const aPriority = a.priority === 'high' ? 2 : a.priority === 'medium' ? 1 : 0
+      const bPriority = b.priority === 'high' ? 2 : b.priority === 'medium' ? 1 : 0
+      if (aPriority !== bPriority) return bPriority - aPriority
+      return new Date(a.lastMovementAt).getTime() - new Date(b.lastMovementAt).getTime()
+    }),
+})))
 
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
+const attentionCount = computed(() => applications.value.filter(app => {
+  const group = stageGroup(app.recruitmentStatus)
+  return !['joined', 'closed'].includes(group) && movementDays(app.lastMovementAt) >= 3
+}).length)
 
-function timeAgo(date: string | Date) {
-  const diff = Date.now() - new Date(date).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d ago`
-  return new Date(date).toLocaleDateString()
-}
+const interviewCount = computed(() => applications.value.filter(app => stageGroup(app.recruitmentStatus) === 'interview').length)
+const offerCount = computed(() => applications.value.filter(app => stageGroup(app.recruitmentStatus) === 'offer').length)
 
-function scoreClass(score: number) {
-  if (score >= 75) return 'bg-success-50 text-success-700 ring-success-200 dark:bg-success-950/60 dark:text-success-400 dark:ring-success-800'
-  if (score >= 40) return 'bg-warning-50 text-warning-700 ring-warning-200 dark:bg-warning-950/60 dark:text-warning-400 dark:ring-warning-800'
-  return 'bg-danger-50 text-danger-700 ring-danger-200 dark:bg-danger-950/60 dark:text-danger-400 dark:ring-danger-800'
-}
-
-// ─────────────────────────────────────────────
-// Row selection → sidebar
-// ─────────────────────────────────────────────
-
-const selectedAppId = ref<string | null>(null)
-const sidebarOpen = computed(() => Boolean(selectedAppId.value))
-
-function selectRow(appId: string) {
+function selectCandidate(appId: string) {
   selectedAppId.value = appId
 }
 
@@ -224,332 +160,125 @@ function closeSidebar() {
 async function handleSidebarUpdated() {
   await refreshApps()
 }
-
-// ─────────────────────────────────────────────
-// Computed
-// ─────────────────────────────────────────────
-
-const isLoading = computed(() => jobFetchStatus.value === 'pending' || appFetchStatus.value === 'pending')
 </script>
 
 <template>
   <div>
     <JobSubNavActions :job-id="jobId" />
 
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex flex-col items-center justify-center py-12 gap-3">
-      <div class="size-8 rounded-full border-2 border-brand-200 border-t-brand-600 dark:border-brand-800 dark:border-t-brand-400 animate-spin" />
-      <p class="text-sm font-medium text-surface-400 dark:text-surface-500">Loading candidates…</p>
+    <div v-if="isLoading" class="flex flex-col items-center justify-center gap-3 py-16">
+      <div class="size-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600 dark:border-brand-800 dark:border-t-brand-400" />
+      <p class="text-sm font-medium text-surface-400">Loading candidate pipeline…</p>
     </div>
 
-    <!-- Error -->
-    <div
-      v-else-if="jobError || appError"
-      class="rounded-xl border border-danger-200/80 bg-danger-50 p-5 text-sm text-danger-700 dark:border-danger-800/60 dark:bg-danger-950/40 dark:text-danger-300"
-    >
-      {{ jobError ? 'Job not found or failed to load.' : 'Failed to load candidates.' }}
-      <NuxtLink :to="$localePath('/dashboard')" class="ml-1 font-medium underline hover:no-underline">Back to Jobs</NuxtLink>
+    <div v-else-if="jobError || appError" class="rounded-2xl border border-danger-200 bg-danger-50 p-5 text-sm text-danger-700 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-300">
+      {{ jobError ? 'Requirement not found or failed to load.' : 'Failed to load candidate pipeline.' }}
     </div>
 
     <template v-else-if="jobData">
-      <!-- Toolbar -->
-      <div class="flex items-center gap-3 mb-4">
-        <!-- Column / filter picker -->
-        <div ref="panelRef" class="relative">
-          <button
-            class="inline-flex items-center gap-2 rounded-lg border border-surface-200 dark:border-surface-700/80 bg-white dark:bg-surface-900 px-3 py-2 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 hover:border-surface-300 dark:hover:bg-surface-800 dark:hover:border-surface-600 transition-all duration-150 shadow-sm"
-            @click="panelOpen = !panelOpen"
-          >
-            <SlidersHorizontal class="size-4" />
-            View
-            <span
-              v-if="activeFilterCount > 0"
-              class="inline-flex items-center justify-center size-4 rounded-full bg-brand-500 text-white text-[10px] font-semibold"
-            >
-              {{ activeFilterCount }}
-            </span>
-          </button>
-
-          <!-- Dropdown panel -->
-          <div
-            v-if="panelOpen"
-            class="absolute left-0 top-full mt-2 z-20 w-72 rounded-xl border border-surface-200/80 dark:border-surface-700/80 bg-white dark:bg-surface-900 shadow-xl shadow-surface-900/5 dark:shadow-black/20 p-4 space-y-5"
-          >
-            <!-- Columns -->
-            <div>
-              <p class="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">Columns</p>
-              <div class="space-y-1.5">
-                <label
-                  v-for="col in ([
-                    { key: 'email', label: 'Email' },
-                    { key: 'score', label: 'Score' },
-                    { key: 'status', label: 'Status' },
-                    { key: 'createdAt', label: 'Applied' },
-                  ] as const)"
-                  :key="col.key"
-                  class="flex items-center gap-2.5 cursor-pointer select-none group"
-                >
-                  <input type="checkbox" class="sr-only" :checked="visibleCols[col.key]" @change="visibleCols[col.key] = !visibleCols[col.key]" />
-                  <span
-                    class="size-4 shrink-0 rounded border flex items-center justify-center transition-colors"
-                    :class="visibleCols[col.key]
-                      ? 'bg-brand-500 border-brand-500'
-                      : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600'"
-                  >
-                    <Check v-if="visibleCols[col.key]" class="size-3 text-white" :stroke-width="3" />
-                  </span>
-                  <span class="text-sm text-surface-700 dark:text-surface-300 group-hover:text-surface-900 dark:group-hover:text-surface-100 transition-colors">
-                    {{ col.label }}
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div class="border-t border-surface-100 dark:border-surface-800" />
-
-            <!-- Filter by status -->
-            <div>
-              <p class="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">Filter by Status</p>
-              <div class="space-y-1.5">
-                <label
-                  v-for="s in STATUS_OPTIONS"
-                  :key="s"
-                  class="flex items-center gap-2.5 cursor-pointer select-none group"
-                >
-                  <input type="checkbox" class="sr-only" :checked="selectedStatuses.includes(s)" @change="toggleStatus(s)" />
-                  <span
-                    class="size-4 shrink-0 rounded border flex items-center justify-center transition-colors"
-                    :class="selectedStatuses.includes(s)
-                      ? 'bg-brand-500 border-brand-500'
-                      : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600'"
-                  >
-                    <Check v-if="selectedStatuses.includes(s)" class="size-3 text-white" :stroke-width="3" />
-                  </span>
-                  <span
-                  class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold capitalize ring-1 ring-inset"
-                    :class="statusBadgeClasses[s]"
-                  >
-                    {{ statusLabels[s] }}
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div class="border-t border-surface-100 dark:border-surface-800" />
-
-            <!-- Score range -->
-            <div>
-              <p class="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">Score Range</p>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model.number="scoreMin"
-                  type="number"
-                  min="0"
-                  max="100"
-                  placeholder="Min"
-                  class="w-full rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-3 py-1.5 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <span class="text-surface-400 text-xs shrink-0">to</span>
-                <input
-                  v-model.number="scoreMax"
-                  type="number"
-                  min="0"
-                  max="100"
-                  placeholder="Max"
-                  class="w-full rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-3 py-1.5 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-              </div>
-            </div>
-
-            <!-- Clear -->
-            <button
-              v-if="activeFilterCount > 0"
-              class="inline-flex items-center gap-1.5 text-xs text-surface-400 hover:text-danger-600 transition-colors"
-              @click="clearFilters"
-            >
-              <X class="size-3" />
-              Clear filters
-            </button>
+      <section class="mb-5 rounded-3xl bg-[#102A43] px-6 py-6 text-white shadow-sm sm:px-7">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[#9FD3F2]">Candidate Pipeline</p>
+            <h1 class="mt-2 text-2xl font-bold tracking-tight">{{ jobData.title }}</h1>
+            <p class="mt-2 max-w-3xl text-sm text-[#D5E6F3]">Work candidates by governed recruitment stage. Fit information supports recruiter judgement; stage movement remains controlled through the candidate detail workflow.</p>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-xl bg-white/10 px-4 py-3"><p class="text-xl font-bold">{{ total }}</p><p class="text-[11px] text-[#D5E6F3]">Candidates</p></div>
+            <div class="rounded-xl bg-white/10 px-4 py-3"><p class="text-xl font-bold">{{ attentionCount }}</p><p class="text-[11px] text-[#D5E6F3]">Need Attention</p></div>
+            <div class="rounded-xl bg-white/10 px-4 py-3"><p class="text-xl font-bold">{{ offerCount }}</p><p class="text-[11px] text-[#D5E6F3]">In Offer</p></div>
           </div>
         </div>
+      </section>
 
-        <!-- Active filter pills -->
-        <template v-if="selectedStatuses.length > 0">
-          <span
-            v-for="s in selectedStatuses"
-            :key="s"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium capitalize cursor-pointer"
-            :class="statusBadgeClasses[s]"
-            @click="toggleStatus(s as Status)"
-          >
-            {{ statusLabels[s] }}
-            <X class="size-2.5" />
-          </span>
-        </template>
-        <span
-          v-if="scoreMin != null || scoreMax != null"
-          class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-300 cursor-pointer"
-          @click="scoreMin = undefined; scoreMax = undefined"
-        >
-          Score {{ scoreMin ?? '0' }}–{{ scoreMax ?? '100' }}
-          <X class="size-2.5" />
-        </span>
+      <section class="mb-5 grid gap-3 sm:grid-cols-3">
+        <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
+          <p class="text-xs font-semibold uppercase tracking-wide text-surface-400">Active Pipeline</p>
+          <p class="mt-2 text-2xl font-bold text-[#102A43] dark:text-white">{{ applications.filter(app => !['joined', 'closed'].includes(stageGroup(app.recruitmentStatus))).length }}</p>
+          <p class="mt-1 text-xs text-surface-500">Candidates requiring recruitment movement</p>
+        </div>
+        <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
+          <p class="text-xs font-semibold uppercase tracking-wide text-surface-400">In Interview</p>
+          <p class="mt-2 text-2xl font-bold text-[#102A43] dark:text-white">{{ interviewCount }}</p>
+          <p class="mt-1 text-xs text-surface-500">Hiring Manager, HOD or HR stages</p>
+        </div>
+        <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
+          <p class="text-xs font-semibold uppercase tracking-wide text-surface-400">Stale 3+ Days</p>
+          <p class="mt-2 text-2xl font-bold text-[#102A43] dark:text-white">{{ attentionCount }}</p>
+          <p class="mt-1 text-xs text-surface-500">Active candidates without stage movement</p>
+        </div>
+      </section>
+
+      <div class="mb-5 flex flex-wrap items-center gap-3">
+        <div class="relative min-w-[260px] flex-1 sm:max-w-md">
+          <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-surface-400" />
+          <input v-model="search" type="search" placeholder="Search candidate, email, stage or next action" class="w-full rounded-xl border border-surface-200 bg-white py-2.5 pl-9 pr-3 text-sm text-surface-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-surface-700 dark:bg-surface-900 dark:text-white dark:focus:ring-brand-900/40" />
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button class="rounded-lg px-3 py-2 text-xs font-semibold" :class="selectedStage === 'all' ? 'bg-[#102A43] text-white' : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300'" @click="selectedStage = 'all'">All</button>
+          <button v-for="group in stageGroups" :key="group.key" class="rounded-lg px-3 py-2 text-xs font-semibold" :class="selectedStage === group.key ? 'bg-[#102A43] text-white' : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300'" @click="selectedStage = group.key">{{ group.label }}</button>
+        </div>
       </div>
 
-      <!-- Empty state (no applications at all) -->
-      <div
-        v-if="applications.length === 0"
-        class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-900 p-12 text-center shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-      >
-        <div class="flex size-14 items-center justify-center rounded-2xl bg-surface-100 dark:bg-surface-800/60 mx-auto mb-3">
-          <Users class="size-6 text-surface-400 dark:text-surface-500" />
-        </div>
-        <h3 class="text-base font-semibold text-surface-700 dark:text-surface-200 mb-1">
-          No candidates yet
-        </h3>
-        <p class="text-sm text-surface-500 dark:text-surface-400 max-w-xs mx-auto">
-          Candidates will appear here when they apply to this job or when you link candidates from the Overview tab.
-        </p>
+      <div v-if="applications.length === 0" class="rounded-2xl border border-surface-200 bg-white p-12 text-center dark:border-surface-800 dark:bg-surface-900">
+        <div class="mx-auto flex size-14 items-center justify-center rounded-2xl bg-surface-100 dark:bg-surface-800"><Users class="size-6 text-surface-400" /></div>
+        <h2 class="mt-4 font-semibold text-surface-800 dark:text-surface-100">No candidates yet</h2>
+        <p class="mx-auto mt-1 max-w-md text-sm text-surface-500">Candidates will appear here after they apply or are linked to this requirement.</p>
       </div>
 
-      <!-- Data table -->
-      <div
-        v-else
-        class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 overflow-hidden shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-      >
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-surface-200/80 dark:border-surface-800/60 bg-surface-50/80 dark:bg-surface-900">
-                <!-- Name always visible -->
-                <th class="px-4 py-3 text-left text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide select-none">
-                  <button
-                    class="inline-flex items-center gap-1 hover:text-surface-900 dark:hover:text-surface-100 transition-colors"
-                    @click="toggleSort('name')"
-                  >
-                    Name
-                    <ChevronUp v-if="sortKey === 'name' && sortDir === 'asc'" class="size-3" />
-                    <ChevronDown v-else-if="sortKey === 'name' && sortDir === 'desc'" class="size-3" />
-                    <ChevronsUpDown v-else class="size-3 opacity-40" />
-                  </button>
-                </th>
-                <th v-if="visibleCols.email" class="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide select-none">
-                  <button class="inline-flex items-center gap-1 hover:text-surface-900 dark:hover:text-surface-100 transition-colors" @click="toggleSort('email')">
-                    Email
-                    <ChevronUp v-if="sortKey === 'email' && sortDir === 'asc'" class="size-3" />
-                    <ChevronDown v-else-if="sortKey === 'email' && sortDir === 'desc'" class="size-3" />
-                    <ChevronsUpDown v-else class="size-3 opacity-40" />
-                  </button>
-                </th>
-                <th v-if="visibleCols.score" class="px-4 py-3 text-left text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide select-none">
-                  <button class="inline-flex items-center gap-1 hover:text-surface-900 dark:hover:text-surface-100 transition-colors" @click="toggleSort('score')">
-                    Score
-                    <ChevronUp v-if="sortKey === 'score' && sortDir === 'asc'" class="size-3" />
-                    <ChevronDown v-else-if="sortKey === 'score' && sortDir === 'desc'" class="size-3" />
-                    <ChevronsUpDown v-else class="size-3 opacity-40" />
-                  </button>
-                </th>
-                <th v-if="visibleCols.status" class="px-4 py-3 text-left text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide select-none">
-                  <button class="inline-flex items-center gap-1 hover:text-surface-900 dark:hover:text-surface-100 transition-colors" @click="toggleSort('status')">
-                    Status
-                    <ChevronUp v-if="sortKey === 'status' && sortDir === 'asc'" class="size-3" />
-                    <ChevronDown v-else-if="sortKey === 'status' && sortDir === 'desc'" class="size-3" />
-                    <ChevronsUpDown v-else class="size-3 opacity-40" />
-                  </button>
-                </th>
-                <th v-if="visibleCols.createdAt" class="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide select-none">
-                  <button class="inline-flex items-center gap-1 hover:text-surface-900 dark:hover:text-surface-100 transition-colors" @click="toggleSort('createdAt')">
-                    Applied
-                    <ChevronUp v-if="sortKey === 'createdAt' && sortDir === 'asc'" class="size-3" />
-                    <ChevronDown v-else-if="sortKey === 'createdAt' && sortDir === 'desc'" class="size-3" />
-                    <ChevronsUpDown v-else class="size-3 opacity-40" />
-                  </button>
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-surface-100 dark:divide-surface-800/60 bg-white dark:bg-surface-950">
-              <!-- No results after filtering -->
-              <tr v-if="sorted.length === 0">
-                <td
-                  :colspan="1 + Object.values(visibleCols).filter(Boolean).length"
-                  class="px-4 py-10 text-center text-sm text-surface-400"
-                >
-                  No candidates match the current filters.
-                </td>
-              </tr>
-              <tr
-                v-for="app in sorted"
-                :key="app.id"
-                class="cursor-pointer transition-all duration-150"
-                :class="selectedAppId === app.id
-                  ? 'bg-brand-50/70 dark:bg-brand-950/20'
-                  : 'hover:bg-surface-50/80 dark:hover:bg-surface-900/60'"
-                @click="selectRow(app.id)"
-              >
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all duration-150"
-                      :class="selectedAppId === app.id
-                        ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/20 dark:bg-brand-600 dark:shadow-brand-500/10'
-                        : 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300'"
-                    >
-                      {{ getCandidateInitials(app.candidateFirstName, app.candidateLastName) }}
-                    </div>
-                    <span class="font-medium text-surface-900 dark:text-surface-100">
-                      {{ formatPersonName(app.candidateFirstName, app.candidateLastName) }}
-                    </span>
-                  </div>
-                </td>
-                <td v-if="visibleCols.email" class="hidden sm:table-cell px-4 py-3 text-surface-600 dark:text-surface-300 max-w-[220px] truncate">
-                  <a
-                    :href="`mailto:${app.candidateEmail}`"
-                    target="_blank"
-                    class="hover:text-brand-600 dark:hover:text-brand-400 hover:underline cursor-pointer transition-colors"
-                  >{{ app.candidateEmail }}</a>
-                </td>
-                <td v-if="visibleCols.score" class="px-4 py-3">
-                  <span
-                    v-if="app.score != null"
-                    class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset"
-                    :class="scoreClass(app.score)"
-                  >
-                    {{ app.score }} pts
-                  </span>
-                  <span v-else class="text-surface-400 dark:text-surface-500 text-xs">—</span>
-                </td>
-                <td v-if="visibleCols.status" class="px-4 py-3">
-                  <span
-                    class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold capitalize ring-1 ring-inset"
-                    :class="statusBadgeClasses[app.status] ?? 'bg-surface-100 text-surface-600 ring-surface-200'"
-                  >
-                    {{ app.status }}
-                  </span>
-                </td>
-                <td v-if="visibleCols.createdAt" class="hidden md:table-cell px-4 py-3 text-surface-500 dark:text-surface-400 whitespace-nowrap text-xs font-medium">
-                  <TimelineDateLink :date="app.createdAt">{{ timeAgo(app.createdAt) }}</TimelineDateLink>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <div v-else class="grid gap-4 xl:grid-cols-3 2xl:grid-cols-6" data-testid="candidate-pipeline-board">
+        <section v-for="group in pipelineGroups" :key="group.key" class="min-w-0 rounded-2xl border border-surface-200 bg-surface-50/70 dark:border-surface-800 dark:bg-surface-900/60">
+          <header class="border-b border-surface-200 px-4 py-3 dark:border-surface-800">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-sm font-bold text-[#102A43] dark:text-white">{{ group.label }}</h2>
+              <span class="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-surface-600 shadow-sm dark:bg-surface-800 dark:text-surface-300">{{ group.applications.length }}</span>
+            </div>
+            <p class="mt-1 text-[11px] leading-4 text-surface-400">{{ group.description }}</p>
+          </header>
 
-        <!-- Footer / count -->
-        <div class="px-4 py-3 border-t border-surface-200/80 dark:border-surface-800/60 bg-surface-50/80 dark:bg-surface-900">
-          <p class="text-xs font-medium text-surface-500 dark:text-surface-400">
-            {{ sorted.length }} of {{ total }} candidate{{ total === 1 ? '' : 's' }}
-          </p>
-        </div>
+          <div class="max-h-[68vh] space-y-3 overflow-y-auto p-3">
+            <button v-for="app in group.applications" :key="app.id" type="button" class="w-full rounded-xl border border-surface-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md dark:border-surface-700 dark:bg-surface-950" data-testid="candidate-pipeline-card" @click="selectCandidate(app.id)">
+              <div class="flex items-start gap-3">
+                <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#EAF4FA] text-xs font-bold text-[#1F6FA3] dark:bg-surface-800 dark:text-brand-300">{{ getCandidateInitials(app.candidateFirstName, app.candidateLastName) }}</div>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-bold text-[#102A43] dark:text-white">{{ formatPersonName(app.candidateFirstName, app.candidateLastName) }}</p>
+                  <p class="mt-0.5 truncate text-[11px] text-surface-400"><Mail class="mr-1 inline size-3" />{{ app.candidateEmail }}</p>
+                </div>
+              </div>
+
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                <span class="rounded-md bg-[#EAF4FA] px-2 py-1 text-[10px] font-semibold capitalize text-[#1F6FA3] dark:bg-surface-800 dark:text-brand-300" data-testid="candidate-current-stage">{{ stageLabel(app.recruitmentStatus) }}</span>
+                <span v-if="app.priority" class="rounded-md px-2 py-1 text-[10px] font-semibold capitalize ring-1 ring-inset" :class="priorityClass(app.priority)">{{ app.priority }} priority</span>
+              </div>
+
+              <div class="mt-3 flex items-center justify-between gap-2">
+                <span class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold ring-1 ring-inset" :class="movementClass(app.lastMovementAt)" data-testid="candidate-stage-age"><Clock3 class="size-3" />{{ movementText(app.lastMovementAt) }}</span>
+                <span class="text-[10px] font-medium capitalize text-surface-500">{{ fitLabel(app.currentFit) }}</span>
+              </div>
+
+              <div class="mt-3 rounded-lg bg-surface-50 p-2.5 dark:bg-surface-900" data-testid="candidate-next-action">
+                <p class="text-[10px] font-semibold uppercase tracking-wide text-surface-400">Next Action</p>
+                <p class="mt-1 line-clamp-2 text-xs font-medium leading-4 text-surface-700 dark:text-surface-200">{{ app.nextAction || 'Open candidate and confirm the next governed recruitment action.' }}</p>
+              </div>
+
+              <div v-if="app.mainGap || app.keyStrength" class="mt-3 border-t border-surface-100 pt-2.5 text-[11px] dark:border-surface-800">
+                <p v-if="app.keyStrength" class="line-clamp-1 text-surface-500"><span class="font-semibold text-surface-600 dark:text-surface-300">Strength:</span> {{ app.keyStrength }}</p>
+                <p v-if="app.mainGap" class="mt-1 line-clamp-1 text-surface-500"><span class="font-semibold text-surface-600 dark:text-surface-300">Review:</span> {{ app.mainGap }}</p>
+              </div>
+
+              <div class="mt-3 flex items-center justify-between border-t border-surface-100 pt-2.5 dark:border-surface-800">
+                <span v-if="movementDays(app.lastMovementAt) >= 3 && !['joined', 'closed'].includes(stageGroup(app.recruitmentStatus))" class="inline-flex items-center gap-1 text-[10px] font-semibold text-warning-700 dark:text-warning-300"><AlertTriangle class="size-3" />Follow-up due</span>
+                <span v-else class="inline-flex items-center gap-1 text-[10px] text-surface-400"><UserRound class="size-3" />Candidate details</span>
+                <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-brand-600 dark:text-brand-400">Open <ArrowRight class="size-3" /></span>
+              </div>
+            </button>
+
+            <div v-if="group.applications.length === 0" class="rounded-xl border border-dashed border-surface-200 px-3 py-8 text-center text-xs text-surface-400 dark:border-surface-700">No candidates in this stage.</div>
+          </div>
+        </section>
       </div>
     </template>
 
-    <!-- Detail sidebar -->
-    <CandidateDetailSidebar
-      v-if="selectedAppId"
-      :application-id="selectedAppId"
-      :open="sidebarOpen"
-      @close="closeSidebar"
-      @updated="handleSidebarUpdated"
-    />
+    <CandidateDetailSidebar v-if="selectedAppId" :application-id="selectedAppId" :open="sidebarOpen" @close="closeSidebar" @updated="handleSidebarUpdated" />
   </div>
 </template>
