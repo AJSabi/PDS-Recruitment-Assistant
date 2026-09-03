@@ -33,6 +33,8 @@ export default defineEventHandler(async (event) => {
       openings: profile.openings ?? null,
       closureDate: state.targetClosureDate ?? null,
       assignmentDate: state.assignmentDate ?? null,
+      ownerUserId: state.ownerUserId ?? null,
+      allocated: Boolean(state.ownerUserId && state.assignmentDate),
       majorRequirements: profile.majorRequirements ?? [],
       hasActiveJd: Boolean(jobRecord.description?.trim()),
       skillMatrixApproved: Boolean(state.skillMatrixApproved),
