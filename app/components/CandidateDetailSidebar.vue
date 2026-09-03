@@ -3,7 +3,7 @@ import {
   X, User, Calendar, Clock, Hash, MessageSquare, FileText,
   ExternalLink, Mail, Phone, Upload, Download, Eye, Trash2,
   ArrowLeft, AlertTriangle, Brain, History, RefreshCw,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 
 const props = defineProps<{

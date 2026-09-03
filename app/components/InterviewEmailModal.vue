@@ -2,7 +2,7 @@
 import {
   X, Mail, Send, ChevronDown, Eye, Pencil, FileText,
   Check, AlertCircle, Plus, Trash2, Save, Sparkles,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { Interview } from '~/composables/useInterviews'
 import type { EmailTemplate } from '~/composables/useEmailTemplates'
 

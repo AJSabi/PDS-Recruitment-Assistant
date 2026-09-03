@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { History } from 'lucide-vue-next'
+import { History } from '@lucide/vue'
 
 const props = defineProps<{
   date: string | Date

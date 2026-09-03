@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye, X, Github, Rocket, Cloud } from 'lucide-vue-next'
+import { Eye, X, GitBranch, Rocket, Cloud } from '@lucide/vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -80,7 +80,7 @@ function closeModal() {
             rel="noopener noreferrer"
             class="inline-flex items-center gap-1.5 text-xs text-surface-400 dark:text-surface-500 hover:text-surface-600 dark:hover:text-surface-300 transition-colors no-underline"
           >
-            <Github class="size-3.5" />
+            <GitBranch class="size-3.5" />
             View on GitHub
           </a>
         </div>

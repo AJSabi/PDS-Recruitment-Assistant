@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Briefcase } from 'lucide-vue-next'
+import { Briefcase } from '@lucide/vue'
 
 definePageMeta({
   layout: 'public',

@@ -1,30 +1,30 @@
-import { and, count, desc, eq, gte, lte } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { interview, application, candidate, job } from '../../database/schema'
 import { interviewQuerySchema } from '../../utils/schemas/interview'
+import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { interview: ['read'] })
   const orgId = session.session.activeOrganizationId
 
   const query = await getValidatedQuery(event, interviewQuerySchema.parse)
+  const visibleRequirementIds = await getVisibleRequirementIds(orgId, session.user.id)
+
+  if (visibleRequirementIds && visibleRequirementIds.length === 0) {
+    return { data: [], total: 0, page: query.page, limit: query.limit }
+  }
+
+  if (query.jobId && visibleRequirementIds && !visibleRequirementIds.includes(query.jobId)) {
+    return { data: [], total: 0, page: query.page, limit: query.limit }
+  }
 
   const conditions = [eq(interview.organizationId, orgId)]
-
-  if (query.applicationId) {
-    conditions.push(eq(interview.applicationId, query.applicationId))
-  }
-  if (query.jobId) {
-    conditions.push(eq(application.jobId, query.jobId))
-  }
-  if (query.status) {
-    conditions.push(eq(interview.status, query.status))
-  }
-  if (query.from) {
-    conditions.push(gte(interview.scheduledAt, new Date(query.from)))
-  }
-  if (query.to) {
-    conditions.push(lte(interview.scheduledAt, new Date(query.to)))
-  }
+  if (visibleRequirementIds) conditions.push(inArray(application.jobId, visibleRequirementIds))
+  if (query.applicationId) conditions.push(eq(interview.applicationId, query.applicationId))
+  if (query.jobId) conditions.push(eq(application.jobId, query.jobId))
+  if (query.status) conditions.push(eq(interview.status, query.status))
+  if (query.from) conditions.push(gte(interview.scheduledAt, new Date(query.from)))
+  if (query.to) conditions.push(lte(interview.scheduledAt, new Date(query.to)))
 
   const whereClause = and(...conditions)
 

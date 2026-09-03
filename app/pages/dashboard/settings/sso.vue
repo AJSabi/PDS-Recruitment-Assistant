@@ -2,7 +2,7 @@
 import {
   ShieldCheck, Plus, Trash2, Loader2, Check, X, AlertTriangle,
   ExternalLink, Copy, Globe, KeyRound,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({})
 

@@ -1,12 +1,19 @@
 import { eq, and } from 'drizzle-orm'
 import { job } from '../../database/schema'
 import { idParamSchema } from '../../utils/schemas/job'
+import { canAccessRequirement } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['read'] })
   const orgId = session.session.activeOrganizationId
+  const userId = session.user.id
 
   const { id } = await getValidatedRouterParams(event, idParamSchema.parse)
+
+  const allowed = await canAccessRequirement(orgId, userId, id)
+  if (!allowed) {
+    throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
+  }
 
   const result = await db.query.job.findFirst({
     where: and(eq(job.id, id), eq(job.organizationId, orgId)),
@@ -33,16 +40,10 @@ export default defineEventHandler(async (event) => {
       createdAt: true,
       updatedAt: true,
     },
-    with: {
-      applications: {
-        columns: { id: true, candidateId: true, status: true, createdAt: true },
-        limit: 100,
-      },
-    },
   })
 
   if (!result) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
+    throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
   }
 
   return result

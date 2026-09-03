@@ -2,7 +2,7 @@
 import {
   AlignLeft, Calendar, CheckSquare, CircleDot, Hash, Link as LinkIcon,
   List, Mail, Paperclip, Plus, Settings2, Text as TextIcon, User,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type {
   PropertyDefinition,
   PropertyEntityType,

@@ -1,15 +1,16 @@
 import { and, eq } from 'drizzle-orm'
-import { interview, application, candidate, job, organization } from '../../database/schema'
+import { interview, application, organization } from '../../database/schema'
 import { createInterviewSchema } from '../../utils/schemas/interview'
 import { createCalendarEvent } from '../../utils/google-calendar'
+import { assertApplicationAccess } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { interview: ['create'] })
   const orgId = session.session.activeOrganizationId
 
   const body = await readValidatedBody(event, createInterviewSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, body.applicationId)
 
-  // Verify the application exists and belongs to this org
   const app = await db.query.application.findFirst({
     where: and(
       eq(application.id, body.applicationId),
@@ -21,12 +22,7 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  if (!app) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Application not found',
-    })
-  }
+  if (!app) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const [created] = await db.insert(interview).values({
     organizationId: orgId,
@@ -44,7 +40,6 @@ export default defineEventHandler(async (event) => {
 
   if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create interview' })
 
-  // Sync to Google Calendar only when explicitly requested
   let calendarEventLink: string | null = null
   let calendarEventId: string | null = null
 
@@ -64,7 +59,7 @@ export default defineEventHandler(async (event) => {
       ...(body.location ? [`Location: ${body.location}`] : []),
       ...(body.notes ? [`\nNotes: ${body.notes}`] : []),
       '',
-      `Scheduled via ${org?.name || 'Reqcore'}`,
+      `Scheduled via ${org?.name || 'PDS Recruitment Assistant'}`,
     ].join('\n')
     const addCandidate = body.calendarAddCandidateAttendee !== false
     const sendUpdates = body.calendarSendUpdates !== false
@@ -90,7 +85,8 @@ export default defineEventHandler(async (event) => {
           .set({ googleCalendarEventId: result.id, googleCalendarEventLink: result.htmlLink })
           .where(eq(interview.id, created.id))
       }
-    } catch (err) {
+    }
+    catch (err) {
       logError('interview.calendar_sync_failed', {
         posthog_distinct_id: session.user.id,
         org_id: orgId,

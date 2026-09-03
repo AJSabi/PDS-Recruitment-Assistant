@@ -2,7 +2,7 @@
 import {
   Calendar, Check, X, AlertTriangle, ExternalLink, Loader2,
   RefreshCw, Unplug, Shield, Clock,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({})
 

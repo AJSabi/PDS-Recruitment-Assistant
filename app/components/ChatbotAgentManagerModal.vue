@@ -12,7 +12,7 @@
  * CHATBOT_AGENT_PROMPT_MAX). Server is the source of truth — every save
  * is followed by a refresh to pick up isDefault swaps.
  */
-import { Plus, Sparkles, Star, Trash2, X, Save } from 'lucide-vue-next'
+import { Plus, Sparkles, Star, Trash2, X, Save } from '@lucide/vue'
 import {
   CHATBOT_AGENT_MAX_PER_USER,
   CHATBOT_AGENT_PROMPT_MAX,

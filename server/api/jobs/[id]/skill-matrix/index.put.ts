@@ -1,0 +1,111 @@
+import { and, eq } from 'drizzle-orm'
+import { job, jobSkillMatrix, recruitmentRequirementState } from '../../../../database/schema'
+import { saveSkillMatrixSchema } from '../../../../utils/schemas/skillMatrix'
+import { ensureRequirementState, flagRequirementChange } from '../../../../utils/recruitmentLifecycle'
+import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
+import { z } from 'zod'
+
+const paramsSchema = z.object({ id: z.string().min(1) })
+
+export default defineEventHandler(async (event) => {
+  // PDS recruiters own the JD / Skill Matrix for requirements allocated to them.
+  // Keep the broad scoring:update capability admin-only and authorize this PDS
+  // write route with the member-safe scoring:create permission plus the
+  // authoritative requirement-allocation boundary below.
+  const session = await requirePermission(event, { scoring: ['create'] })
+  const orgId = session.session.activeOrganizationId
+  const { id: jobId } = await getValidatedRouterParams(event, paramsSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, jobId)
+
+  const rawBody = await readBody(event)
+  const parsed = saveSkillMatrixSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    throw createError({
+      statusCode: 422,
+      statusMessage: firstIssue?.message ?? 'Skill Matrix validation failed.',
+      data: { issues: parsed.error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message })) },
+    })
+  }
+
+  // The AI proposal schema permits null rationale values. The persisted matrix contract
+  // uses an optional string, so canonicalize null to undefined at this API boundary.
+  const matrix = {
+    classifications: parsed.data.matrix.classifications.map(classification => ({
+      ...classification,
+      skills: classification.skills.map(skill => ({
+        ...skill,
+        rationale: skill.rationale ?? undefined,
+      })),
+    })),
+  }
+  const body = { ...parsed.data, matrix }
+
+  const jobRecord = await db.query.job.findFirst({
+    where: and(eq(job.id, jobId), eq(job.organizationId, orgId)),
+    columns: { id: true },
+  })
+  if (!jobRecord) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
+
+  const previous = await db.query.jobSkillMatrix.findFirst({
+    where: and(eq(jobSkillMatrix.jobId, jobId), eq(jobSkillMatrix.organizationId, orgId)),
+    columns: { matrix: true, approvedMatrix: true, approvedAt: true },
+  })
+
+  const now = new Date()
+  const approvedAt = body.approved ? now : null
+  const approvedMatrix = body.approved ? body.matrix : null
+
+  const [saved] = await db.insert(jobSkillMatrix).values({
+    organizationId: orgId,
+    jobId,
+    matrix: body.matrix,
+    approvedMatrix,
+    approvedAt,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: jobSkillMatrix.jobId,
+    set: {
+      matrix: body.matrix,
+      approvedAt,
+      updatedAt: now,
+      ...(body.approved ? { approvedMatrix: body.matrix } : {}),
+    },
+  }).returning()
+
+  const state = await ensureRequirementState(orgId, jobId)
+  const approvedBaselineChanged = body.approved
+    && previous?.approvedMatrix != null
+    && JSON.stringify(previous.approvedMatrix) !== JSON.stringify(body.matrix)
+  const firstApproval = body.approved && previous?.approvedMatrix == null
+
+  if (approvedBaselineChanged) {
+    const result = await flagRequirementChange({
+      organizationId: orgId,
+      jobId,
+      actorId: session.user.id,
+      changeType: 'skill_matrix',
+      summary: 'Approved Skill Matrix changed. Existing candidate assessments were preserved and flagged for reassessment.',
+    })
+
+    await db.update(recruitmentRequirementState)
+      .set({ skillMatrixApproved: true, skillMatrixApprovedAt: now, updatedAt: now })
+      .where(eq(recruitmentRequirementState.id, result.state.id))
+  } else {
+    await db.update(recruitmentRequirementState)
+      .set({
+        skillMatrixApproved: body.approved,
+        skillMatrixApprovedAt: body.approved ? now : null,
+        skillMatrixVersion: firstApproval && state.skillMatrixVersion === 0 ? 1 : state.skillMatrixVersion,
+        updatedAt: now,
+      })
+      .where(eq(recruitmentRequirementState.id, state.id))
+  }
+
+  return {
+    matrix: saved?.matrix ?? body.matrix,
+    approved: Boolean(saved?.approvedAt),
+    approvedAt: saved?.approvedAt ?? null,
+    updatedAt: saved?.updatedAt ?? now,
+  }
+})

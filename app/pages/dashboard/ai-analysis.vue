@@ -2,7 +2,7 @@
 import {
   Brain, Sparkles, TrendingUp, AlertTriangle, CheckCircle2,
   XCircle, Zap, Clock, BarChart3, Activity, AlertCircle, DollarSign,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

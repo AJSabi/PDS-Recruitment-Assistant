@@ -1,29 +1,45 @@
 import { eq, and } from 'drizzle-orm'
-import { application } from '../../database/schema'
+import { application, recruitmentApplicationProfile } from '../../database/schema'
 import { applicationIdParamSchema, updateApplicationSchema, APPLICATION_STATUS_TRANSITIONS } from '../../utils/schemas/application'
+import { assertActiveApplicationCandidate } from '../../utils/candidate-retention'
+import { assertApplicationAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * PATCH /api/applications/:id
- * Update application status (with server-side transition validation), notes, and score.
+ * Notes/score remain editable here. Once a PDS recruitment profile exists,
+ * detailed recruitment stage is the source of truth and status must be changed
+ * through the governed stage workflow.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['update'] })
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, applicationIdParamSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, id)
+  await assertActiveApplicationCandidate(orgId, id)
   const body = await readValidatedBody(event, updateApplicationSchema.parse)
 
-  // Fetch current application to validate status transition
   const current = await db.query.application.findFirst({
     where: and(eq(application.id, id), eq(application.organizationId, orgId)),
     columns: { id: true, status: true },
   })
+  if (!current) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
-  if (!current) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  const recruitmentProfile = await db.query.recruitmentApplicationProfile.findFirst({
+    where: and(
+      eq(recruitmentApplicationProfile.applicationId, id),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+    ),
+    columns: { id: true },
+  })
+
+  if (body.status && body.status !== current.status && recruitmentProfile) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This application uses the PDS recruitment workflow. Change status through the confirmed recruitment stage action.',
+    })
   }
 
-  // Validate status transition if status is being changed
   if (body.status && body.status !== current.status) {
     const allowed = APPLICATION_STATUS_TRANSITIONS[current.status] ?? []
     if (!allowed.includes(body.status)) {
@@ -48,9 +64,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: application.updatedAt,
     })
 
-  if (!updated) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
-  }
+  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   recordActivity({
     organizationId: orgId,
@@ -63,7 +77,6 @@ export default defineEventHandler(async (event) => {
       : undefined,
   })
 
-  // Track to PostHog for per-user debugging and funnel analytics
   if (body.status && body.status !== current.status) {
     trackEvent(event, session, 'application status_changed', {
       application_id: id,

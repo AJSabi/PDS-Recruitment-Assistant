@@ -1,52 +1,43 @@
 import { eq, and } from 'drizzle-orm'
-import { application, job } from '../../database/schema'
+import { application, applicationSource, job, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../database/schema'
 import { createApplicationSchema } from '../../utils/schemas/application'
 import { findActiveCandidate } from '../../utils/candidate-retention'
+import { applicationSourcePersistence } from '../../utils/recruitmentSource'
+import { assertRequirementAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * POST /api/applications
- * Create an application linking an existing candidate to a job.
- * Both candidate and job must belong to the session's organization.
+ * Legacy compatibility route. Creation is allowed only against a requirement
+ * visible to the current recruiter under the PDS allocation model and inherits
+ * the requirement's authoritative recruiter allocation.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['create'] })
   const orgId = session.session.activeOrganizationId
 
   const body = await readValidatedBody(event, createApplicationSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, body.jobId)
 
-  // Verify candidate belongs to this org
   const existingCandidate = await findActiveCandidate(orgId, body.candidateId)
+  if (!existingCandidate) throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
 
-  if (!existingCandidate) {
-    throw createError({ statusCode: 409, statusMessage: 'Candidate is quarantined or not found' })
-  }
+  const [existingJob, requirementState] = await Promise.all([
+    db.query.job.findFirst({
+      where: and(eq(job.id, body.jobId), eq(job.organizationId, orgId)),
+      columns: { id: true },
+    }),
+    db.query.recruitmentRequirementState.findFirst({
+      where: and(eq(recruitmentRequirementState.organizationId, orgId), eq(recruitmentRequirementState.jobId, body.jobId)),
+      columns: { ownerUserId: true },
+    }),
+  ])
+  if (!existingJob) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
-  // Verify job belongs to this org
-  const existingJob = await db.query.job.findFirst({
-    where: and(eq(job.id, body.jobId), eq(job.organizationId, orgId)),
-    columns: { id: true },
-  })
-
-  if (!existingJob) {
-    throw createError({ statusCode: 404, statusMessage: 'Job not found' })
-  }
-
-  // Check for duplicate application
   const existing = await db.query.application.findFirst({
-    where: and(
-      eq(application.organizationId, orgId),
-      eq(application.candidateId, body.candidateId),
-      eq(application.jobId, body.jobId),
-    ),
+    where: and(eq(application.organizationId, orgId), eq(application.candidateId, body.candidateId), eq(application.jobId, body.jobId)),
     columns: { id: true },
   })
-
-  if (existing) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'This candidate has already been applied to this job',
-    })
-  }
+  if (existing) throw createError({ statusCode: 409, statusMessage: 'This candidate is already in recruitment for this requirement' })
 
   const [created] = await db.insert(application).values({
     organizationId: orgId,
@@ -64,10 +55,38 @@ export default defineEventHandler(async (event) => {
     createdAt: application.createdAt,
     updatedAt: application.updatedAt,
   })
+  if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
 
-  if (!created) {
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
-  }
+  const sourcePersistence = applicationSourcePersistence('recruiter_sourcing')
+  await db.insert(applicationSource).values({
+    organizationId: orgId,
+    applicationId: created.id,
+    channel: sourcePersistence.channel,
+    utmSource: sourcePersistence.utmSource,
+  })
+
+  await db.insert(recruitmentApplicationProfile).values({
+    organizationId: orgId,
+    applicationId: created.id,
+    assignedRecruiterId: requirementState?.ownerUserId ?? null,
+    currentFit: 'not_yet_assessed',
+    lastStatus: 'candidate_added',
+    assessmentLocked: false,
+    nextAction: 'Upload or verify the latest resume.',
+    lastUpdatedBy: session.user.id,
+  })
+
+  await db.insert(recruitmentEvidence).values({
+    organizationId: orgId,
+    jobId: body.jobId,
+    applicationId: created.id,
+    candidateId: body.candidateId,
+    type: 'sourcing',
+    summary: 'Candidate sourced for requirement',
+    sourceRef: 'recruiter_sourcing',
+    payload: { event: 'candidate_sourced', source: 'recruiter_sourcing' },
+    createdBy: session.user.id,
+  })
 
   recordActivity({
     organizationId: orgId,
@@ -75,7 +94,7 @@ export default defineEventHandler(async (event) => {
     action: 'created',
     resourceType: 'application',
     resourceId: created.id,
-    metadata: { candidateId: body.candidateId, jobId: body.jobId },
+    metadata: { candidateId: body.candidateId, jobId: body.jobId, assignedRecruiterId: requirementState?.ownerUserId ?? null, source: 'recruiter_sourcing' },
   })
 
   setResponseStatus(event, 201)

@@ -1,603 +1,316 @@
 <script setup lang="ts">
 import {
-  Briefcase, Users, FileText, Calendar, Plus,
-  ArrowRight, TrendingUp, Clock, AlertCircle,
-  Eye, UserPlus, ExternalLink,
-  LayoutDashboard, Zap,
-} from 'lucide-vue-next'
+  AlertTriangle,
+  ArrowRight,
+  BriefcaseBusiness,
+  CalendarClock,
+  CheckCircle2,
+  Clock3,
+  Database,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Target,
+  UserRoundCheck,
+  UsersRound,
+} from '@lucide/vue'
 
-definePageMeta({
-  layout: 'dashboard',
-  middleware: ['auth', 'require-org'],
-})
+definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
+useSeoMeta({ title: 'Recruitment Command Centre', description: 'PDS recruitment command centre' })
 
-useSeoMeta({
-  title: 'Dashboard',
-  description: 'Your recruiting command center',
-})
-
-const { activeOrg } = useCurrentOrg()
 const localePath = useLocalePath()
-const { track } = useTrack()
-const { formatPersonName } = useOrgSettings()
-
-onMounted(() => track('dashboard_viewed'))
-
-// ─────────────────────────────────────────────
-// Fetch dashboard stats
-// ─────────────────────────────────────────────
-
+const { activeOrg } = useCurrentOrg()
 const {
   counts,
-  jobsByStatus,
+  pipeline,
   recentApplications,
   topJobs,
+  recruitment,
+  scope,
   fetchStatus,
   error,
   refresh,
 } = useDashboard()
 
-// ─────────────────────────────────────────────
-// Upcoming interviews (next 7 days)
-// ─────────────────────────────────────────────
-
-const now = new Date()
-// Truncate to start-of-day so the useFetch key is identical on server & client
-// (prevents SSR/hydration mismatch from sub-second timestamp drift)
-const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-const weekFromToday = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-const { interviews: upcomingInterviews } = useInterviews({
-  status: 'scheduled',
-  from: today.toISOString(),
-  to: weekFromToday.toISOString(),
-  limit: 5,
+const { data: recruiterKpiData, status: recruiterKpiStatus } = useFetch('/api/dashboard/recruiter-daily-kpis', {
+  key: 'recruiter-daily-kpis',
+  headers: useRequestHeaders(['cookie']),
 })
 
-// ─────────────────────────────────────────────
-// Derived data
-// ─────────────────────────────────────────────
+const canCreateRequirement = computed(() => ['owner', 'admin'].includes(scope.value.role))
+const canSeeManagementAnalytics = computed(() => ['owner', 'admin'].includes(scope.value.role))
+const scopeLabel = computed(() => scope.value.allocatedOnly ? 'My Recruitment Command Centre' : 'Recruitment Command Centre')
+const scopeDescription = computed(() => scope.value.allocatedOnly
+  ? 'Your allocated requirements, candidate movement and priority actions in one operational view.'
+  : `Organisation-wide hiring health, pipeline movement and recruitment priorities for ${activeOrg.value?.name ?? 'PDS'}.`)
 
-const stageConfig = [
-  { key: 'new', label: 'New', color: 'bg-blue-500', textColor: 'text-blue-600 dark:text-blue-400', bgColor: 'bg-blue-50 dark:bg-blue-950/40' },
-  { key: 'screening', label: 'Screening', color: 'bg-violet-500', textColor: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-50 dark:bg-violet-950/40' },
-  { key: 'interview', label: 'Interview', color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/40' },
-  { key: 'offer', label: 'Offer', color: 'bg-teal-500', textColor: 'text-teal-600 dark:text-teal-400', bgColor: 'bg-teal-50 dark:bg-teal-950/40' },
-  { key: 'hired', label: 'Hired', color: 'bg-green-600', textColor: 'text-green-600 dark:text-green-400', bgColor: 'bg-green-50 dark:bg-green-950/40' },
-  { key: 'rejected', label: 'Rejected', color: 'bg-surface-400', textColor: 'text-surface-500 dark:text-surface-400', bgColor: 'bg-surface-100 dark:bg-surface-800' },
-] as const
+const activePipeline = computed(() => (pipeline.value.new ?? 0) + (pipeline.value.screening ?? 0) + (pipeline.value.interview ?? 0) + (pipeline.value.offer ?? 0))
+const terminalPipeline = computed(() => (pipeline.value.hired ?? 0) + (pipeline.value.rejected ?? 0))
+const pipelineTotal = computed(() => activePipeline.value + terminalPipeline.value)
+const riskTotal = computed(() => recruitment.value.overdueRequirements + recruitment.value.dueSoonRequirements)
+const requirementsOnTrack = computed(() => Math.max(0, counts.value.openJobs - riskTotal.value))
+const pipelineStages = computed(() => [
+  { key: 'new', label: 'New / Sourced', value: pipeline.value.new ?? 0 },
+  { key: 'screening', label: 'Screening', value: pipeline.value.screening ?? 0 },
+  { key: 'interview', label: 'Interview', value: pipeline.value.interview ?? 0 },
+  { key: 'offer', label: 'Offer', value: pipeline.value.offer ?? 0 },
+  { key: 'hired', label: 'Hired', value: pipeline.value.hired ?? 0 },
+])
 
-const stageCountKeys: Record<string, string> = {
-  new: 'newCount',
-  screening: 'screeningCount',
-  interview: 'interviewCount',
-  offer: 'offerCount',
-  hired: 'hiredCount',
-  rejected: 'rejectedCount',
+const emptyRecruiterKpis = {
+  candidatesSourced: 0,
+  recruiterScreeningsCompleted: 0,
+  interviewsScheduled: 0,
+  interviewsCompleted: 0,
+  hiringManagerCompleted: 0,
+  hodCompleted: 0,
+  hrCompleted: 0,
+  offersRaised: 0,
+  offersAccepted: 0,
+  offersDeclined: 0,
+  joined: 0,
+}
+const recruiterDaily = computed(() => recruiterKpiData.value?.daily ?? emptyRecruiterKpis)
+const recruiterAverage = computed(() => recruiterKpiData.value?.average ?? emptyRecruiterKpis)
+const recruiterKpiGroups = computed(() => [
+  {
+    title: 'Sourcing & Screening',
+    description: 'Top-of-funnel activity completed by you',
+    items: [
+      { label: 'Candidates sourced', daily: recruiterDaily.value.candidatesSourced, average: recruiterAverage.value.candidatesSourced },
+      { label: 'Recruiter screenings', daily: recruiterDaily.value.recruiterScreeningsCompleted, average: recruiterAverage.value.recruiterScreeningsCompleted },
+    ],
+  },
+  {
+    title: 'Interview Movement',
+    description: 'Candidate movement through interview rounds',
+    items: [
+      { label: 'Rounds scheduled', daily: recruiterDaily.value.interviewsScheduled, average: recruiterAverage.value.interviewsScheduled },
+      { label: 'Rounds completed', daily: recruiterDaily.value.interviewsCompleted, average: recruiterAverage.value.interviewsCompleted },
+      { label: 'Hiring Manager', daily: recruiterDaily.value.hiringManagerCompleted, average: recruiterAverage.value.hiringManagerCompleted },
+      { label: 'HOD / HR', daily: recruiterDaily.value.hodCompleted + recruiterDaily.value.hrCompleted, average: Number((recruiterAverage.value.hodCompleted + recruiterAverage.value.hrCompleted).toFixed(1)) },
+    ],
+  },
+  {
+    title: 'Offer & Joining Movement',
+    description: 'Late-stage recruitment outcomes progressed by you',
+    items: [
+      { label: 'Offers raised', daily: recruiterDaily.value.offersRaised, average: recruiterAverage.value.offersRaised },
+      { label: 'Offers accepted', daily: recruiterDaily.value.offersAccepted, average: recruiterAverage.value.offersAccepted },
+      { label: 'Offers declined', daily: recruiterDaily.value.offersDeclined, average: recruiterAverage.value.offersDeclined },
+      { label: 'Joined', daily: recruiterDaily.value.joined, average: recruiterAverage.value.joined },
+    ],
+  },
+])
+
+function pipelineWidth(value: number) {
+  if (!pipelineTotal.value || value <= 0) return '0%'
+  return `${Math.max(5, Math.round((value / pipelineTotal.value) * 100))}%`
 }
 
-function getJobStageCount(job: (typeof topJobs.value)[number], stageKey: string): number {
-  const key = stageCountKeys[stageKey]
-  if (!key) return 0
-  return (job as any)[key] ?? 0
+function formatDate(value?: string | Date | null) {
+  if (!value) return 'Not set'
+  return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function getJobActiveTotal(job: (typeof topJobs.value)[number]): number {
-  return getJobStageCount(job, 'new')
-    + getJobStageCount(job, 'screening')
-    + getJobStageCount(job, 'interview')
-    + getJobStageCount(job, 'offer')
+function formatKpiDate(value?: string | null) {
+  if (!value) return 'Previous working day'
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' })
 }
 
-const statusBadgeClasses: Record<string, string> = {
-  new: 'bg-blue-50 text-blue-700 ring-blue-200/60 dark:bg-blue-950 dark:text-blue-400 dark:ring-blue-800/40',
-  screening: 'bg-violet-50 text-violet-700 ring-violet-200/60 dark:bg-violet-950 dark:text-violet-400 dark:ring-violet-800/40',
-  interview: 'bg-amber-50 text-amber-700 ring-amber-200/60 dark:bg-amber-950 dark:text-amber-400 dark:ring-amber-800/40',
-  offer: 'bg-teal-50 text-teal-700 ring-teal-200/60 dark:bg-teal-950 dark:text-teal-400 dark:ring-teal-800/40',
-  hired: 'bg-green-50 text-green-700 ring-green-200/60 dark:bg-green-950 dark:text-green-400 dark:ring-green-800/40',
-  rejected: 'bg-surface-100 text-surface-600 ring-surface-200 dark:bg-surface-800 dark:text-surface-400 dark:ring-surface-700',
+function daysTo(value?: string | Date | null) {
+  if (!value) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const target = new Date(value)
+  target.setHours(0, 0, 0, 0)
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000)
 }
 
-const interviewTypeLabels: Record<string, string> = {
-  phone: 'Phone',
-  video: 'Video',
-  in_person: 'In-person',
-  panel: 'Panel',
-  technical: 'Technical',
-  take_home: 'Take-home',
+function closureLabel(value?: string | Date | null) {
+  const days = daysTo(value)
+  if (days == null) return 'Closure date not set'
+  if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`
+  if (days === 0) return 'Due today'
+  if (days === 1) return '1 day remaining'
+  return `${days} days remaining`
 }
 
-function formatRelativeDate(dateStr: string) {
-  const date = new Date(dateStr)
-  const diffMs = date.getTime() - now.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-
-  if (diffDays === 0) {
-    if (diffHours <= 0) return 'Now'
-    return `In ${diffHours}h`
-  }
-  if (diffDays === 1) return 'Tomorrow'
-  if (diffDays < 7) return `In ${diffDays} days`
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+function stageLabel(value?: string | null) {
+  return (value ?? 'candidate_added').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+function candidateName(row: any) {
+  return `${row.candidateFirstName ?? ''} ${row.candidateLastName ?? ''}`.trim() || 'Candidate'
 }
 
-function formatDate(dateStr: string) {
-  const date = new Date(dateStr)
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+function tatLabel(job: any) {
+  if (!job.assignmentDate || job.openDays == null) return 'TAT not started'
+  return `${job.openDays} day${Number(job.openDays) === 1 ? '' : 's'} in TAT`
 }
 
-const isEmpty = computed(() =>
-  counts.value.openJobs === 0
-  && counts.value.totalCandidates === 0
-  && counts.value.totalApplications === 0,
-)
+const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.totalApplications === 0)
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <!-- ─── Loading skeleton ─── -->
-    <div v-if="fetchStatus === 'pending'">
-      <!-- Header skeleton -->
-      <div class="mb-10">
-        <div class="h-8 w-56 bg-surface-200 dark:bg-surface-700 rounded-lg animate-pulse mb-2" />
-        <div class="h-4 w-40 bg-surface-200 dark:bg-surface-700 rounded animate-pulse" />
-      </div>
-      <!-- Stats skeleton -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-        <div v-for="i in 4" :key="i" class="rounded-2xl border border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-6 animate-pulse">
-          <div class="h-4 w-20 bg-surface-200 dark:bg-surface-700 rounded mb-4" />
-          <div class="h-9 w-14 bg-surface-200 dark:bg-surface-700 rounded" />
-        </div>
-      </div>
-      <!-- Content skeleton -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="lg:col-span-2 rounded-2xl border border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-6 animate-pulse">
-          <div class="h-5 w-32 bg-surface-200 dark:bg-surface-700 rounded mb-6" />
-          <div class="space-y-4">
-            <div v-for="i in 3" :key="i" class="h-20 bg-surface-100 dark:bg-surface-800 rounded-xl" />
-          </div>
-        </div>
-        <div class="rounded-2xl border border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-6 animate-pulse">
-          <div class="h-5 w-32 bg-surface-200 dark:bg-surface-700 rounded mb-6" />
-          <div class="space-y-3">
-            <div v-for="i in 4" :key="i" class="h-14 bg-surface-100 dark:bg-surface-800 rounded-xl" />
-          </div>
-        </div>
+  <div class="mx-auto max-w-[1440px] space-y-5" data-testid="recruitment-command-centre">
+    <div v-if="fetchStatus === 'pending'" class="flex min-h-[55vh] items-center justify-center">
+      <div class="text-center">
+        <Loader2 class="mx-auto size-7 animate-spin text-brand-600" />
+        <p class="mt-3 text-sm text-surface-500">Loading recruitment command centre…</p>
       </div>
     </div>
 
-    <!-- ─── Error ─── -->
-    <div
-      v-else-if="error"
-      class="rounded-2xl border border-danger-200 dark:border-danger-900 bg-danger-50 dark:bg-danger-950/60 p-5 text-sm text-danger-700 dark:text-danger-400 flex items-center gap-3"
-    >
-      <AlertCircle class="size-5 shrink-0" />
-      <span>Failed to load dashboard.</span>
-      <button class="underline ml-auto font-medium cursor-pointer" @click="refresh()">Retry</button>
-    </div>
-
-    <!-- ─── Empty state (brand new org) ─── -->
-    <div v-else-if="isEmpty" class="flex flex-col items-center justify-center py-24">
-      <div class="rounded-3xl border border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-14 text-center max-w-md shadow-sm">
-        <div class="mx-auto mb-8 flex items-center justify-center size-18 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg shadow-brand-500/20">
-          <LayoutDashboard class="size-9 text-white" />
-        </div>
-        <h2 class="text-2xl font-bold text-surface-900 dark:text-surface-100 mb-3 tracking-tight">
-          Welcome to PDS Recruitment Assistant
-        </h2>
-        <p class="text-sm text-surface-500 dark:text-surface-400 mb-10 leading-relaxed max-w-sm mx-auto">
-          Your recruiting command center. Create your first job posting to start building your hiring pipeline.
-        </p>
-        <NuxtLink
-          :to="localePath('/dashboard/jobs/new')"
-          class="inline-flex items-center gap-2.5 rounded-xl bg-brand-600 px-7 py-3.5 text-sm font-semibold text-white hover:bg-brand-700 shadow-md shadow-brand-600/20 hover:shadow-lg hover:shadow-brand-600/25 transition-all no-underline"
-        >
-          <Plus class="size-4" />
-          Create Your First Job
-        </NuxtLink>
+    <div v-else-if="error" class="rounded-2xl border border-danger-200 bg-danger-50 p-5 text-danger-800 dark:border-danger-900 dark:bg-danger-950/30 dark:text-danger-200">
+      <div class="flex items-center gap-3">
+        <AlertTriangle class="size-5" />
+        <div><p class="font-semibold">Recruitment dashboard could not be loaded</p><p class="text-sm opacity-80">Please retry the request.</p></div>
+        <button class="ml-auto inline-flex items-center gap-2 rounded-lg border border-danger-300 px-3 py-2 text-sm font-semibold" @click="refresh"><RefreshCw class="size-4" />Retry</button>
       </div>
     </div>
 
-    <!-- ─── Dashboard content ─── -->
     <template v-else>
-      <!-- ─── Header ─── -->
-      <div class="flex items-center justify-between mb-6 sm:mb-10">
+      <section class="flex flex-col gap-5 rounded-2xl border border-surface-200 bg-white px-5 py-5 shadow-sm md:flex-row md:items-center md:justify-between dark:border-surface-800 dark:bg-surface-900">
         <div>
-          <h1 class="text-xl sm:text-2xl font-bold text-surface-900 dark:text-surface-50 tracking-tight">Dashboard</h1>
-          <p v-if="activeOrg" class="text-sm text-surface-400 dark:text-surface-500 mt-1">
-            {{ activeOrg.name }}
-          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full bg-[#EAF4FB] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#1F6FA3] dark:bg-brand-950/50 dark:text-brand-300">Recruitment Operations</span>
+            <span class="rounded-full border border-surface-200 px-2.5 py-1 text-[11px] font-semibold text-surface-500 dark:border-surface-700 dark:text-surface-400">{{ scope.allocatedOnly ? 'Recruiter view' : 'TA / Management view' }}</span>
+          </div>
+          <h1 class="mt-3 text-2xl font-bold tracking-tight text-[#102A43] sm:text-3xl dark:text-white">{{ scopeLabel }}</h1>
+          <p class="mt-1.5 max-w-3xl text-sm leading-6 text-surface-500">{{ scopeDescription }}</p>
         </div>
-        <NuxtLink
-          :to="localePath('/dashboard/jobs/new')"
-          class="inline-flex items-center gap-1.5 sm:gap-2 rounded-xl bg-brand-600 px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-brand-700 shadow-sm shadow-brand-600/15 hover:shadow-md hover:shadow-brand-600/20 transition-all no-underline shrink-0"
-        >
-          <Plus class="size-4" />
-          New Job
+        <div class="flex flex-wrap gap-2">
+          <NuxtLink :to="localePath('/dashboard/pds-candidates')" class="inline-flex items-center gap-2 rounded-xl border border-surface-200 bg-white px-4 py-2.5 text-sm font-semibold text-surface-700 no-underline hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200 dark:hover:bg-surface-800"><Database class="size-4" />Candidate Database</NuxtLink>
+          <NuxtLink v-if="canSeeManagementAnalytics" :to="localePath('/dashboard/management-analytics')" class="inline-flex items-center gap-2 rounded-xl border border-[#BFD6E6] bg-[#F7FBFE] px-4 py-2.5 text-sm font-semibold text-[#1F6FA3] no-underline hover:bg-[#EAF4FB] dark:border-brand-900 dark:bg-brand-950/20 dark:text-brand-300"><Target class="size-4" />Recruitment Analytics</NuxtLink>
+          <NuxtLink v-if="canCreateRequirement" :to="localePath('/dashboard/jobs/new')" class="inline-flex items-center gap-2 rounded-xl bg-[#176B87] px-4 py-2.5 text-sm font-semibold text-white no-underline shadow-sm hover:bg-[#125970]"><Plus class="size-4" />New Requirement</NuxtLink>
+        </div>
+      </section>
+
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" data-testid="recruitment-kpi-strip">
+        <NuxtLink :to="localePath('/dashboard/jobs')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#8BB8C8] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#E9F4F7] text-[#176B87]"><BriefcaseBusiness class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ counts.openJobs }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Active Requisitions</p><p class="mt-1 text-xs text-surface-400">{{ scope.allocatedOnly ? 'Allocated to me' : 'Organisation-wide' }}</p>
         </NuxtLink>
-      </div>
-
-      <!-- ─── Stat cards ─── -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-10">
-        <!-- Open Jobs -->
-        <NuxtLink
-          :to="localePath('/dashboard/jobs')"
-          class="group relative rounded-2xl bg-white dark:bg-surface-900 p-5 sm:p-6 no-underline overflow-hidden isolate ring-1 ring-surface-950/[0.04] dark:ring-white/[0.06] hover:ring-brand-500/25 dark:hover:ring-brand-400/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-500/[0.08]"
-        >
-          <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <Briefcase class="absolute -bottom-3 -right-3 size-24 text-brand-500/[0.03] dark:text-brand-400/[0.05] rotate-12 transition-transform duration-700 ease-out group-hover:rotate-3 group-hover:scale-110 pointer-events-none" />
-          <div class="relative">
-            <div class="flex items-baseline gap-2">
-              <span class="text-3xl sm:text-4xl font-black tracking-tight text-surface-900 dark:text-surface-50 tabular-nums leading-none transition-colors duration-300 group-hover:text-brand-600 dark:group-hover:text-brand-400">
-                {{ counts.openJobs }}
-              </span>
-              <span class="size-1.5 rounded-full bg-brand-500 shrink-0 mb-1" />
-            </div>
-            <span class="block mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-surface-400 dark:text-surface-500">Open Jobs</span>
-            <p class="text-[11px] text-surface-300 dark:text-surface-600 mt-1">
-              {{ jobsByStatus.draft }} draft{{ jobsByStatus.draft === 1 ? '' : 's' }}
-            </p>
-          </div>
+        <NuxtLink :to="localePath('/dashboard/closure-risk')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#D6B26A] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#FFF6E5] text-[#9A6A10]"><AlertTriangle class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ riskTotal }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Need Attention</p><p class="mt-1 text-xs text-surface-400">Overdue + due in 7 days</p>
         </NuxtLink>
-
-        <!-- Total Candidates -->
-        <NuxtLink
-          :to="localePath('/dashboard/candidates')"
-          class="group relative rounded-2xl bg-white dark:bg-surface-900 p-5 sm:p-6 no-underline overflow-hidden isolate ring-1 ring-surface-950/[0.04] dark:ring-white/[0.06] hover:ring-violet-500/25 dark:hover:ring-violet-400/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-violet-500/[0.08]"
-        >
-          <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <Users class="absolute -bottom-3 -right-3 size-24 text-violet-500/[0.03] dark:text-violet-400/[0.05] rotate-12 transition-transform duration-700 ease-out group-hover:rotate-3 group-hover:scale-110 pointer-events-none" />
-          <div class="relative">
-            <div class="flex items-baseline gap-2">
-              <span class="text-3xl sm:text-4xl font-black tracking-tight text-surface-900 dark:text-surface-50 tabular-nums leading-none transition-colors duration-300 group-hover:text-violet-600 dark:group-hover:text-violet-400">
-                {{ counts.totalCandidates }}
-              </span>
-              <span class="size-1.5 rounded-full bg-violet-500 shrink-0 mb-1" />
-            </div>
-            <span class="block mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-surface-400 dark:text-surface-500">Candidates</span>
-            <p class="text-[11px] text-surface-300 dark:text-surface-600 mt-1">Talent pool</p>
-          </div>
+        <NuxtLink :to="localePath('/dashboard/active-candidates')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#83BDB6] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#EAF7F5] text-[#187C73]"><UsersRound class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ counts.totalCandidates }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Active Candidates</p><p class="mt-1 text-xs text-surface-400">Across active requirements</p>
         </NuxtLink>
-
-        <!-- Total Applications -->
-        <NuxtLink
-          :to="localePath('/dashboard/applications')"
-          class="group relative rounded-2xl bg-white dark:bg-surface-900 p-5 sm:p-6 no-underline overflow-hidden isolate ring-1 ring-surface-950/[0.04] dark:ring-white/[0.06] hover:ring-teal-500/25 dark:hover:ring-teal-400/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-teal-500/[0.08]"
-        >
-          <div class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <FileText class="absolute -bottom-3 -right-3 size-24 text-teal-500/[0.03] dark:text-teal-400/[0.05] rotate-12 transition-transform duration-700 ease-out group-hover:rotate-3 group-hover:scale-110 pointer-events-none" />
-          <div class="relative">
-            <div class="flex items-baseline gap-2">
-              <span class="text-3xl sm:text-4xl font-black tracking-tight text-surface-900 dark:text-surface-50 tabular-nums leading-none transition-colors duration-300 group-hover:text-teal-600 dark:group-hover:text-teal-400">
-                {{ counts.totalApplications }}
-              </span>
-              <span class="size-1.5 rounded-full bg-teal-500 shrink-0 mb-1" />
-            </div>
-            <span class="block mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-surface-400 dark:text-surface-500">Applications</span>
-            <p class="text-[11px] text-surface-300 dark:text-surface-600 mt-1">Total received</p>
-          </div>
+        <NuxtLink :to="localePath('/dashboard/actions')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#A8A7D8] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#F1F0FB] text-[#5F5AA8]"><Clock3 class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ recruitment.actionPending }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Actions Pending</p><p class="mt-1 text-xs text-surface-400">Candidate follow-ups</p>
         </NuxtLink>
+        <div class="rounded-2xl border border-surface-200 bg-white p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#EEF5FC] text-[#3D6D9A]"><CalendarClock class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.interview ?? 0 }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">In Interview</p><p class="mt-1 text-xs text-surface-400">Current pipeline stage</p>
+        </div>
+        <div class="rounded-2xl border border-surface-200 bg-white p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-[#EDF7EF] text-[#39784A]"><UserRoundCheck class="size-4.5" /></span>
+          <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ pipeline.offer ?? 0 }}</p><p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Offers in Process</p><p class="mt-1 text-xs text-surface-400">Current offer stage</p>
+        </div>
+      </section>
 
-        <!-- To Review -->
-        <NuxtLink
-          :to="localePath({ path: '/dashboard/applications', query: { status: 'new' } })"
-          class="group relative rounded-2xl bg-white dark:bg-surface-900 p-5 sm:p-6 no-underline overflow-hidden isolate transition-all duration-300 hover:-translate-y-0.5"
-          :class="counts.newApplications > 0
-            ? 'ring-1 ring-warning-400/30 dark:ring-warning-500/20 hover:ring-warning-500/40 dark:hover:ring-warning-400/30 shadow-sm shadow-warning-500/[0.06] hover:shadow-lg hover:shadow-warning-500/[0.12]'
-            : 'ring-1 ring-surface-950/[0.04] dark:ring-white/[0.06] hover:ring-surface-300/50 dark:hover:ring-surface-600/30 hover:shadow-lg hover:shadow-surface-500/[0.04]'"
-        >
-          <div
-            class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent transition-opacity duration-500"
-            :class="counts.newApplications > 0
-              ? 'via-warning-500 opacity-60 group-hover:opacity-100'
-              : 'via-surface-400 opacity-0 group-hover:opacity-40'"
-          />
-          <AlertCircle class="absolute -bottom-3 -right-3 size-24 rotate-12 transition-transform duration-700 ease-out group-hover:rotate-3 group-hover:scale-110 pointer-events-none" :class="counts.newApplications > 0 ? 'text-warning-500/[0.04] dark:text-warning-400/[0.06]' : 'text-surface-400/[0.03] dark:text-surface-500/[0.05]'" />
-          <div class="relative">
-            <div class="flex items-baseline gap-2">
-              <span
-                class="text-3xl sm:text-4xl font-black tracking-tight tabular-nums leading-none transition-colors duration-300"
-                :class="counts.newApplications > 0
-                  ? 'text-warning-600 dark:text-warning-400 group-hover:text-warning-700 dark:group-hover:text-warning-300'
-                  : 'text-surface-900 dark:text-surface-50 group-hover:text-surface-600 dark:group-hover:text-surface-300'"
-              >
-                {{ counts.newApplications }}
-              </span>
-              <span class="relative shrink-0 mb-1">
-                <span class="size-1.5 rounded-full block" :class="counts.newApplications > 0 ? 'bg-warning-500' : 'bg-surface-300 dark:bg-surface-600'" />
-                <span v-if="counts.newApplications > 0" class="absolute inset-0 size-1.5 rounded-full bg-warning-500 animate-ping" />
-              </span>
+      <section v-if="scope.allocatedOnly" class="overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="recruiter-daily-performance-pulse">
+        <div class="flex flex-col gap-2 border-b border-surface-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between dark:border-surface-800">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="font-bold text-[#102A43] dark:text-white">My Daily Recruitment Pulse</h2>
+              <span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[10px] font-semibold text-[#1F6FA3]">{{ formatKpiDate(recruiterKpiData?.date) }}</span>
             </div>
-            <span class="block mt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-surface-400 dark:text-surface-500">To Review</span>
-            <p class="text-[11px] mt-1" :class="counts.newApplications > 0 ? 'text-warning-500 dark:text-warning-500 font-medium' : 'text-surface-300 dark:text-surface-600'">
-              {{ counts.newApplications > 0 ? 'Needs attention' : 'All reviewed' }}
-            </p>
+            <p class="mt-1 text-xs text-surface-400">Previous working day activity compared with your rolling 30-day daily average.</p>
           </div>
-        </NuxtLink>
-      </div>
+          <div class="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-surface-400"><span>Last working day</span><span>30-day avg/day</span></div>
+        </div>
 
-      <!-- ─── Main content grid ─── -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- ─── Left column (2/3) ─── -->
-        <div class="lg:col-span-2 space-y-6">
-          <!-- ─── Pipeline overview (per job) ─── -->
-          <div class="rounded-2xl border border-surface-200/80 dark:border-surface-800 bg-white dark:bg-surface-900 overflow-hidden shadow-xs dark:shadow-none">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-surface-100 dark:border-surface-800">
-              <div class="flex items-center gap-2.5">
-                <div class="flex items-center justify-center size-7 rounded-lg bg-surface-100 dark:bg-surface-800">
-                  <TrendingUp class="size-3.5 text-surface-500 dark:text-surface-400" />
-                </div>
-                <h2 class="text-sm font-semibold text-surface-900 dark:text-surface-100">Hiring Pipeline</h2>
+        <div v-if="recruiterKpiStatus === 'pending'" class="flex items-center justify-center gap-2 px-5 py-10 text-sm text-surface-400"><Loader2 class="size-4 animate-spin" />Loading recruiter performance…</div>
+        <div v-else class="grid lg:grid-cols-3">
+          <div v-for="(group, groupIndex) in recruiterKpiGroups" :key="group.title" class="p-5" :class="groupIndex ? 'border-t border-surface-100 lg:border-l lg:border-t-0 dark:border-surface-800' : ''">
+            <h3 class="text-sm font-bold text-surface-800 dark:text-surface-100">{{ group.title }}</h3>
+            <p class="mt-0.5 text-[11px] text-surface-400">{{ group.description }}</p>
+            <div class="mt-4 divide-y divide-surface-100 dark:divide-surface-800">
+              <div v-for="item in group.items" :key="item.label" class="grid grid-cols-[1fr_52px_62px] items-center gap-2 py-2.5">
+                <span class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ item.label }}</span>
+                <span class="text-right text-lg font-bold text-[#102A43] dark:text-white">{{ item.daily }}</span>
+                <span class="text-right text-xs font-semibold text-surface-400">{{ item.average }}</span>
               </div>
-              <NuxtLink
-                :to="localePath('/dashboard/jobs')"
-                class="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 no-underline inline-flex items-center gap-1 group/link"
-              >
-                All jobs
-                <ArrowRight class="size-3 group-hover/link:translate-x-0.5 transition-transform" />
-              </NuxtLink>
-            </div>
-
-            <div v-if="topJobs.length === 0" class="px-6 py-12 text-center">
-              <div class="mx-auto mb-4 flex items-center justify-center size-12 rounded-2xl bg-surface-100 dark:bg-surface-800">
-                <Briefcase class="size-5 text-surface-400 dark:text-surface-500" />
-              </div>
-              <p class="text-sm font-medium text-surface-500 dark:text-surface-400 mb-1">No open jobs</p>
-              <p class="text-xs text-surface-400 dark:text-surface-500 mb-4">Create your first job to see the pipeline</p>
-              <NuxtLink
-                :to="localePath('/dashboard/jobs/new')"
-                class="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400 no-underline hover:text-brand-700 dark:hover:text-brand-300"
-              >
-                <Plus class="size-3.5" />
-                Create one
-              </NuxtLink>
-            </div>
-
-            <div v-else class="divide-y divide-surface-100 dark:divide-surface-800">
-              <div v-for="j in topJobs" :key="j.id" class="px-6 py-5 group/job">
-                <!-- Job title row -->
-                <div class="flex items-center justify-between mb-3">
-                  <NuxtLink
-                    :to="localePath(`/dashboard/jobs/${j.id}`)"
-                    class="text-sm font-semibold text-surface-900 dark:text-surface-100 hover:text-brand-600 dark:hover:text-brand-400 transition-colors no-underline truncate"
-                  >
-                    {{ j.title }}
-                  </NuxtLink>
-                  <span class="text-xs text-surface-400 dark:text-surface-500 shrink-0 ml-3 tabular-nums font-medium">
-                    {{ j.applicationCount }} total
-                  </span>
-                </div>
-
-                <!-- Pipeline bar for this job -->
-                <div v-if="j.applicationCount > 0" class="mb-3.5">
-                  <div class="flex h-1.5 rounded-full overflow-hidden bg-surface-100 dark:bg-surface-800">
-                    <div
-                      v-for="stage in stageConfig.filter(s => getJobStageCount(j, s.key) > 0)"
-                      :key="stage.key"
-                      class="transition-all duration-500"
-                      :class="stage.color"
-                      :style="{ width: `${(getJobStageCount(j, stage.key) / j.applicationCount) * 100}%` }"
-                    />
-                  </div>
-                </div>
-
-                <!-- Stage counts for this job -->
-                <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                  <NuxtLink
-                    v-for="stage in stageConfig"
-                    :key="stage.key"
-                    :to="localePath(`/dashboard/jobs/${j.id}?stage=${stage.key}`)"
-                    class="rounded-lg px-2 py-1.5 text-center transition-all duration-150 no-underline hover:ring-1 hover:ring-brand-300/50 dark:hover:ring-brand-700/50 hover:shadow-sm"
-                    :class="[stage.bgColor, getJobStageCount(j, stage.key) > 0 ? 'cursor-pointer' : 'opacity-50']"
-                  >
-                    <div class="text-sm font-bold tabular-nums" :class="stage.textColor">
-                      {{ getJobStageCount(j, stage.key) }}
-                    </div>
-                    <div class="text-[10px] font-medium text-surface-500 dark:text-surface-400 leading-tight">
-                      {{ stage.label }}
-                    </div>
-                  </NuxtLink>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ─── Recent applications ─── -->
-          <div class="rounded-2xl border border-surface-200/80 dark:border-surface-800 bg-white dark:bg-surface-900 overflow-hidden shadow-xs dark:shadow-none">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-surface-100 dark:border-surface-800">
-              <div class="flex items-center gap-2.5">
-                <div class="flex items-center justify-center size-7 rounded-lg bg-surface-100 dark:bg-surface-800">
-                  <Clock class="size-3.5 text-surface-500 dark:text-surface-400" />
-                </div>
-                <h2 class="text-sm font-semibold text-surface-900 dark:text-surface-100">Recent Applications</h2>
-              </div>
-              <NuxtLink
-                :to="localePath('/dashboard/applications')"
-                class="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 no-underline inline-flex items-center gap-1 group/link"
-              >
-                View all
-                <ArrowRight class="size-3 group-hover/link:translate-x-0.5 transition-transform" />
-              </NuxtLink>
-            </div>
-
-            <div v-if="recentApplications.length === 0" class="px-6 py-12 text-center">
-              <div class="mx-auto mb-4 flex items-center justify-center size-12 rounded-2xl bg-surface-100 dark:bg-surface-800">
-                <FileText class="size-5 text-surface-400 dark:text-surface-500" />
-              </div>
-              <p class="text-sm font-medium text-surface-500 dark:text-surface-400">No applications yet</p>
-            </div>
-
-            <div v-else class="divide-y divide-surface-100 dark:divide-surface-800">
-              <NuxtLink
-                v-for="app in recentApplications"
-                :key="app.id"
-                :to="localePath(`/dashboard/applications/${app.id}`)"
-                class="flex items-center gap-4 px-6 py-3.5 hover:bg-surface-50 dark:hover:bg-surface-800/40 transition-colors no-underline group"
-              >
-                <!-- Avatar -->
-                <div class="flex items-center justify-center size-9 rounded-full bg-gradient-to-br from-brand-100 to-brand-200 dark:from-brand-900/80 dark:to-brand-800/80 shrink-0 ring-1 ring-brand-200/50 dark:ring-brand-800/50">
-                  <span class="text-xs font-bold text-brand-700 dark:text-brand-300">
-                    {{ ((app.candidateFirstName?.[0] ?? '') + (app.candidateLastName?.[0] ?? '')).toUpperCase() }}
-                  </span>
-                </div>
-
-                <!-- Info -->
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2 mb-0.5">
-                    <span class="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
-                      {{ formatPersonName(app.candidateFirstName, app.candidateLastName) }}
-                    </span>
-                    <span
-                      class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize shrink-0 ring-1 ring-inset"
-                      :class="statusBadgeClasses[app.status] ?? 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-400 ring-surface-200 dark:ring-surface-700'"
-                    >
-                      {{ app.status }}
-                    </span>
-                  </div>
-                  <div class="text-xs text-surface-400 dark:text-surface-500 truncate">
-                    {{ app.jobTitle }}
-                  </div>
-                </div>
-
-                <!-- Time -->
-                <span class="text-[11px] text-surface-400 dark:text-surface-500 shrink-0 tabular-nums font-medium">
-                  {{ formatDate(app.createdAt) }}
-                </span>
-              </NuxtLink>
             </div>
           </div>
         </div>
-
-        <!-- ─── Right column (1/3) ─── -->
-        <div class="space-y-6">
-          <!-- ─── Upcoming interviews ─── -->
-          <div class="rounded-2xl border border-surface-200/80 dark:border-surface-800 bg-white dark:bg-surface-900 overflow-hidden shadow-xs dark:shadow-none">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-surface-100 dark:border-surface-800">
-              <div class="flex items-center gap-2.5">
-                <div class="flex items-center justify-center size-7 rounded-lg bg-surface-100 dark:bg-surface-800">
-                  <Calendar class="size-3.5 text-surface-500 dark:text-surface-400" />
-                </div>
-                <h2 class="text-sm font-semibold text-surface-900 dark:text-surface-100">Upcoming Interviews</h2>
-              </div>
-              <NuxtLink
-                :to="localePath('/dashboard/interviews')"
-                class="text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 no-underline inline-flex items-center gap-1 group/link"
-              >
-                All
-                <ArrowRight class="size-3 group-hover/link:translate-x-0.5 transition-transform" />
-              </NuxtLink>
-            </div>
-
-            <div v-if="upcomingInterviews.length === 0" class="px-5 py-10 text-center">
-              <div class="mx-auto mb-4 flex items-center justify-center size-12 rounded-2xl bg-surface-100 dark:bg-surface-800">
-                <Calendar class="size-5 text-surface-400 dark:text-surface-500" />
-              </div>
-              <p class="text-sm font-medium text-surface-500 dark:text-surface-400 mb-0.5">No upcoming interviews</p>
-              <p class="text-xs text-surface-400 dark:text-surface-500">Next 7 days</p>
-            </div>
-
-            <div v-else class="divide-y divide-surface-100 dark:divide-surface-800">
-              <NuxtLink
-                v-for="interview in upcomingInterviews"
-                :key="interview.id"
-                :to="localePath(`/dashboard/interviews/${interview.id}`)"
-                class="block px-5 py-3.5 hover:bg-surface-50 dark:hover:bg-surface-800/40 transition-colors no-underline group"
-              >
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-sm font-medium text-surface-900 dark:text-surface-100 truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
-                    {{ formatPersonName(interview.candidateFirstName, interview.candidateLastName) }}
-                  </span>
-                  <span class="inline-flex items-center rounded-full bg-brand-50 dark:bg-brand-950/40 px-2 py-0.5 text-[10px] font-semibold text-brand-700 dark:text-brand-400 shrink-0 ml-2">
-                    {{ formatRelativeDate(interview.scheduledAt) }}
-                  </span>
-                </div>
-                <div class="flex items-center gap-2 text-xs text-surface-400 dark:text-surface-500">
-                  <span class="font-medium">{{ formatTime(interview.scheduledAt) }}</span>
-                  <span class="text-surface-200 dark:text-surface-700">·</span>
-                  <span>{{ interviewTypeLabels[interview.type] ?? interview.type }}</span>
-                  <span class="text-surface-200 dark:text-surface-700">·</span>
-                  <span class="truncate">{{ interview.jobTitle }}</span>
-                  <a
-                    v-if="interview.googleCalendarEventLink"
-                    :href="interview.googleCalendarEventLink"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 transition-colors shrink-0 ml-auto"
-                    @click.stop
-                  >
-                    <Calendar class="size-2.5" />
-                    Google Calendar
-                    <ExternalLink class="size-2" />
-                  </a>
-                </div>
-              </NuxtLink>
-            </div>
-          </div>
-
-          <!-- ─── Quick actions ─── -->
-          <div class="rounded-2xl border border-surface-200/80 dark:border-surface-800 bg-white dark:bg-surface-900 overflow-hidden shadow-xs dark:shadow-none">
-            <div class="flex items-center gap-2.5 px-5 py-4 border-b border-surface-100 dark:border-surface-800">
-              <div class="flex items-center justify-center size-7 rounded-lg bg-surface-100 dark:bg-surface-800">
-                <Zap class="size-3.5 text-surface-500 dark:text-surface-400" />
-              </div>
-              <h2 class="text-sm font-semibold text-surface-900 dark:text-surface-100">Quick Actions</h2>
-            </div>
-
-            <div class="p-2.5 space-y-0.5">
-              <NuxtLink
-                :to="localePath('/dashboard/jobs/new')"
-                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-brand-50 dark:hover:bg-brand-950/30 hover:text-brand-700 dark:hover:text-brand-300 transition-all no-underline group/action"
-              >
-                <div class="flex items-center justify-center size-8 rounded-lg bg-brand-50 dark:bg-brand-950/40 group-hover/action:bg-brand-100 dark:group-hover/action:bg-brand-950/60 transition-colors">
-                  <Plus class="size-4 text-brand-600 dark:text-brand-400" />
-                </div>
-                Create new job
-              </NuxtLink>
-              <NuxtLink
-                :to="localePath('/dashboard/candidates/new')"
-                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-violet-50 dark:hover:bg-violet-950/30 hover:text-violet-700 dark:hover:text-violet-300 transition-all no-underline group/action"
-              >
-                <div class="flex items-center justify-center size-8 rounded-lg bg-violet-50 dark:bg-violet-950/40 group-hover/action:bg-violet-100 dark:group-hover/action:bg-violet-950/60 transition-colors">
-                  <UserPlus class="size-4 text-violet-600 dark:text-violet-400" />
-                </div>
-                Add candidate
-              </NuxtLink>
-              <NuxtLink
-                :to="localePath('/dashboard/applications')"
-                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-teal-50 dark:hover:bg-teal-950/30 hover:text-teal-700 dark:hover:text-teal-300 transition-all no-underline group/action"
-              >
-                <div class="flex items-center justify-center size-8 rounded-lg bg-teal-50 dark:bg-teal-950/40 group-hover/action:bg-teal-100 dark:group-hover/action:bg-teal-950/60 transition-colors">
-                  <Eye class="size-4 text-teal-600 dark:text-teal-400" />
-                </div>
-                Review applications
-              </NuxtLink>
-              <NuxtLink
-                :to="localePath('/dashboard/interviews')"
-                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-surface-600 dark:text-surface-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:text-amber-700 dark:hover:text-amber-300 transition-all no-underline group/action"
-              >
-                <div class="flex items-center justify-center size-8 rounded-lg bg-amber-50 dark:bg-amber-950/40 group-hover/action:bg-amber-100 dark:group-hover/action:bg-amber-950/60 transition-colors">
-                  <Calendar class="size-4 text-amber-600 dark:text-amber-400" />
-                </div>
-                View interviews
-              </NuxtLink>
-            </div>
-          </div>
+        <div class="border-t border-surface-100 bg-[#F9FBFC] px-5 py-2.5 text-[10px] leading-4 text-surface-400 dark:border-surface-800 dark:bg-surface-950/30">
+          Daily averages use the 30 calendar days ending on the previous working day. Interview, offer and joining movement is based on recruiter stage-event history. Candidate sourcing currently follows the application's recruiter ownership until immutable sourcing attribution is added.
         </div>
+      </section>
+
+      <section v-if="riskTotal || recruitment.actionPending" class="grid gap-3 lg:grid-cols-3" data-testid="priority-actions">
+        <div class="lg:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl border border-[#E6D7B5] bg-[#FFF9ED] px-5 py-4 dark:border-warning-900 dark:bg-warning-950/20">
+          <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-[#986C16] shadow-sm dark:bg-surface-900"><AlertTriangle class="size-4.5" /></span>
+          <div class="min-w-0"><p class="text-sm font-bold text-[#664A13] dark:text-warning-200">Priority hiring attention</p><p class="mt-0.5 text-xs text-[#866A32] dark:text-warning-300">{{ recruitment.overdueRequirements }} overdue requisitions, {{ recruitment.dueSoonRequirements }} due soon and {{ recruitment.actionPending }} candidate actions pending.</p></div>
+          <NuxtLink :to="localePath('/dashboard/closure-risk')" class="ml-auto inline-flex items-center gap-1 text-xs font-bold text-[#765410] no-underline hover:underline dark:text-warning-200">Review risks <ArrowRight class="size-3.5" /></NuxtLink>
+        </div>
+        <div class="flex items-center justify-between rounded-2xl border border-[#D6E8DD] bg-[#F5FBF7] px-5 py-4 dark:border-success-900 dark:bg-success-950/20">
+          <div><p class="text-xs font-semibold uppercase tracking-wide text-[#5C7F66]">Requisition health</p><p class="mt-1 text-xl font-bold text-[#315C3D] dark:text-success-200">{{ requirementsOnTrack }} on track</p></div><CheckCircle2 class="size-6 text-[#4D8B5D]" />
+        </div>
+      </section>
+
+      <div v-if="isEmpty" class="rounded-3xl border border-dashed border-[#BFD6E6] bg-[#F7FBFE] px-6 py-14 text-center dark:border-surface-700 dark:bg-surface-900">
+        <Sparkles class="mx-auto size-8 text-[#176B87]" />
+        <h2 class="mt-4 text-lg font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'No requirements allocated yet' : 'No active recruitment yet' }}</h2>
+        <p class="mx-auto mt-2 max-w-lg text-sm text-surface-500">{{ scope.allocatedOnly ? 'Your command centre will populate automatically when a requirement is allocated to you.' : 'Create a requirement to begin the recruitment workflow.' }}</p>
       </div>
+
+      <template v-else>
+        <div class="grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
+          <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="hiring-funnel">
+            <div class="border-b border-surface-100 px-5 py-4 dark:border-surface-800">
+              <h2 class="font-bold text-[#102A43] dark:text-white">Hiring Funnel</h2>
+              <p class="mt-0.5 text-xs text-surface-400">Current candidate distribution across recruitment stages</p>
+            </div>
+            <div class="space-y-4 p-5">
+              <div v-for="stage in pipelineStages" :key="stage.key">
+                <div class="mb-1.5 flex items-center justify-between text-xs"><span class="font-semibold text-surface-600 dark:text-surface-300">{{ stage.label }}</span><span class="font-bold text-[#102A43] dark:text-white">{{ stage.value }}</span></div>
+                <div class="h-2.5 overflow-hidden rounded-full bg-surface-100 dark:bg-surface-800"><div class="h-full rounded-full bg-[#2B7C92] transition-all" :style="{ width: pipelineWidth(stage.value) }" /></div>
+              </div>
+              <div class="grid grid-cols-2 gap-3 border-t border-surface-100 pt-4 dark:border-surface-800"><div class="rounded-xl bg-[#F7FAFC] p-3 dark:bg-surface-800/60"><p class="text-xs text-surface-400">Active pipeline</p><p class="mt-1 text-xl font-bold text-[#102A43] dark:text-white">{{ activePipeline }}</p></div><div class="rounded-xl bg-[#F7FAFC] p-3 dark:bg-surface-800/60"><p class="text-xs text-surface-400">Joined / closed outcomes</p><p class="mt-1 text-xl font-bold text-[#102A43] dark:text-white">{{ terminalPipeline }}</p></div></div>
+              <p class="text-[11px] leading-4 text-surface-400">This view shows current pipeline distribution. Historical conversion ratios and recruiter performance trends are available in Recruitment Analytics where sufficient telemetry exists.</p>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="requisition-health">
+            <div class="flex items-center justify-between border-b border-surface-100 px-5 py-4 dark:border-surface-800">
+              <div><h2 class="font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'My Requisition Health' : 'Requisition Health' }}</h2><p class="mt-0.5 text-xs text-surface-400">TAT, target closure and candidate load at a glance</p></div>
+              <NuxtLink :to="localePath('/dashboard/jobs')" class="text-xs font-bold text-[#176B87] no-underline hover:underline">View all</NuxtLink>
+            </div>
+            <div class="max-h-[470px] divide-y divide-surface-100 overflow-y-auto dark:divide-surface-800">
+              <NuxtLink v-for="job in topJobs" :key="job.id" :to="localePath(`/dashboard/jobs/${job.id}`)" class="grid gap-3 px-5 py-4 no-underline transition hover:bg-[#F7FAFC] md:grid-cols-[1fr_auto] dark:hover:bg-surface-800/40">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2"><p class="truncate text-sm font-bold text-surface-900 dark:text-white">{{ job.title }}</p><span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[10px] font-semibold text-[#1F6FA3]">{{ job.applicationCount ?? 0 }} candidates</span></div>
+                  <p class="mt-1.5 text-xs text-surface-400">Assigned {{ formatDate(job.assignmentDate) }} · Target {{ formatDate(job.targetClosureDate) }}</p>
+                  <p class="mt-1 text-xs font-semibold" :class="daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! < 0 ? 'text-danger-600' : daysTo(job.targetClosureDate) != null && daysTo(job.targetClosureDate)! <= 7 ? 'text-warning-700' : 'text-[#39784A]'">{{ tatLabel(job) }} · {{ closureLabel(job.targetClosureDate) }}</p>
+                </div>
+                <div class="flex min-w-[190px] items-center justify-between gap-3 text-center text-[10px] text-surface-400"><span><strong class="block text-sm text-surface-800 dark:text-surface-200">{{ job.screeningCount ?? 0 }}</strong>Screening</span><span><strong class="block text-sm text-surface-800 dark:text-surface-200">{{ job.interviewCount ?? 0 }}</strong>Interview</span><span><strong class="block text-sm text-surface-800 dark:text-surface-200">{{ job.offerCount ?? 0 }}</strong>Offer</span></div>
+              </NuxtLink>
+              <div v-if="!topJobs.length" class="px-5 py-10 text-center text-sm text-surface-400">No active requirements in your current scope.</div>
+            </div>
+          </section>
+        </div>
+
+        <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="candidate-movement">
+          <div class="flex items-center justify-between border-b border-surface-100 px-5 py-4 dark:border-surface-800">
+            <div><h2 class="font-bold text-[#102A43] dark:text-white">Candidate Movement</h2><p class="mt-0.5 text-xs text-surface-400">Latest movement across visible recruitment workflows</p></div>
+            <NuxtLink :to="localePath('/dashboard/active-candidates')" class="text-xs font-bold text-[#176B87] no-underline hover:underline">Open active candidates</NuxtLink>
+          </div>
+          <div class="grid divide-y divide-surface-100 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4 dark:divide-surface-800">
+            <NuxtLink v-for="row in recentApplications.slice(0, 8)" :key="row.id" :to="localePath(`/dashboard/recruitment/${row.id}`)" class="block min-w-0 px-5 py-4 no-underline hover:bg-[#F7FAFC] dark:hover:bg-surface-800/40">
+              <div class="flex items-start gap-3"><span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#EAF7F5] text-[#187C73]"><UserRoundCheck class="size-4" /></span><div class="min-w-0"><p class="truncate text-sm font-bold text-surface-900 dark:text-white">{{ candidateName(row) }}</p><p class="mt-0.5 truncate text-xs text-surface-400">{{ row.jobTitle }}</p><div class="mt-2 flex flex-wrap items-center gap-1.5"><span class="rounded-full bg-[#EEF4F8] px-2 py-0.5 text-[10px] font-semibold text-[#345D75] dark:bg-surface-800 dark:text-surface-300">{{ stageLabel(row.recruitmentStatus || row.status) }}</span><span v-if="row.priority" class="rounded-full bg-[#FFF4E3] px-2 py-0.5 text-[10px] font-semibold text-[#8C6117]">{{ row.priority }}</span></div><p v-if="row.nextAction" class="mt-2 line-clamp-2 text-[11px] leading-4 text-surface-500">Next: {{ row.nextAction }}</p></div></div>
+            </NuxtLink>
+          </div>
+          <div v-if="!recentApplications.length" class="px-5 py-10 text-center text-sm text-surface-400">Candidate movement will appear here as recruitment activity begins.</div>
+        </section>
+      </template>
     </template>
   </div>
 </template>

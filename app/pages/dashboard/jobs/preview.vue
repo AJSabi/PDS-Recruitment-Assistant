@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Eye, RefreshCw } from 'lucide-vue-next'
+import { ArrowLeft, Eye, RefreshCw } from '@lucide/vue'
 
 definePageMeta({
   layout: 'public',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Briefcase, MapPin, Monitor, Smartphone } from 'lucide-vue-next'
+import { Briefcase, MapPin, Monitor, Smartphone } from '@lucide/vue'
 
 type Question = {
   id: string

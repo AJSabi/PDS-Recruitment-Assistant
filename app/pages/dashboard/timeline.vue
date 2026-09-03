@@ -5,7 +5,7 @@ import {
   ShieldCheck, Sparkles, MessageSquare, GitCommit,
   ChevronDown, ChevronRight, ArrowDown, Loader2,
   AlertCircle, History, ArrowRight, Search, X,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const NuxtLinkComponent = resolveComponent('NuxtLink')
 const route = useRoute()

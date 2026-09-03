@@ -7,7 +7,7 @@ import {
   Download, AlertTriangle, Server,
   HardDrive, Database, Shield, Loader2,
   Cpu, MemoryStick, Info,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

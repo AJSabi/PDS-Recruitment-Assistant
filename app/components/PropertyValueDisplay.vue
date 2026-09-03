@@ -2,7 +2,7 @@
 import {
   AlignLeft, Calendar, CheckSquare, CircleDot, Hash, Link as LinkIcon,
   List, Mail, Paperclip, Text as TextIcon, User,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import {
   PROPERTY_COLOR_CLASSES,
   type PropertyDefinition,

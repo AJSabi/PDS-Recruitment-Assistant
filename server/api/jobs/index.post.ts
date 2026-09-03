@@ -1,13 +1,14 @@
-import { job, jobQuestion, scoringCriterion } from '../../database/schema'
+import { job, jobQuestion, recruitmentRequirementState, scoringCriterion } from '../../database/schema'
 import { createJobWizardSchema } from '../../utils/schemas/job'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['create'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const body = await readValidatedBody(event, createJobWizardSchema.parse)
 
-  // Generate a deterministic ID upfront so we can build the slug
   const jobId = crypto.randomUUID()
   const slug = generateJobSlug(body.title, jobId, body.slug)
 
@@ -57,9 +58,15 @@ export default defineEventHandler(async (event) => {
       updatedAt: job.updatedAt,
     })
 
-    if (!createdJob) {
-      throw createError({ statusCode: 500, statusMessage: 'Failed to create job' })
-    }
+    if (!createdJob) throw createError({ statusCode: 500, statusMessage: 'Failed to create requirement' })
+
+    // Every PDS requirement gets its lifecycle state in the same transaction.
+    // It intentionally starts unallocated: owner, assignment date and closure timing
+    // remain null until Allocation Management or the requirement profile supplies them.
+    await tx.insert(recruitmentRequirementState).values({
+      organizationId: orgId,
+      jobId,
+    })
 
     if (body.questions.length) {
       await tx.insert(jobQuestion).values(body.questions.map((question, index) => ({
@@ -91,10 +98,6 @@ export default defineEventHandler(async (event) => {
     return createdJob
   })
 
-  if (!created) {
-    throw createError({ statusCode: 500, statusMessage: 'Failed to create job' })
-  }
-
   recordActivity({
     organizationId: orgId,
     actorId: session.user.id,
@@ -102,22 +105,6 @@ export default defineEventHandler(async (event) => {
     resourceType: 'job',
     resourceId: created.id,
     metadata: { title: created.title },
-  })
-
-  trackEvent(event, session, 'job created', {
-    job_id: created.id,
-    job_type: created.type,
-    has_salary: !!(created.salaryMin || created.salaryMax),
-    require_resume: created.requireResume,
-    auto_score: created.autoScoreOnApply,
-  })
-
-  logApiRequest(event, session, 'job.created', {
-    job_id: created.id,
-    job_type: created.type,
-    has_salary: !!(created.salaryMin || created.salaryMax),
-    require_resume: created.requireResume,
-    auto_score: created.autoScoreOnApply,
   })
 
   setResponseStatus(event, 201)

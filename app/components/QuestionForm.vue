@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, Plus, Trash2 } from 'lucide-vue-next'
+import { X, Plus, Trash2 } from '@lucide/vue'
 
 const props = defineProps<{
   /** If provided, we're editing an existing question */

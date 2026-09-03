@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { X, RotateCcw, Bookmark, Plus, Check } from 'lucide-vue-next'
+import { X, RotateCcw, Bookmark, Plus, Check } from '@lucide/vue'
 
 const props = defineProps<{
   modelValue: boolean

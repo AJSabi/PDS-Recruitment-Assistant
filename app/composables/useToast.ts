@@ -12,6 +12,8 @@ export interface Toast {
   duration?: number
 }
 
+type SimpleToastMessage = string | { message?: string }
+
 const GITHUB_ISSUES_URL = 'https://github.com/reqcore-inc/reqcore/issues/new'
 
 function getPostHog(): PostHog | undefined {
@@ -21,6 +23,10 @@ function getPostHog(): PostHog | undefined {
   } catch {
     return undefined
   }
+}
+
+function resolveMessage(value?: SimpleToastMessage) {
+  return typeof value === 'string' ? value : value?.message
 }
 
 let counter = 0
@@ -49,10 +55,6 @@ export function useToast() {
     toasts.value = []
   }
 
-  /**
-   * Show an error toast with a link to report the issue on GitHub.
-   * Also tracks the error in PostHog if the user has consented.
-   */
   function error(title: string, opts?: { message?: string; details?: string; statusCode?: number; path?: string }) {
     if (import.meta.client) {
       const ph = getPostHog()
@@ -78,16 +80,16 @@ export function useToast() {
     })
   }
 
-  function success(title: string, message?: string) {
-    return add({ type: 'success', title, message })
+  function success(title: string, message?: SimpleToastMessage) {
+    return add({ type: 'success', title, message: resolveMessage(message) })
   }
 
-  function warning(title: string, message?: string) {
-    return add({ type: 'warning', title, message })
+  function warning(title: string, message?: SimpleToastMessage) {
+    return add({ type: 'warning', title, message: resolveMessage(message) })
   }
 
-  function info(title: string, message?: string) {
-    return add({ type: 'info', title, message })
+  function info(title: string, message?: SimpleToastMessage) {
+    return add({ type: 'info', title, message: resolveMessage(message) })
   }
 
   return { toasts: readonly(toasts), add, remove, clear, error, success, warning, info }

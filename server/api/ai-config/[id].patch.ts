@@ -3,18 +3,14 @@ import { z } from 'zod'
 import { aiConfig } from '../../database/schema'
 import { updateAiConfigSchema } from '../../utils/schemas/scoring'
 import { encrypt } from '../../utils/encryption'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
-/**
- * PATCH /api/ai-config/:id
- *
- * Update an AI configuration. Re-encrypts the API key only when supplied,
- * so users can edit name / model / pricing without re-entering credentials.
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, updateAiConfigSchema.parse)
 
@@ -51,13 +47,7 @@ export default defineEventHandler(async (event) => {
       apiKeyEncrypted: aiConfig.apiKeyEncrypted,
     })
 
-  recordActivity({
-    organizationId: orgId,
-    actorId: session.user.id,
-    action: 'updated',
-    resourceType: 'aiConfig',
-    resourceId: id,
-  })
+  recordActivity({ organizationId: orgId, actorId: session.user.id, action: 'updated', resourceType: 'aiConfig', resourceId: id })
 
   const { apiKeyEncrypted, ...rest } = updated!
   return {

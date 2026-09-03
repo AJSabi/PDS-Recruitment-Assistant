@@ -11,7 +11,7 @@
 import {
   MessageSquare, Pin, PinOff, MoreHorizontal, Pencil, Trash2,
   FolderInput, Inbox,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { ChatbotConversationSummary, ChatbotFolder } from '~~/shared/chatbot'
 
 const props = defineProps<{
