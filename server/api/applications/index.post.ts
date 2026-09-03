@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm'
-import { application, applicationSource, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../database/schema'
+import { application, applicationSource, job, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../database/schema'
 import { createApplicationSchema } from '../../utils/schemas/application'
 import { findActiveCandidate } from '../../utils/candidate-retention'
 import { applicationSourcePersistence } from '../../utils/recruitmentSource'
@@ -74,6 +74,18 @@ export default defineEventHandler(async (event) => {
     assessmentLocked: false,
     nextAction: 'Upload or verify the latest resume.',
     lastUpdatedBy: session.user.id,
+  })
+
+  await db.insert(recruitmentEvidence).values({
+    organizationId: orgId,
+    jobId: body.jobId,
+    applicationId: created.id,
+    candidateId: body.candidateId,
+    type: 'sourcing',
+    summary: 'Candidate sourced for requirement',
+    sourceRef: 'recruiter_sourcing',
+    payload: { event: 'candidate_sourced', source: 'recruiter_sourcing' },
+    createdBy: session.user.id,
   })
 
   recordActivity({
