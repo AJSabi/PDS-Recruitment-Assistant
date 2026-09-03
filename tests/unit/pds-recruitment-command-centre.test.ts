@@ -35,12 +35,12 @@ describe('PDS recruitment command centre UX', () => {
     expect(stats).toContain('case when ${recruitmentRequirementState.assignmentDate} is null then null')
   })
 
-  it('uses recruitment-oriented navigation and keeps management analytics role-gated', () => {
+  it('uses recruitment-oriented navigation and keeps TA operations role-gated', () => {
     const topbar = read('app/components/AppTopBar.vue')
     expect(topbar).toContain("label: 'Command Centre'")
     expect(topbar).toContain("label: 'Requisitions'")
     expect(topbar).toContain("label: 'Candidate Database'")
-    expect(topbar).toContain("label: 'Recruitment Analytics'")
+    expect(topbar).toContain("label: 'TA Operations'")
     expect(topbar).toContain("label: 'Team Allocation'")
     expect(topbar).toContain('canManageRequirements.value ? [')
     expect(topbar).not.toContain("label: 'AI Usage'")
