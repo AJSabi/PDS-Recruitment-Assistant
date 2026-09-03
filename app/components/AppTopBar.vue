@@ -90,9 +90,10 @@ const jobTabs = computed(() => {
   if (!activeJobId.value) return []
   const base = `/dashboard/jobs/${activeJobId.value}`
   return [
-    { id: 'pipeline', label: 'Candidate Pipeline', to: base },
+    { id: 'overview', label: 'Overview', to: base },
+    { id: 'pipeline', label: 'Candidate Pipeline', to: `${base}/candidates` },
     { id: 'jd-skill-matrix', label: 'JD & Skill Matrix', to: `${base}/ai-analysis` },
-    { id: 'ai-candidate-pool', label: 'Candidate Match', to: `${base}/pds-ranking` },
+    { id: 'candidate-match', label: 'Candidate Match', to: `${base}/pds-ranking` },
     { id: 'candidate-register', label: 'Candidate Register', to: `${base}/pds-register` },
     { id: 'requirement-settings', label: 'Requisition Settings', to: `${base}/settings` },
   ]
