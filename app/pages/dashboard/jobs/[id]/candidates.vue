@@ -105,12 +105,6 @@ function movementClass(value: string | Date) {
   return 'text-surface-600 bg-surface-100 ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700'
 }
 
-function priorityClass(priority?: string | null) {
-  if (priority === 'high') return 'bg-danger-50 text-danger-700 ring-danger-200 dark:bg-danger-950/40 dark:text-danger-300 dark:ring-danger-900'
-  if (priority === 'medium') return 'bg-warning-50 text-warning-700 ring-warning-200 dark:bg-warning-950/40 dark:text-warning-300 dark:ring-warning-900'
-  return 'bg-surface-100 text-surface-600 ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700'
-}
-
 function fitLabel(fit?: string | null) {
   if (!fit) return 'Fit not assessed'
   return fit.replaceAll('_', ' ')
@@ -133,12 +127,7 @@ const pipelineGroups = computed(() => stageGroups.map(group => ({
   ...group,
   applications: filteredApplications.value
     .filter(app => stageGroup(app.recruitmentStatus) === group.key)
-    .sort((a, b) => {
-      const aPriority = a.priority === 'high' ? 2 : a.priority === 'medium' ? 1 : 0
-      const bPriority = b.priority === 'high' ? 2 : b.priority === 'medium' ? 1 : 0
-      if (aPriority !== bPriority) return bPriority - aPriority
-      return new Date(a.lastMovementAt).getTime() - new Date(b.lastMovementAt).getTime()
-    }),
+    .sort((a, b) => new Date(a.lastMovementAt).getTime() - new Date(b.lastMovementAt).getTime()),
 })))
 
 const attentionCount = computed(() => applications.value.filter(app => {
@@ -248,7 +237,7 @@ async function handleSidebarUpdated() {
 
               <div class="mt-3 flex flex-wrap gap-1.5">
                 <span class="rounded-md bg-[#EAF4FA] px-2 py-1 text-[10px] font-semibold capitalize text-[#1F6FA3] dark:bg-surface-800 dark:text-brand-300" data-testid="candidate-current-stage">{{ stageLabel(app.recruitmentStatus) }}</span>
-                <span v-if="app.priority" class="rounded-md px-2 py-1 text-[10px] font-semibold capitalize ring-1 ring-inset" :class="priorityClass(app.priority)">{{ app.priority }} priority</span>
+                <span v-if="app.priority" class="rounded-md bg-surface-100 px-2 py-1 text-[10px] font-semibold capitalize text-surface-600 ring-1 ring-inset ring-surface-200 dark:bg-surface-800 dark:text-surface-300 dark:ring-surface-700">{{ app.priority }} priority</span>
               </div>
 
               <div class="mt-3 flex items-center justify-between gap-2">
