@@ -39,9 +39,23 @@ export default defineEventHandler(async (event) => {
     conditions.push(inArray(candidate.id, [...matching]))
   }
 
-  const where = and(...conditions)
   const visibility = await getRequirementVisibility(orgId, session.user.id)
+  let visibleCandidateIds: string[] | null = null
+  if (!visibility.canSeeAll) {
+    const visibleRows = await db.selectDistinct({ candidateId: application.candidateId })
+      .from(application)
+      .innerJoin(recruitmentRequirementState, and(
+        eq(recruitmentRequirementState.jobId, application.jobId),
+        eq(recruitmentRequirementState.organizationId, orgId),
+        eq(recruitmentRequirementState.ownerUserId, session.user.id),
+      ))
+      .where(eq(application.organizationId, orgId))
+    visibleCandidateIds = visibleRows.map(row => row.candidateId)
+    if (visibleCandidateIds.length === 0) return { data: [], total: 0, page: query.page, limit: query.limit }
+    conditions.push(inArray(candidate.id, visibleCandidateIds))
+  }
 
+  const where = and(...conditions)
   const dataQuery = visibility.canSeeAll
     ? db.select({
         id: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, displayName: candidate.displayName,
