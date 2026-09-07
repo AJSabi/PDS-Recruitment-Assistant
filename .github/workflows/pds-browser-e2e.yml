@@ -81,7 +81,11 @@ jobs:
         run: npx wait-on --timeout 60000 http-get://127.0.0.1:3333
 
       - name: Run PDS browser governance tests
-        run: npx playwright test e2e/critical-flows/pds-recruitment-governance.spec.ts --project=chromium
+        run: >-
+          npx playwright test
+          e2e/critical-flows/pds-recruitment-governance.spec.ts
+          e2e/critical-flows/pds-screening-governance.spec.ts
+          --project=chromium
 
       - name: Show server log on failure
         if: failure()
