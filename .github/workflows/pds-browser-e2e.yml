@@ -113,6 +113,7 @@ jobs:
           e2e/critical-flows/pds-document-chatbot-scope.spec.ts
           e2e/critical-flows/pds-session-isolation.spec.ts
           e2e/critical-flows/pds-recruiter-kpi-governance.spec.ts
+          e2e/critical-flows/pds-ta-operations-scope.spec.ts
           --project=chromium
 
       - name: Show server log on failure
