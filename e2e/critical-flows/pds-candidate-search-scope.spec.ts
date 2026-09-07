@@ -60,7 +60,7 @@ async function createRecruiter(ownerPage: any, browser: any, label: string, runI
   await page.getByLabel('Password', { exact: true }).fill(recruiter.password)
   await page.getByLabel('Confirm password').fill(recruiter.password)
   await page.getByRole('button', { name: 'Sign up' }).click()
-  await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 15_000 })
+  await page.waitForURL(url => ['/onboarding/create-org', '/dashboard'].some(path => url.pathname.includes(path)), { timeout: 15_000 })
 
   await page.goto(`/join/${invite.token}`)
   await Promise.all([
