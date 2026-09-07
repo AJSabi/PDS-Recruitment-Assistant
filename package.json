@@ -85,7 +85,6 @@
     "@posthog/nuxt": {
       "@posthog/cli": "npm:empty-npm-package@1.0.0"
     },
-    "fflate": "0.4.9",
     "readdir-glob": "2.0.2",
     "rollup": "4.60.1",
     "esbuild": "0.28.1",
