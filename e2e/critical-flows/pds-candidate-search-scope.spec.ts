@@ -59,10 +59,8 @@ async function createRecruiter(ownerPage: any, browser: any, label: string, runI
   await page.getByLabel('Email').fill(recruiter.email)
   await page.getByLabel('Password', { exact: true }).fill(recruiter.password)
   await page.getByLabel('Confirm password').fill(recruiter.password)
-  await Promise.all([
-    page.waitForResponse(response => response.url().includes('/api/auth/sign-up') && response.status() === 200),
-    page.getByRole('button', { name: 'Sign up' }).click(),
-  ])
+  await page.getByRole('button', { name: 'Sign up' }).click()
+  await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 15_000 })
 
   await page.goto(`/join/${invite.token}`)
   await Promise.all([
