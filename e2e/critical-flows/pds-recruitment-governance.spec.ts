@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures'
+import { test, expect, declineAnalyticsConsent } from '../fixtures'
 
 function toDateInput(value: Date) {
   const year = value.getFullYear()
@@ -97,5 +97,112 @@ test.describe('PDS Recruitment Governance', () => {
     expect(toDateInput(new Date(savedRow.assignmentDate))).toBe(assignmentValue)
     expect(toDateInput(new Date(savedRow.targetClosureDate))).toBe(expectedTarget)
     expect(new Date(savedRow.assignmentDate).getTime()).not.toBe(new Date(createdJob.createdAt).getTime())
+  })
+
+  test('member recruiter sees only allocated requirements and cannot use allocation administration', async ({ authenticatedPage, browser }) => {
+    const ownerPage = authenticatedPage
+    const runId = Date.now()
+    const recruiter = {
+      name: `PDS Recruiter ${runId}`,
+      email: `pds-recruiter-${runId}@test.local`,
+      password: process.env.E2E_TEST_PASSWORD || 'TestPassword123!',
+    }
+
+    const createRequirement = async (title: string) => {
+      const response = await ownerPage.request.post('/api/jobs', {
+        data: {
+          title,
+          description: 'E2E requirement used to verify recruiter allocation visibility.',
+          location: 'Noida',
+          type: 'full_time',
+          status: 'open',
+          questions: [],
+          criteria: [],
+        },
+      })
+      expect(response.status()).toBe(201)
+      return response.json()
+    }
+
+    const allocatedJob = await createRequirement(`PDS Allocated ${runId}`)
+    const hiddenJob = await createRequirement(`PDS Hidden ${runId}`)
+
+    const inviteResponse = await ownerPage.request.post('/api/invite-links', {
+      data: { role: 'member', maxUses: 1, expiresInHours: 1 },
+    })
+    expect(inviteResponse.status()).toBe(201)
+    const invite = await inviteResponse.json()
+    expect(invite.token).toBeTruthy()
+
+    const recruiterContext = await browser.newContext()
+    await declineAnalyticsConsent(recruiterContext)
+    const recruiterPage = await recruiterContext.newPage()
+
+    try {
+      await recruiterPage.goto('/auth/sign-up')
+      await recruiterPage.waitForLoadState('networkidle')
+      await recruiterPage.getByLabel('Name').fill(recruiter.name)
+      await recruiterPage.getByLabel('Email').fill(recruiter.email)
+      await recruiterPage.getByLabel('Password', { exact: true }).fill(recruiter.password)
+      await recruiterPage.getByLabel('Confirm password').fill(recruiter.password)
+
+      await Promise.all([
+        recruiterPage.waitForResponse(response => response.url().includes('/api/auth/sign-up') && response.status() === 200),
+        recruiterPage.getByRole('button', { name: 'Sign up' }).click(),
+      ])
+
+      await recruiterPage.goto(`/join/${invite.token}`)
+      await recruiterPage.waitForLoadState('networkidle')
+      await expect(recruiterPage.getByRole('heading', { name: 'Join organization' })).toBeVisible()
+      await expect(recruiterPage.getByText('Join as', { exact: false })).toContainText('Member')
+
+      await Promise.all([
+        recruiterPage.waitForResponse(response => response.url().includes('/api/invite-links/accept') && response.status() === 200),
+        recruiterPage.getByRole('button', { name: /Join / }).click(),
+      ])
+      await expect(recruiterPage.getByRole('heading', { name: "You're in!" })).toBeVisible()
+      await recruiterPage.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 10_000 })
+      await recruiterPage.waitForLoadState('networkidle')
+
+      const allocationResponse = await ownerPage.request.get('/api/requirement-allocations')
+      expect(allocationResponse.ok()).toBeTruthy()
+      const allocationData = await allocationResponse.json()
+      const member = allocationData.members.find((person: any) => person.email === recruiter.email)
+      expect(member?.userId).toBeTruthy()
+      expect(member.role).toBe('member')
+
+      const assignResponse = await ownerPage.request.put(`/api/requirement-allocations/${allocatedJob.id}`, {
+        data: { ownerUserId: member.userId },
+      })
+      expect(assignResponse.ok()).toBeTruthy()
+
+      const recruiterScopeResponse = await recruiterPage.request.get('/api/recruitment-scope')
+      expect(recruiterScopeResponse.ok()).toBeTruthy()
+      const recruiterScope = await recruiterScopeResponse.json()
+      expect(recruiterScope.role).toBe('member')
+      expect(recruiterScope.canManageRequirements).toBe(false)
+      expect(recruiterScope.allocatedOnly).toBe(true)
+
+      const visibleJobsResponse = await recruiterPage.request.get('/api/jobs?limit=100')
+      expect(visibleJobsResponse.ok()).toBeTruthy()
+      const visibleJobs = await visibleJobsResponse.json()
+      expect(visibleJobs.data.map((job: any) => job.id)).toEqual([allocatedJob.id])
+
+      const allocatedDetailResponse = await recruiterPage.request.get(`/api/jobs/${allocatedJob.id}`)
+      expect(allocatedDetailResponse.ok()).toBeTruthy()
+
+      const hiddenDetailResponse = await recruiterPage.request.get(`/api/jobs/${hiddenJob.id}`)
+      expect(hiddenDetailResponse.status()).toBe(404)
+
+      const allocationAdminResponse = await recruiterPage.request.get('/api/requirement-allocations')
+      expect(allocationAdminResponse.status()).toBe(403)
+
+      await recruiterPage.goto('/dashboard/requirement-allocations')
+      await recruiterPage.waitForLoadState('networkidle')
+      await expect(recruiterPage.getByText('You do not have access to requirement allocation, or the page could not be loaded.')).toBeVisible()
+    }
+    finally {
+      await recruiterContext.close()
+    }
   })
 })
