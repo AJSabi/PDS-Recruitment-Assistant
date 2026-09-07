@@ -205,4 +205,96 @@ test.describe('PDS Recruitment Governance', () => {
       await recruiterContext.close()
     }
   })
+
+  test('Current Fit and recruitment stage remain independent persisted concepts', async ({ authenticatedPage }) => {
+    const page = authenticatedPage
+    const runId = Date.now()
+
+    const jobResponse = await page.request.post('/api/jobs', {
+      data: {
+        title: `PDS Fit Independence ${runId}`,
+        description: 'E2E requirement used to verify Current Fit and recruitment stage independence.',
+        location: 'Noida',
+        type: 'full_time',
+        status: 'open',
+        questions: [],
+        criteria: [],
+      },
+    })
+    expect(jobResponse.status()).toBe(201)
+    const job = await jobResponse.json()
+
+    const candidateResponse = await page.request.post('/api/candidates', {
+      data: {
+        firstName: 'Fit',
+        lastName: `Candidate${runId}`,
+        email: `fit-candidate-${runId}@test.local`,
+      },
+    })
+    expect(candidateResponse.status()).toBe(201)
+    const candidate = await candidateResponse.json()
+
+    const applicationResponse = await page.request.post('/api/applications', {
+      data: { candidateId: candidate.id, jobId: job.id },
+    })
+    expect(applicationResponse.status()).toBe(201)
+    const application = await applicationResponse.json()
+
+    const profileBeforeResponse = await page.request.get(`/api/applications/${application.id}/recruitment-profile`)
+    expect(profileBeforeResponse.ok()).toBeTruthy()
+    const profileBefore = (await profileBeforeResponse.json()).profile
+    expect(profileBefore.currentFit).toBe('not_yet_assessed')
+    expect(profileBefore.lastStatus).toBe('candidate_added')
+
+    const notProceedingResponse = await page.request.post(`/api/applications/${application.id}/stage/confirm`, {
+      data: { stage: 'not_proceeding', note: 'E2E setup for governed reassessment.' },
+    })
+    expect(notProceedingResponse.ok()).toBeTruthy()
+
+    const reassessResponse = await page.request.post(`/api/applications/${application.id}/stage/confirm`, {
+      data: { stage: 'reassess' },
+    })
+    expect(reassessResponse.ok()).toBeTruthy()
+
+    const reassessProfileResponse = await page.request.get(`/api/applications/${application.id}/recruitment-profile`)
+    expect(reassessProfileResponse.ok()).toBeTruthy()
+    const reassessProfile = (await reassessProfileResponse.json()).profile
+    expect(reassessProfile.lastStatus).toBe('reassess')
+    expect(reassessProfile.currentFit).toBe('not_yet_assessed')
+
+    const fitUpdateResponse = await page.request.post(`/api/applications/${application.id}/interview-evidence`, {
+      data: {
+        interviewType: 'interview',
+        summary: 'E2E manual reassessment evidence supports a Potential Fit assessment.',
+        fit: 'potential_fit',
+        strengths: ['Relevant evidence validated'],
+        concerns: [],
+        validationFocus: [],
+        recommendation: 'reassess',
+        updateCurrentFit: true,
+      },
+    })
+    expect(fitUpdateResponse.ok()).toBeTruthy()
+    const fitUpdate = await fitUpdateResponse.json()
+    expect(fitUpdate.statusChanged).toBe(false)
+    expect(fitUpdate.profile.currentFit).toBe('potential_fit')
+    expect(fitUpdate.profile.lastStatus).toBe('reassess')
+
+    const afterFitResponse = await page.request.get(`/api/applications/${application.id}/recruitment-profile`)
+    expect(afterFitResponse.ok()).toBeTruthy()
+    const afterFit = (await afterFitResponse.json()).profile
+    expect(afterFit.currentFit).toBe('potential_fit')
+    expect(afterFit.lastStatus).toBe('reassess')
+
+    const stageChangeResponse = await page.request.post(`/api/applications/${application.id}/stage/confirm`, {
+      data: { stage: 'not_proceeding', note: 'E2E stage change must not rewrite Current Fit.' },
+    })
+    expect(stageChangeResponse.ok()).toBeTruthy()
+
+    const afterStageResponse = await page.request.get(`/api/applications/${application.id}/recruitment-profile`)
+    expect(afterStageResponse.ok()).toBeTruthy()
+    const afterStage = (await afterStageResponse.json()).profile
+    expect(afterStage.lastStatus).toBe('not_proceeding')
+    expect(afterStage.currentFit).toBe('potential_fit')
+  })
 })
