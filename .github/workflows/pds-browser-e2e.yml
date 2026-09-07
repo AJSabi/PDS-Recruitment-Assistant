@@ -117,6 +117,7 @@ jobs:
           e2e/critical-flows/pds-candidate-search-scope.spec.ts
           e2e/critical-flows/pds-requirement-settings-governance.spec.ts
           e2e/critical-flows/pds-empty-state-governance.spec.ts
+          e2e/critical-flows/pds-recoverable-error-governance.spec.ts
           --project=chromium
 
       - name: Show server log on failure
