@@ -218,114 +218,95 @@ async function handleFileSelected(event: Event) {
   }
 }
 
-async function handleReparse(docId: string) {
-  reparsingDocId.value = docId
-  try {
-    await $fetch(`/api/documents/${docId}/parse`, {
-      method: 'POST',
-      headers: useRequestHeaders(['cookie']),
-    })
-    toast.add({ title: 'Resume parsed successfully', type: 'success' })
-    await refreshCandidate()
-  } catch (err: any) {
-    toast.add({
-      title: 'Parse failed',
-      message: err?.data?.statusMessage ?? 'Could not extract text from this document.',
-      type: 'error',
-    })
-  } finally {
-    reparsingDocId.value = null
-  }
+async function handleDownload(docId: string, filename: string) {
+  await downloadDocument(docId, filename)
 }
 
-async function handlePreview(docId: string, mimeType?: string) {
-  // Only PDFs can be previewed inline — for DOC/DOCX, download directly
-  if (mimeType && mimeType !== 'application/pdf') {
-    await handleDownload(docId)
-    return
-  }
-
+async function openPreview(docId: string, filename: string, mimeType: string) {
   previewError.value = null
-  showPreview.value = true
+  isLoadingPreview.value = true
+  previewFilename.value = filename
+  previewMimeType.value = mimeType
   previewDocId.value = docId
-
-  // Find the document name from the loaded data
-  const doc = documents.value?.find((d: any) => d.id === docId)
-  previewFilename.value = doc?.originalFilename ?? 'Document'
-  previewMimeType.value = doc?.mimeType ?? 'application/pdf'
-
-  // Use the API endpoint URL directly — server streams the PDF (same-origin)
-  previewUrl.value = getPreviewUrl(docId)
+  showPreview.value = true
+  try {
+    previewUrl.value = await getPreviewUrl(docId)
+  } catch (err: any) {
+    previewError.value = err.data?.statusMessage ?? 'Preview unavailable'
+  } finally {
+    isLoadingPreview.value = false
+  }
 }
 
 function closePreview() {
   showPreview.value = false
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = null
   previewFilename.value = ''
   previewMimeType.value = ''
   previewDocId.value = null
   previewError.value = null
+  isLoadingPreview.value = false
 }
 
-async function handleDownload(docId: string) {
-  try {
-    track('document_downloaded', { document_id: docId })
-    await downloadDocument(docId)
-  } catch {
-    toast.error('Failed to download document')
-  }
-}
-
-async function handleDeleteDoc(docId: string) {
-  if (!candidateId.value) return
+async function handleDeleteDocument(docId: string) {
   isDeletingDoc.value = true
   try {
-    await deleteDocument(docId, candidateId.value)
+    await deleteDocument(docId)
     await refreshCandidate()
     showDocDeleteConfirm.value = null
   } catch (err: any) {
-    if (handlePreviewReadOnlyError(err)) return
     toast.error('Failed to delete document', { message: err.data?.statusMessage, statusCode: err.data?.statusCode })
   } finally {
     isDeletingDoc.value = false
   }
 }
 
-// ─────────────────────────────────────────────
-// Escape key to close (layered: preview → delete → sidebar)
-// ─────────────────────────────────────────────
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    if (showPreview.value) {
-      closePreview()
-    } else if (showDocDeleteConfirm.value) {
-      showDocDeleteConfirm.value = null
-    } else {
-      emit('close')
-    }
+async function reparseDocument(docId: string) {
+  reparsingDocId.value = docId
+  try {
+    await $fetch(`/api/documents/${docId}/reparse`, { method: 'POST' })
+    await refreshCandidate()
+  } catch (err: any) {
+    toast.error('Failed to reparse document', { message: err.data?.statusMessage, statusCode: err.data?.statusCode })
+  } finally {
+    reparsingDocId.value = null
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
-
 // ─────────────────────────────────────────────
-// Timeline data for the candidate
+// AI analysis
 // ─────────────────────────────────────────────
 
-interface TimelineEntry {
+const aiStatus = ref<'idle' | 'loading' | 'success' | 'error'>('idle')
+const aiError = ref<string | null>(null)
+const aiResult = ref<any>(null)
+
+async function runAiAnalysis() {
+  aiStatus.value = 'loading'
+  aiError.value = null
+  try {
+    aiResult.value = await $fetch(`/api/applications/${props.applicationId}/score`, { method: 'POST' })
+    aiStatus.value = 'success'
+    await refresh()
+  } catch (err: any) {
+    aiError.value = err.data?.statusMessage ?? err.statusMessage ?? 'AI analysis failed'
+    aiStatus.value = 'error'
+  }
+}
+
+// ─────────────────────────────────────────────
+// Timeline
+// ─────────────────────────────────────────────
+
+type TimelineEntry = {
   id: string
   action: string
   resourceType: string
-  resourceId: string
-  metadata: Record<string, unknown> | null
+  actorName?: string | null
+  actorEmail?: string | null
+  metadata?: Record<string, any> | null
   createdAt: string
-  actorName: string | null
-  actorEmail: string | null
-  resourceName: string | null
-  jobTitle: string | null
-  candidateName: string | null
 }
 
 const timelineItems = ref<TimelineEntry[]>([])
@@ -404,8 +385,11 @@ watch(activeTab, (tab) => {
   }
 })
 
-// Reset state when switching to a different application
+// Reset state when switching to a different application. Clear record refs first so
+// Candidate A can never remain visible while Candidate B is being fetched.
 watch(() => props.applicationId, () => {
+  application.value = null
+  candidateData.value = null
   isEditingNotes.value = false
   activeTab.value = 'overview'
   uploadError.value = null
@@ -470,712 +454,104 @@ function formatInterviewDate(dateStr: string) {
               <h2 class="text-lg font-semibold text-surface-900 dark:text-surface-50 truncate">
                 {{ formatCandidateName(application.candidate) }}
               </h2>
-              <div class="flex items-center gap-3 text-sm text-surface-500 dark:text-surface-400">
-                <a
-                  :href="`mailto:${application.candidate.email}`"
-                  target="_blank"
-                  class="inline-flex items-center gap-1 truncate hover:text-brand-600 dark:hover:text-brand-400 hover:underline cursor-pointer transition-colors"
-                >
-                  <Mail class="size-3.5 shrink-0" />
-                  {{ application.candidate.email }}
-                </a>
-                <span v-if="application.candidate.phone" class="inline-flex items-center gap-1">
-                  <Phone class="size-3.5 shrink-0" />
-                  {{ application.candidate.phone }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="min-w-0">
-          <h2 class="text-lg font-semibold text-surface-400">Loading…</h2>
-        </div>
-        <div class="flex items-center gap-1 shrink-0 ml-3">
-          <button
-            v-if="application"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 dark:border-surface-700 px-2.5 py-1.5 text-sm font-medium text-surface-600 dark:text-surface-400 hover:border-brand-400 dark:hover:border-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30 hover:text-brand-700 dark:hover:text-brand-300 transition-all cursor-pointer"
-            title="Schedule Interview"
-            @click="showScheduleSidebar = true"
-          >
-            <Calendar class="size-3.5" />
-            Schedule
-          </button>
-          <button
-            class="rounded-md p-1.5 text-surface-400 hover:text-surface-600 hover:bg-surface-100 dark:hover:text-surface-300 dark:hover:bg-surface-800 transition-colors"
-            title="Close (Esc)"
-            @click="emit('close')"
-          >
-            <X class="size-5" />
-          </button>
-        </div>
-      </div>
-
-      <!-- Tabs -->
-      <div v-if="application" class="border-b border-surface-200/80 dark:border-surface-800/60 px-4 sm:px-6 shrink-0">
-        <div class="flex gap-1 overflow-x-auto scrollbar-none">
-          <button
-            class="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px"
-            :class="activeTab === 'overview'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300 dark:hover:text-surface-300'"
-            @click="activeTab = 'overview'"
-          >
-            Overview
-          </button>
-          <button
-            class="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px"
-            :class="activeTab === 'documents'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300 dark:hover:text-surface-300'"
-            @click="activeTab = 'documents'"
-          >
-            Documents ({{ documents.length }})
-          </button>
-          <button
-            v-if="responsesCount > 0"
-            class="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px"
-            :class="activeTab === 'responses'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300 dark:hover:text-surface-300'"
-            @click="activeTab = 'responses'"
-          >
-            Responses ({{ responsesCount }})
-          </button>
-          <button
-            class="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px inline-flex items-center gap-1.5"
-            :class="activeTab === 'ai_analysis'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300 dark:hover:text-surface-300'"
-            @click="activeTab = 'ai_analysis'"
-          >
-            <Brain class="size-3.5" />
-            AI Analysis
-          </button>
-          <button
-            class="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px inline-flex items-center gap-1.5"
-            :class="activeTab === 'timeline'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-surface-500 hover:text-surface-700 hover:border-surface-300 dark:hover:text-surface-300'"
-            @click="activeTab = 'timeline'"
-          >
-            <History class="size-3.5" />
-            Timeline
-          </button>
-        </div>
-      </div>
-
-      <!-- Body -->
-      <div class="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
-        <!-- Loading -->
-        <div v-if="fetchStatus === 'pending'" class="text-center py-12 text-surface-400">
-          Loading details…
-        </div>
-
-        <template v-else-if="application">
-
-          <!-- ═══════════════════════════════════════ -->
-          <!-- OVERVIEW TAB                            -->
-          <!-- ═══════════════════════════════════════ -->
-          <div v-if="activeTab === 'overview'" class="space-y-5">
-            <!-- Status & transitions -->
-            <div>
-              <div class="flex items-center gap-2 mb-3">
-                <span
-                  class="inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold capitalize ring-1 ring-inset"
-                  :class="statusBadgeClasses[application.status] ?? 'bg-surface-100 text-surface-600 ring-surface-200'"
-                >
-                  {{ application.status }}
-                </span>
-                <span class="text-sm text-surface-400">
-                  Applied {{ new Date(application.createdAt).toLocaleDateString() }}
-                </span>
-              </div>
-
-              <div v-if="allowedTransitions.length > 0" class="flex flex-wrap items-center gap-2">
-                <span class="text-xs font-medium text-surface-500 dark:text-surface-400 mr-0.5">Move to:</span>
-                <button
-                  v-for="nextStatus in allowedTransitions"
-                  :key="nextStatus"
-                  :disabled="isTransitioning"
-                  class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50"
-                  :class="transitionClasses[nextStatus] ?? 'border border-surface-300 text-surface-600 hover:bg-surface-50'"
-                  @click="handleTransition(nextStatus)"
-                >
-                  {{ transitionLabels[nextStatus] ?? nextStatus }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Candidate info -->
-            <div class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-5 shadow-sm shadow-surface-900/[0.03] dark:shadow-none">
-              <div class="flex items-center gap-2.5 mb-4">
-                <div class="flex size-7 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/40">
-                  <User class="size-3.5 text-brand-600 dark:text-brand-400" />
-                </div>
-                <h3 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Candidate</h3>
-              </div>
-              <dl class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">Name</dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    {{ formatCandidateName(application.candidate) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">Email</dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium truncate">
-                    <a
-                      :href="`mailto:${application.candidate.email}`"
-                      target="_blank"
-                      class="hover:text-brand-600 dark:hover:text-brand-400 hover:underline cursor-pointer transition-colors"
-                    >{{ application.candidate.email }}</a>
-                  </dd>
-                </div>
-                <div v-if="application.candidate.phone">
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">Phone</dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    {{ application.candidate.phone }}
-                  </dd>
-                </div>
-                <div v-if="candidateData?.retention?.enabled">
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">
-                    Data retention
-                  </dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    <template v-if="candidateData.retention.quarantinedAt">
-                      Quarantined · purge {{ formatDateTime(candidateData.retention.scheduledPurgeAt) }}
-                    </template>
-                    <template v-else>
-                      {{ candidateData.retention.status }} · {{ formatDateTime(candidateData.retention.expiresAt) }}
-                    </template>
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            <!-- Application details -->
-            <div class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-5 shadow-sm shadow-surface-900/[0.03] dark:shadow-none">
-              <div class="flex items-center gap-2.5 mb-4">
-                <div class="flex size-7 items-center justify-center rounded-lg bg-info-50 dark:bg-info-950/40">
-                  <Hash class="size-3.5 text-info-600 dark:text-info-400" />
-                </div>
-                <h3 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Details</h3>
-              </div>
-              <dl class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">Score</dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    {{ application.score ?? '—' }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1">Status</dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium capitalize">
-                    {{ application.status }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1 inline-flex items-center gap-1">
-                    <Calendar class="size-3.5" />
-                    Applied
-                  </dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    {{ new Date(application.createdAt).toLocaleDateString() }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs font-medium text-surface-400 dark:text-surface-500 mb-1 inline-flex items-center gap-1">
-                    <Clock class="size-3.5" />
-                    Updated
-                  </dt>
-                  <dd class="text-surface-800 dark:text-surface-200 font-medium">
-                    {{ new Date(application.updatedAt).toLocaleDateString() }}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            <!-- Notes -->
-            <div class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-5 shadow-sm shadow-surface-900/[0.03] dark:shadow-none">
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center gap-2.5">
-                  <div class="flex size-7 items-center justify-center rounded-lg bg-warning-50 dark:bg-warning-950/40">
-                    <MessageSquare class="size-3.5 text-warning-600 dark:text-warning-400" />
-                  </div>
-                  <h3 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Notes</h3>
-                </div>
-                <button
-                  v-if="!isEditingNotes"
-                  class="text-xs text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 font-medium transition-colors"
-                  @click="startEditNotes"
-                >
-                  {{ application.notes ? 'Edit' : 'Add Notes' }}
-                </button>
-              </div>
-
-              <div v-if="isEditingNotes">
-                <textarea
-                  v-model="notesInput"
-                  rows="4"
-                  placeholder="Add notes about this application…"
-                  class="w-full rounded-lg border border-surface-300 dark:border-surface-700 bg-white dark:bg-surface-800 px-3 py-2 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
-                />
-                <div class="flex items-center gap-2 mt-2">
-                  <button
-                    :disabled="isSavingNotes"
-                    class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-                    @click="saveNotes"
-                  >
-                    {{ isSavingNotes ? 'Saving…' : 'Save' }}
-                  </button>
-                  <button
-                    class="rounded-lg border border-surface-300 dark:border-surface-600 px-3 py-1.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
-                    @click="isEditingNotes = false"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-
-              <p
-                v-else-if="application.notes"
-                class="text-sm leading-relaxed text-surface-600 dark:text-surface-300 whitespace-pre-wrap"
-              >
-                {{ application.notes }}
+              <p class="text-xs text-surface-500 dark:text-surface-400 truncate">
+                {{ application.job.title }}
               </p>
-              <p v-else class="text-sm text-surface-400 italic">No notes yet.</p>
-            </div>
-
-            <!-- Scheduled interviews -->
-            <div v-if="applicationInterviews.length > 0" class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-5 shadow-sm shadow-surface-900/[0.03] dark:shadow-none">
-              <div class="flex items-center gap-2.5 mb-4">
-                <div class="flex size-7 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/40">
-                  <Calendar class="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <h3 class="text-sm font-semibold text-surface-800 dark:text-surface-200">Interviews</h3>
-              </div>
-              <div class="space-y-3">
-                <div
-                  v-for="iv in applicationInterviews"
-                  :key="iv.id"
-                  class="rounded-lg border border-surface-200/60 dark:border-surface-800/40 p-3"
-                >
-                  <div class="flex items-center justify-between mb-1">
-                    <NuxtLink
-                      :to="$localePath(`/dashboard/interviews/${iv.id}`)"
-                      class="text-sm font-medium text-surface-800 dark:text-surface-200 hover:text-brand-600 dark:hover:text-brand-400 transition-colors truncate"
-                    >
-                      {{ iv.title }}
-                    </NuxtLink>
-                    <span
-                      class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize shrink-0 ml-2"
-                      :class="{
-                        'bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-400': iv.status === 'scheduled',
-                        'bg-success-50 text-success-700 dark:bg-success-950/40 dark:text-success-400': iv.status === 'completed',
-                        'bg-surface-100 text-surface-500 dark:bg-surface-800 dark:text-surface-400': iv.status === 'cancelled' || iv.status === 'no_show',
-                      }"
-                    >
-                      {{ iv.status === 'no_show' ? 'No show' : iv.status }}
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-2 text-xs text-surface-400 dark:text-surface-500">
-                    <span class="font-medium">{{ formatInterviewDate(iv.scheduledAt) }}</span>
-                    <span class="text-surface-200 dark:text-surface-700">&middot;</span>
-                    <span>{{ interviewTypeLabels[iv.type] ?? iv.type }}</span>
-                    <span class="text-surface-200 dark:text-surface-700">&middot;</span>
-                    <span>{{ iv.duration }} min</span>
-                  </div>
-                  <div class="mt-2">
-                    <a
-                      v-if="iv.googleCalendarEventLink"
-                      :href="iv.googleCalendarEventLink"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 transition-colors"
-                    >
-                      <Calendar class="size-2.5" />
-                      Open in Google Calendar
-                      <ExternalLink class="size-2" />
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Quick links -->
-            <div class="flex items-center gap-4 pt-1">
-              <NuxtLink
-                :to="$localePath(`/dashboard/candidates/${application.candidate.id}`)"
-                class="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 font-medium transition-colors"
-              >
-                <ExternalLink class="size-3.5" />
-                Full candidate profile
-              </NuxtLink>
-              <NuxtLink
-                :to="$localePath(`/dashboard/applications/${application.id}`)"
-                class="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 font-medium transition-colors"
-              >
-                <ExternalLink class="size-3.5" />
-                Full application page
-              </NuxtLink>
             </div>
           </div>
-
-          <!-- ═══════════════════════════════════════ -->
-          <!-- DOCUMENTS TAB                           -->
-          <!-- ═══════════════════════════════════════ -->
-          <div v-if="activeTab === 'documents'" class="space-y-4">
-            <!-- Hidden file input -->
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".pdf,.doc,.docx"
-              class="hidden"
-              @change="handleFileSelected"
-            />
-
-            <!-- ── Inline PDF preview (replaces document list when active) ── -->
-            <template v-if="showPreview">
-              <!-- Preview toolbar -->
-              <div class="flex items-center justify-between">
-                <button
-                  class="inline-flex items-center gap-1.5 text-sm font-medium text-surface-600 dark:text-surface-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
-                  @click="closePreview"
-                >
-                  <ArrowLeft class="size-3.5" />
-                  Back to documents
-                </button>
-                <div class="flex items-center gap-1">
-                  <button
-                    v-if="previewDocId"
-                    class="rounded-lg p-1.5 text-surface-400 hover:text-brand-600 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-                    title="Download"
-                    @click="handleDownload(previewDocId!)"
-                  >
-                    <Download class="size-4" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Filename -->
-              <div v-if="previewFilename" class="flex items-center gap-2">
-                <FileText class="size-4 text-surface-400 shrink-0" />
-                <span class="text-sm font-medium text-surface-700 dark:text-surface-200 truncate">
-                  {{ previewFilename }}
-                </span>
-              </div>
-
-              <!-- Error state -->
-              <div
-                v-if="previewError"
-                class="rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950 p-6 text-center"
-              >
-                <AlertTriangle class="size-8 text-danger-400 mx-auto mb-2" />
-                <p class="text-sm text-danger-700 dark:text-danger-400">{{ previewError }}</p>
-                <button
-                  class="mt-3 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium"
-                  @click="closePreview"
-                >
-                  Go back
-                </button>
-              </div>
-
-              <!-- PDF iframe — same-origin, server streams the bytes -->
-              <iframe
-                v-else-if="previewUrl && isPdfPreview"
-                :src="previewUrl"
-                class="w-full rounded-lg border border-surface-200 dark:border-surface-800"
-                style="height: calc(100vh - 280px);"
-                title="Document preview"
-              />
-            </template>
-
-            <!-- ── Document list (normal state) ── -->
-            <template v-else>
-              <!-- Upload controls -->
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <select
-                    v-model="selectedDocType"
-                    class="rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-sm text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="resume">Resume</option>
-                    <option value="cover_letter">Cover Letter</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <button
-                  :disabled="isUploading"
-                  class="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 dark:border-surface-600 px-3 py-1.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  @click="triggerFileSelect"
-                >
-                  <Upload class="size-3.5" />
-                  {{ isUploading ? 'Uploading…' : 'Upload Document' }}
-                </button>
-              </div>
-
-              <!-- Upload error -->
-              <div
-                v-if="uploadError"
-                class="rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950 p-3 text-sm text-danger-700 dark:text-danger-400"
-              >
-                {{ uploadError }}
-                <button class="underline ml-1" @click="uploadError = null">Dismiss</button>
-              </div>
-
-              <!-- Empty state -->
-              <div
-                v-if="documents.length === 0"
-                class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-8 text-center shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-              >
-                <div class="flex size-14 items-center justify-center rounded-2xl bg-surface-100 dark:bg-surface-800/60 mx-auto mb-3">
-                  <FileText class="size-6 text-surface-400 dark:text-surface-500" />
-                </div>
-                <p class="text-sm font-medium text-surface-600 dark:text-surface-300">No documents yet.</p>
-                <p class="text-xs text-surface-400 dark:text-surface-500 mt-1">
-                  Upload a resume, cover letter, or other document (PDF, DOC, DOCX — max 10 MB).
-                </p>
-              </div>
-
-              <!-- Document list -->
-              <div v-else class="space-y-2">
-                <div
-                  v-for="doc in documents"
-                  :key="doc.id"
-                  class="group flex items-center justify-between rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 px-4 py-3 shadow-sm shadow-surface-900/[0.03] dark:shadow-none transition-colors"
-                  :class="doc.mimeType === 'application/pdf' ? 'cursor-pointer hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50/50 dark:hover:bg-brand-950/30' : ''"
-                  @click="doc.mimeType === 'application/pdf' ? handlePreview(doc.id, doc.mimeType) : undefined"
-                >
-                  <div class="flex items-center gap-3 min-w-0">
-                    <FileText class="size-4 shrink-0" :class="doc.mimeType === 'application/pdf' ? 'text-danger-500 dark:text-danger-400' : 'text-surface-400'" />
-                    <div class="min-w-0">
-                      <p class="text-sm font-medium text-surface-700 dark:text-surface-200 truncate">
-                        {{ doc.originalFilename }}
-                      </p>
-                      <span class="text-xs text-surface-400">
-                        {{ documentTypeLabels[doc.type] ?? doc.type }}
-                        · {{ new Date(doc.createdAt).toLocaleDateString() }}
-                        <template v-if="doc.parsed === false">
-                          · <span class="text-warning-500 dark:text-warning-400">Text extraction failed</span>
-                        </template>
-                        <template v-else-if="doc.mimeType === 'application/pdf'"> · <span class="text-brand-500 dark:text-brand-400">Click to preview</span></template>
-                      </span>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-1 shrink-0" @click.stop>
-                    <button
-                      v-if="doc.parsed === false"
-                      :disabled="reparsingDocId === doc.id"
-                      class="rounded-lg p-1.5 text-warning-500 hover:text-brand-600 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:opacity-50"
-                      title="Retry text extraction"
-                      @click="handleReparse(doc.id)"
-                    >
-                      <RefreshCw class="size-4" :class="{ 'animate-spin': reparsingDocId === doc.id }" />
-                    </button>
-                    <button
-                      v-if="doc.mimeType === 'application/pdf'"
-                      class="rounded-lg p-1.5 text-surface-400 hover:text-brand-600 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-                      title="Preview PDF"
-                      @click="handlePreview(doc.id, doc.mimeType)"
-                    >
-                      <Eye class="size-4" />
-                    </button>
-                    <button
-                      class="rounded-lg p-1.5 text-surface-400 hover:text-brand-600 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-                      title="Download"
-                      @click="handleDownload(doc.id)"
-                    >
-                      <Download class="size-4" />
-                    </button>
-                    <button
-                      class="rounded-lg p-1.5 text-surface-400 hover:text-danger-600 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
-                      title="Delete"
-                      @click="showDocDeleteConfirm = doc.id"
-                    >
-                      <Trash2 class="size-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
-          <!-- ═══════════════════════════════════════ -->
-          <!-- RESPONSES TAB                           -->
-          <!-- ═══════════════════════════════════════ -->
-          <div v-if="activeTab === 'responses'" class="space-y-3">
-            <div
-              v-if="responsesCount === 0"
-              class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-8 text-center shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-            >
-              <div class="flex size-14 items-center justify-center rounded-2xl bg-surface-100 dark:bg-surface-800/60 mx-auto mb-3">
-                <FileText class="size-6 text-surface-400 dark:text-surface-500" />
-              </div>
-              <p class="text-sm font-medium text-surface-600 dark:text-surface-300">No application responses.</p>
-            </div>
-
-            <div v-else class="space-y-3">
-              <div
-                v-for="response in application.responses"
-                :key="response.id"
-                class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-4 shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-              >
-                <dt class="text-xs font-semibold text-surface-400 dark:text-surface-500 mb-1.5 uppercase tracking-wider">
-                  {{ response.question?.label ?? 'Unknown question' }}
-                </dt>
-                <dd class="text-sm text-surface-700 dark:text-surface-200 leading-relaxed">
-                  {{ formatResponseValue(response.value) }}
-                </dd>
-              </div>
-            </div>
-          </div>
-
-          <!-- ═══════════════════════════════════════ -->
-          <!-- AI ANALYSIS TAB                         -->
-          <!-- ═══════════════════════════════════════ -->
-          <div v-if="activeTab === 'ai_analysis'">
-            <ScoreBreakdown :application-id="props.applicationId" @scored="refresh(); emit('updated')" />
-          </div>
-
-          <!-- ═══════════════════════════════════════ -->
-          <!-- TIMELINE TAB                            -->
-          <!-- ═══════════════════════════════════════ -->
-          <div v-if="activeTab === 'timeline'" class="space-y-1">
-            <!-- Loading -->
-            <div v-if="timelineLoading" class="text-center py-12 text-surface-400">
-              <div class="size-6 rounded-full border-2 border-brand-200 border-t-brand-600 dark:border-brand-800 dark:border-t-brand-400 animate-spin mx-auto mb-3" />
-              Loading timeline…
-            </div>
-
-            <!-- Error -->
-            <div
-              v-else-if="timelineError"
-              class="rounded-xl border border-danger-200/80 dark:border-danger-800/60 bg-danger-50 dark:bg-danger-950/40 p-5 text-center"
-            >
-              <AlertTriangle class="size-6 text-danger-400 mx-auto mb-2" />
-              <p class="text-sm text-danger-700 dark:text-danger-400">{{ timelineError }}</p>
-              <button
-                class="mt-3 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium"
-                @click="loadTimeline"
-              >
-                Retry
-              </button>
-            </div>
-
-            <!-- Empty -->
-            <div
-              v-else-if="timelineItems.length === 0"
-              class="rounded-xl border border-surface-200/80 dark:border-surface-800/60 bg-white dark:bg-surface-950 p-8 text-center shadow-sm shadow-surface-900/[0.03] dark:shadow-none"
-            >
-              <div class="flex size-14 items-center justify-center rounded-2xl bg-surface-100 dark:bg-surface-800/60 mx-auto mb-3">
-                <History class="size-6 text-surface-400 dark:text-surface-500" />
-              </div>
-              <p class="text-sm font-medium text-surface-600 dark:text-surface-300">No activity recorded yet.</p>
-              <p class="text-xs text-surface-400 dark:text-surface-500 mt-1">Activity for this candidate will appear here.</p>
-            </div>
-
-            <!-- Timeline list -->
-            <div v-else>
-              <div
-                v-for="(item, index) in timelineItems"
-                :key="item.id"
-                class="flex gap-3 py-2 group"
-              >
-                <!-- Dot + connector -->
-                <div class="flex flex-col items-center shrink-0 mt-[3px]">
-                  <div
-                    class="size-[9px] rounded-full ring-2 ring-white dark:ring-surface-950 shrink-0"
-                    :class="getTimelineActionColor(item.action)"
-                  />
-                  <div
-                    v-if="index < timelineItems.length - 1"
-                    class="w-px flex-1 min-h-[14px] bg-surface-200 dark:bg-surface-700 mt-1"
-                  />
-                </div>
-
-                <!-- Content -->
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm text-surface-700 dark:text-surface-200 leading-snug">
-                    {{ describeTimelineItem(item) }}
-                  </p>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    <span class="text-[11px] text-surface-400 dark:text-surface-500 tabular-nums">
-                      {{ formatTimelineDate(item.createdAt) }}
-                    </span>
-                    <span
-                      v-if="item.jobTitle"
-                      class="text-[10px] text-surface-400 dark:text-surface-500 bg-surface-100 dark:bg-surface-800 rounded px-1.5 py-0.5 truncate max-w-[140px]"
-                    >
-                      {{ item.jobTitle }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </template>
+        </div>
+        <div v-else-if="fetchStatus === 'pending'" class="flex items-center gap-2 text-sm text-surface-400">
+          <RefreshCw class="size-4 animate-spin" />Loading candidate…
+        </div>
+        <button
+          type="button"
+          class="ml-3 shrink-0 rounded-lg p-2 text-surface-400 hover:bg-surface-100 hover:text-surface-600 dark:hover:bg-surface-800 dark:hover:text-surface-200 transition-colors"
+          aria-label="Close candidate details"
+          @click="emit('close')"
+        >
+          <X class="size-5" />
+        </button>
       </div>
+
+      <div v-if="application" class="flex-1 overflow-y-auto">
+        <div class="border-b border-surface-200 dark:border-surface-800 px-4 sm:px-6">
+          <nav class="flex gap-1 overflow-x-auto" aria-label="Candidate detail tabs">
+            <button v-for="tab in [
+              { key: 'overview', label: 'Overview' },
+              { key: 'documents', label: `Documents (${documents.length})` },
+              { key: 'responses', label: `Responses (${responsesCount})` },
+              { key: 'ai_analysis', label: 'AI Analysis' },
+              { key: 'timeline', label: 'Timeline' },
+            ]" :key="tab.key" type="button" class="shrink-0 border-b-2 px-3 py-3 text-xs font-medium transition-colors" :class="activeTab === tab.key ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400' : 'border-transparent text-surface-500 hover:text-surface-700 dark:text-surface-400 dark:hover:text-surface-200'" @click="activeTab = tab.key as typeof activeTab">
+              {{ tab.label }}
+            </button>
+          </nav>
+        </div>
+
+        <div class="p-4 sm:p-6">
+          <div v-if="activeTab === 'overview'" class="space-y-6">
+            <section>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-surface-400 mb-3">Contact</h3>
+              <div class="space-y-2.5 text-sm">
+                <div class="flex items-center gap-2 text-surface-700 dark:text-surface-300"><Mail class="size-4 text-surface-400" />{{ application.candidate.email }}</div>
+                <div v-if="application.candidate.phone" class="flex items-center gap-2 text-surface-700 dark:text-surface-300"><Phone class="size-4 text-surface-400" />{{ application.candidate.phone }}</div>
+              </div>
+            </section>
+
+            <section>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-surface-400 mb-3">Application</h3>
+              <dl class="grid grid-cols-2 gap-3 text-sm">
+                <div><dt class="text-xs text-surface-400">Status</dt><dd class="mt-1"><span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset capitalize" :class="statusBadgeClasses[application.status] ?? statusBadgeClasses.new">{{ application.status }}</span></dd></div>
+                <div><dt class="text-xs text-surface-400">Applied</dt><dd class="mt-1 text-surface-700 dark:text-surface-300">{{ formatDateTime(application.createdAt) }}</dd></div>
+              </dl>
+            </section>
+
+            <section>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-surface-400 mb-3">Notes</h3>
+              <div v-if="isEditingNotes" class="space-y-2">
+                <textarea v-model="notesInput" rows="4" class="w-full rounded-lg border border-surface-300 dark:border-surface-700 bg-white dark:bg-surface-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <div class="flex gap-2"><button type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white" :disabled="isSavingNotes" @click="saveNotes">{{ isSavingNotes ? 'Saving…' : 'Save' }}</button><button type="button" class="rounded-lg border border-surface-300 px-3 py-1.5 text-xs font-medium text-surface-600 dark:text-surface-300" @click="isEditingNotes = false">Cancel</button></div>
+              </div>
+              <button v-else type="button" class="w-full rounded-lg border border-dashed border-surface-300 dark:border-surface-700 px-3 py-3 text-left text-sm text-surface-500 hover:border-brand-300 hover:text-brand-600 transition-colors" @click="startEditNotes">
+                <span v-if="application.notes">{{ application.notes }}</span><span v-else>Add recruiter notes…</span>
+              </button>
+            </section>
+
+            <section v-if="allowedTransitions.length">
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-surface-400 mb-3">Move Application</h3>
+              <div class="flex flex-wrap gap-2"><button v-for="nextStatus in allowedTransitions" :key="nextStatus" type="button" :disabled="isTransitioning" class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50" :class="transitionClasses[nextStatus] ?? transitionClasses.new" @click="handleTransition(nextStatus)">{{ transitionLabels[nextStatus] ?? nextStatus }}</button></div>
+            </section>
+          </div>
+
+          <div v-else-if="activeTab === 'documents'" class="space-y-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <select v-model="selectedDocType" class="rounded-lg border border-surface-300 dark:border-surface-700 bg-white dark:bg-surface-800 px-2.5 py-2 text-xs"><option value="resume">Resume</option><option value="cover_letter">Cover Letter</option><option value="other">Other</option></select>
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white" :disabled="isUploading" @click="triggerFileSelect"><Upload class="size-3.5" />{{ isUploading ? 'Uploading…' : 'Upload document' }}</button>
+              <input ref="fileInput" type="file" class="hidden" accept=".pdf,.doc,.docx" @change="handleFileSelected" />
+            </div>
+            <p v-if="uploadError" class="text-xs text-danger-600">{{ uploadError }}</p>
+            <div v-if="documents.length" class="space-y-2"><div v-for="doc in documents" :key="doc.id" class="rounded-xl border border-surface-200 dark:border-surface-700 p-3"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><p class="truncate text-sm font-medium text-surface-800 dark:text-surface-100">{{ doc.originalFilename }}</p><p class="mt-0.5 text-xs text-surface-400">{{ documentTypeLabels[doc.type] ?? doc.type }} · {{ formatDateTime(doc.createdAt) }}</p></div><div class="flex shrink-0 gap-1"><button type="button" class="rounded-md p-1.5 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800" title="Preview" @click="openPreview(doc.id, doc.originalFilename, doc.mimeType)"><Eye class="size-4" /></button><button type="button" class="rounded-md p-1.5 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800" title="Download" @click="handleDownload(doc.id, doc.originalFilename)"><Download class="size-4" /></button><button type="button" class="rounded-md p-1.5 text-surface-500 hover:bg-surface-100 dark:hover:bg-surface-800" title="Reparse" :disabled="reparsingDocId === doc.id" @click="reparseDocument(doc.id)"><RefreshCw class="size-4" :class="{ 'animate-spin': reparsingDocId === doc.id }" /></button><button type="button" class="rounded-md p-1.5 text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-950" title="Delete" @click="showDocDeleteConfirm = doc.id"><Trash2 class="size-4" /></button></div></div><div v-if="showDocDeleteConfirm === doc.id" class="mt-3 rounded-lg bg-danger-50 p-3 text-xs dark:bg-danger-950/30"><p class="text-danger-700 dark:text-danger-300">Delete this document?</p><div class="mt-2 flex gap-2"><button type="button" class="rounded bg-danger-600 px-2.5 py-1 text-white" :disabled="isDeletingDoc" @click="handleDeleteDocument(doc.id)">Delete</button><button type="button" class="rounded border border-surface-300 px-2.5 py-1" @click="showDocDeleteConfirm = null">Cancel</button></div></div></div></div>
+            <p v-else class="py-8 text-center text-sm text-surface-400">No documents uploaded.</p>
+          </div>
+
+          <div v-else-if="activeTab === 'responses'" class="space-y-4">
+            <div v-if="application.responses?.length" class="space-y-3"><div v-for="response in application.responses" :key="response.id" class="rounded-xl border border-surface-200 dark:border-surface-700 p-4"><p class="text-sm font-medium text-surface-800 dark:text-surface-100">{{ response.question?.label ?? 'Question' }}</p><p class="mt-1.5 text-sm text-surface-600 dark:text-surface-300">{{ formatResponseValue(response.value) }}</p></div></div><p v-else class="py-8 text-center text-sm text-surface-400">No application responses.</p>
+          </div>
+
+          <div v-else-if="activeTab === 'ai_analysis'" class="space-y-4">
+            <div class="rounded-xl border border-surface-200 dark:border-surface-700 p-4"><div class="flex items-start gap-3"><Brain class="mt-0.5 size-5 text-brand-500" /><div><h3 class="text-sm font-semibold">AI Analysis</h3><p class="mt-1 text-xs text-surface-500">AI scoring is advisory only. Recruiter judgement remains the hiring decision.</p></div></div><button type="button" class="mt-4 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50" :disabled="aiStatus === 'loading'" @click="runAiAnalysis">{{ aiStatus === 'loading' ? 'Analysing…' : 'Run analysis' }}</button></div>
+            <p v-if="aiError" class="text-xs text-danger-600">{{ aiError }}</p>
+            <pre v-if="aiResult" class="max-h-80 overflow-auto rounded-xl bg-surface-50 p-4 text-xs dark:bg-surface-800">{{ JSON.stringify(aiResult, null, 2) }}</pre>
+          </div>
+
+          <div v-else-if="activeTab === 'timeline'" class="space-y-4">
+            <button v-if="!timelineLoaded && !timelineLoading" type="button" class="rounded-lg border border-surface-300 px-3 py-2 text-xs font-medium" @click="loadTimeline"><History class="mr-1 inline size-3.5" />Load timeline</button><div v-if="timelineLoading" class="py-8 text-center text-sm text-surface-400">Loading timeline…</div><p v-if="timelineError" class="text-xs text-danger-600">{{ timelineError }}</p><div v-if="timelineLoaded && timelineItems.length" class="space-y-3"><div v-for="item in timelineItems" :key="item.id" class="flex gap-3"><span class="mt-1.5 size-2 shrink-0 rounded-full" :class="getTimelineActionColor(item.action)" /><div><p class="text-sm text-surface-700 dark:text-surface-300">{{ describeTimelineItem(item) }}</p><p class="mt-0.5 text-xs text-surface-400">{{ formatTimelineDate(item.createdAt) }}</p></div></div></div><p v-else-if="timelineLoaded" class="py-8 text-center text-sm text-surface-400">No timeline activity.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview overlay -->
+      <div v-if="showPreview" class="absolute inset-0 z-10 flex flex-col bg-white dark:bg-surface-900"><div class="flex items-center gap-3 border-b border-surface-200 dark:border-surface-800 px-4 py-3"><button type="button" class="rounded-lg p-1.5 hover:bg-surface-100 dark:hover:bg-surface-800" @click="closePreview"><ArrowLeft class="size-4" /></button><div class="min-w-0 flex-1"><p class="truncate text-sm font-medium">{{ previewFilename }}</p></div><a v-if="previewUrl" :href="previewUrl" target="_blank" rel="noopener" class="rounded-lg p-1.5 hover:bg-surface-100 dark:hover:bg-surface-800"><ExternalLink class="size-4" /></a></div><div class="flex-1 overflow-hidden"><div v-if="isLoadingPreview" class="flex h-full items-center justify-center"><RefreshCw class="size-6 animate-spin text-brand-500" /></div><div v-else-if="previewError" class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center"><AlertTriangle class="size-8 text-warning-500" /><p class="text-sm text-surface-600 dark:text-surface-300">{{ previewError }}</p></div><iframe v-else-if="isPdfPreview && previewUrl" :src="previewUrl" class="h-full w-full" title="Document preview" /><div v-else-if="previewUrl" class="flex h-full flex-col items-center justify-center gap-3"><FileText class="size-10 text-surface-400" /><p class="text-sm text-surface-500">Preview is not available for this file type.</p><a :href="previewUrl" target="_blank" rel="noopener" class="text-sm font-medium text-brand-600">Open document</a></div></div></div>
     </aside>
   </Transition>
-
-  <!-- Interview Schedule Sidebar -->
-  <InterviewScheduleSidebar
-    v-if="showScheduleSidebar && application"
-    :application-id="props.applicationId"
-    :candidate-name="`${application.candidate.firstName} ${application.candidate.lastName}`"
-    :job-title="application.job?.title ?? ''"
-    @close="showScheduleSidebar = false"
-    @scheduled="showScheduleSidebar = false"
-  />
-
-
-
-  <!-- Document delete confirmation dialog -->
-  <Teleport to="body">
-    <div v-if="showDocDeleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="absolute inset-0 bg-black/50" @click="showDocDeleteConfirm = null" />
-      <div class="relative bg-white dark:bg-surface-900 rounded-2xl shadow-2xl shadow-surface-900/10 dark:shadow-black/30 ring-1 ring-surface-200/80 dark:ring-surface-700/60 p-6 max-w-sm w-full mx-4">
-        <h3 class="text-lg font-semibold text-surface-900 dark:text-surface-50 mb-2">Delete Document</h3>
-        <p class="text-sm text-surface-600 dark:text-surface-400 mb-4">
-          Are you sure you want to delete this document? This action cannot be undone.
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            :disabled="isDeletingDoc"
-            class="rounded-lg border border-surface-300 dark:border-surface-600 px-3 py-1.5 text-sm font-medium text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
-            @click="showDocDeleteConfirm = null"
-          >
-            Cancel
-          </button>
-          <button
-            :disabled="isDeletingDoc"
-            class="rounded-lg bg-danger-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50 transition-colors"
-            @click="handleDeleteDoc(showDocDeleteConfirm!)"
-          >
-            {{ isDeletingDoc ? 'Deleting…' : 'Delete' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
-
-<style scoped>
-.slide-enter-active,
-.slide-leave-active {
-  transition: transform 0.2s ease;
-}
-.slide-enter-from,
-.slide-leave-to {
-  transform: translateX(100%);
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>
