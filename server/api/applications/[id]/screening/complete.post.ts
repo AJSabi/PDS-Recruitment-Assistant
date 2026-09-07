@@ -58,7 +58,17 @@ export default defineEventHandler(async (event) => {
   const finalStatus = completionStageForDecision(body.recommendedNextStep)
   const now = new Date()
 
-  const [updatedScreening] = await db.update(recruiterScreeningSession).set({ status: 'completed', finalFit: body.finalFit, recommendedNextStep: body.recommendedNextStep, validationFocus: body.validationFocus, completedAt: now, updatedAt: now }).where(eq(recruiterScreeningSession.id, screening.id)).returning()
+  const [updatedScreening] = await db.update(recruiterScreeningSession).set({
+    status: 'completed',
+    finalFit: body.finalFit,
+    recommendedNextStep: body.recommendedNextStep,
+    conversationBrief: body.conversationBrief ?? screening.conversationBrief,
+    recruiterNotes: body.conversationBrief ?? screening.recruiterNotes,
+    recommendation: body.recommendedNextStep,
+    validationFocus: body.validationFocus,
+    completedAt: now,
+    updatedAt: now,
+  }).where(eq(recruiterScreeningSession.id, screening.id)).returning()
 
   await db.update(recruitmentApplicationProfile).set({
     currentFit: body.finalFit,
