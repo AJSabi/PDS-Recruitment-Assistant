@@ -21,9 +21,28 @@ export default defineEventHandler(async (event) => {
       ? and(eq(application.organizationId, orgId), inArray(application.jobId, visibleRequirementIds))
       : and(eq(application.organizationId, orgId), inArray(application.jobId, ['__no_visible_requirement__']))
 
+  const visibleCandidateRows = visibleRequirementIds === null
+    ? null
+    : visibleRequirementIds.length
+      ? await db.selectDistinct({ candidateId: application.candidateId })
+          .from(application)
+          .where(and(eq(application.organizationId, orgId), inArray(application.jobId, visibleRequirementIds)))
+      : []
+  const visibleCandidateIds = visibleCandidateRows?.map(row => row.candidateId) ?? null
+  const candidateWhere = visibleCandidateIds === null
+    ? and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt))
+    : visibleCandidateIds.length
+      ? and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt), inArray(candidate.id, visibleCandidateIds))
+      : and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt), inArray(candidate.id, ['__no_visible_candidate__']))
+  const documentWhere = visibleCandidateIds === null
+    ? and(eq(document.organizationId, orgId), eq(document.type, 'resume'))
+    : visibleCandidateIds.length
+      ? and(eq(document.organizationId, orgId), eq(document.type, 'resume'), inArray(document.candidateId, visibleCandidateIds))
+      : and(eq(document.organizationId, orgId), eq(document.type, 'resume'), inArray(document.candidateId, ['__no_visible_candidate__']))
+
   const [candidates, applications, resumes, users] = await Promise.all([
     db.select({ candidateId: candidate.id, firstName: candidate.firstName, lastName: candidate.lastName, email: candidate.email, phone: candidate.phone, createdAt: candidate.createdAt, updatedAt: candidate.updatedAt })
-      .from(candidate).where(and(eq(candidate.organizationId, orgId), isNull(candidate.quarantinedAt))).orderBy(desc(candidate.updatedAt)),
+      .from(candidate).where(candidateWhere).orderBy(desc(candidate.updatedAt)),
 
     db.select({
       applicationId: application.id,
@@ -48,7 +67,7 @@ export default defineEventHandler(async (event) => {
       .where(applicationWhere),
 
     db.select({ candidateId: document.candidateId, documentId: document.id, originalFilename: document.originalFilename, createdAt: document.createdAt })
-      .from(document).where(and(eq(document.organizationId, orgId), eq(document.type, 'resume'))).orderBy(desc(document.createdAt)),
+      .from(document).where(documentWhere).orderBy(desc(document.createdAt)),
 
     db.select({ id: user.id, name: user.name })
       .from(member)
