@@ -107,6 +107,7 @@ jobs:
           e2e/critical-flows/pds-recruitment-governance.spec.ts
           e2e/critical-flows/pds-screening-governance.spec.ts
           e2e/critical-flows/pds-candidate-preservation.spec.ts
+          e2e/critical-flows/pds-identity-conflict-resolution.spec.ts
           --project=chromium
 
       - name: Show server log on failure
