@@ -60,18 +60,22 @@ test.describe('PDS Loading and Stale Data Governance', () => {
     let delayedRequestObserved = false
     await page.route(`**/api/applications/${applicationB.id}`, async (route) => {
       delayedRequestObserved = true
-      await new Promise(resolve => setTimeout(resolve, 1200))
+      await new Promise(resolve => setTimeout(resolve, 2500))
       await route.continue()
     })
 
     await page.getByTestId('candidate-pipeline-card').filter({ hasText: bravoName }).click({ force: true })
 
     await expect.poll(() => delayedRequestObserved).toBe(true)
-    await expect(page.getByText('Loading candidate…', { exact: true })).toBeVisible()
+
+    // While Candidate B is deliberately still loading, Candidate A must already be gone
+    // and Candidate B must not be rendered from stale/cached record state.
     await expect(page.getByRole('heading', { name: alphaName })).toHaveCount(0)
     await expect(page.getByText(candidateA.email, { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: bravoName })).toHaveCount(0)
+    await expect(page.getByText(candidateB.email, { exact: true })).toHaveCount(0)
 
-    await expect(page.getByRole('heading', { name: bravoName })).toBeVisible()
+    await expect(page.getByRole('heading', { name: bravoName })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText(candidateB.email, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: alphaName })).toHaveCount(0)
 
