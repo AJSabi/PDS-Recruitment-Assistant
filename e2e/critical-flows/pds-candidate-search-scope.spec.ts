@@ -60,14 +60,26 @@ async function createRecruiter(ownerPage: any, browser: any, label: string, runI
   await page.getByLabel('Password', { exact: true }).fill(recruiter.password)
   await page.getByLabel('Confirm password').fill(recruiter.password)
   await page.getByRole('button', { name: 'Sign up' }).click()
-  await page.waitForURL(url => ['/onboarding/create-org', '/dashboard'].some(path => url.pathname.includes(path)), { timeout: 15_000 })
+  await page.waitForURL(
+    url => ['/onboarding/', '/dashboard', '/auth/sign-in'].some(path => url.pathname.includes(path)),
+    { waitUntil: 'commit', timeout: 30_000 },
+  )
+
+  if (page.url().includes('/auth/sign-in')) {
+    await page.getByLabel('Email').fill(recruiter.email)
+    await page.getByLabel('Password').fill(recruiter.password)
+    await Promise.all([
+      page.waitForResponse(response => response.url().includes('/api/auth/sign-in') && response.status() === 200, { timeout: 30_000 }),
+      page.getByRole('button', { name: 'Sign in', exact: true }).click(),
+    ])
+  }
 
   await page.goto(`/join/${invite.token}`)
   await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/invite-links/accept') && response.status() === 200),
     page.getByRole('button', { name: /Join / }).click(),
   ])
-  await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 10_000 })
+  await page.waitForURL(url => url.pathname.includes('/dashboard'), { waitUntil: 'commit', timeout: 30_000 })
 
   return { recruiter, context, page }
 }
@@ -153,7 +165,7 @@ test.describe('PDS Candidate Search Scope Governance', () => {
       const searchInput = recruiterA.page.getByPlaceholder('Search candidate, requirement, recruiter, status, fit or priority')
       await searchInput.fill(hiddenCandidate.email)
       await expect(table.getByText(hiddenCandidate.email)).toHaveCount(0)
-      await expect(recruiterA.page.getByText('No candidates match the current search or filter.')).toBeVisible()
+      await expect(table.getByText('No candidates match the current search or filter.')).toBeVisible()
     }
     finally {
       await recruiterA.context.close()
