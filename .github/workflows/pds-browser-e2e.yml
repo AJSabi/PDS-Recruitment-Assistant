@@ -120,6 +120,7 @@ jobs:
           e2e/critical-flows/pds-recoverable-error-governance.spec.ts
           e2e/critical-flows/pds-stale-data-governance.spec.ts
           e2e/critical-flows/pds-terminology-governance.spec.ts
+          e2e/critical-flows/pds-navigation-governance.spec.ts
           --project=chromium
 
       - name: Show server log on failure
