@@ -123,6 +123,7 @@ jobs:
           e2e/critical-flows/pds-navigation-governance.spec.ts
           e2e/critical-flows/pds-date-time-governance.spec.ts
           e2e/critical-flows/pds-responsive-governance.spec.ts
+          e2e/critical-flows/pds-final-closure-governance.spec.ts
           --project=chromium
 
       - name: Show server log on failure
