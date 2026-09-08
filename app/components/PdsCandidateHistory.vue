@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{ applicationId: string }>()
+const { formatTimestamp } = useOrgSettings()
 const { data, status, refresh } = useFetch(() => `/api/applications/${props.applicationId}/history`, {
   key: computed(() => `pds-history-${props.applicationId}`),
   headers: useRequestHeaders(['cookie']),
@@ -28,9 +29,6 @@ const stageLabels: Record<string, string> = {
 
 function label(value?: string | null) {
   return stageLabels[value ?? ''] ?? (value ?? '—').replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-function date(value?: string | Date | null) {
-  return value ? new Date(value).toLocaleString() : '—'
 }
 
 function milestone(item: any) {
@@ -87,7 +85,7 @@ const timeline = computed(() => (data.value?.evidence ?? []).filter(visible))
           <div class="min-w-0 flex-1 rounded-lg border border-surface-200 p-3 dark:border-surface-700">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="text-xs font-semibold text-brand-700 dark:text-brand-300">{{ milestone(item) }}</span>
-              <span class="text-xs text-surface-400">{{ date(item.createdAt) }}</span>
+              <span class="text-xs text-surface-400">{{ formatTimestamp(item.createdAt) || '—' }}</span>
             </div>
             <p v-if="item.summary" class="mt-1 text-sm text-surface-700 dark:text-surface-200">{{ item.summary }}</p>
           </div>
