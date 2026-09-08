@@ -55,31 +55,29 @@ async function createRecruiter(ownerPage: any, browser: any, label: string, runI
   const page = await context.newPage()
 
   await page.goto('/auth/sign-up')
+  await page.waitForLoadState('networkidle')
   await page.getByLabel('Name').fill(recruiter.name)
   await page.getByLabel('Email').fill(recruiter.email)
   await page.getByLabel('Password', { exact: true }).fill(recruiter.password)
   await page.getByLabel('Confirm password').fill(recruiter.password)
-  await page.getByRole('button', { name: 'Sign up' }).click()
-  await page.waitForURL(
-    url => ['/onboarding/', '/dashboard', '/auth/sign-in'].some(path => url.pathname.includes(path)),
-    { waitUntil: 'commit', timeout: 30_000 },
-  )
 
-  if (page.url().includes('/auth/sign-in')) {
-    await page.getByLabel('Email').fill(recruiter.email)
-    await page.getByLabel('Password').fill(recruiter.password)
-    await Promise.all([
-      page.waitForResponse(response => response.url().includes('/api/auth/sign-in') && response.status() === 200, { timeout: 30_000 }),
-      page.getByRole('button', { name: 'Sign in', exact: true }).click(),
-    ])
-  }
+  await Promise.all([
+    page.waitForResponse(response => response.url().includes('/api/auth/sign-up') && response.status() === 200),
+    page.getByRole('button', { name: 'Sign up' }).click(),
+  ])
 
   await page.goto(`/join/${invite.token}`)
+  await page.waitForLoadState('networkidle')
+  await expect(page.getByRole('heading', { name: 'Join organization' })).toBeVisible()
+  await expect(page.getByText('Join as', { exact: false })).toContainText('Member')
+
   await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/invite-links/accept') && response.status() === 200),
     page.getByRole('button', { name: /Join / }).click(),
   ])
-  await page.waitForURL(url => url.pathname.includes('/dashboard'), { waitUntil: 'commit', timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: "You're in!" })).toBeVisible()
+  await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 10_000 })
+  await page.waitForLoadState('networkidle')
 
   return { recruiter, context, page }
 }
