@@ -37,7 +37,7 @@ test.describe('PDS Navigation Governance', () => {
 
     await page.getByTestId('requirement-tab-pipeline').click()
     await page.waitForURL(url => url.pathname === `/dashboard/jobs/${requirement.id}/candidates`)
-    await expect(page.getByText(requirement.title, { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: requirement.title, exact: true })).toBeVisible()
 
     await page.getByTestId('requirement-tab-overview').click()
     await page.waitForURL(url => url.pathname === `/dashboard/jobs/${requirement.id}`)
@@ -45,6 +45,6 @@ test.describe('PDS Navigation Governance', () => {
 
     await page.getByTestId('requirement-tab-all').click()
     await page.waitForURL(url => url.pathname === '/dashboard/jobs')
-    await expect(page.getByText(requirement.title, { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: requirement.title, exact: true })).toBeVisible()
   })
 })
