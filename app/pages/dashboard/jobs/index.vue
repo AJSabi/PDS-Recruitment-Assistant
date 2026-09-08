@@ -19,6 +19,7 @@ useSeoMeta({ title: 'Requirements', description: 'PDS recruitment requirements' 
 
 const localePath = useLocalePath()
 const { jobs, fetchStatus, error, refresh } = useJobs()
+const { formatDateTime } = useOrgSettings()
 const { data: scope } = useFetch('/api/recruitment-scope', {
   key: 'pds-requirements-scope',
   headers: useRequestHeaders(['cookie']),
@@ -32,11 +33,6 @@ function reload() { void refresh() }
 
 function activeCandidates(pipeline: any) {
   return (pipeline?.new ?? 0) + (pipeline?.screening ?? 0) + (pipeline?.interview ?? 0) + (pipeline?.offer ?? 0)
-}
-
-function formatDate(value?: string | Date | null) {
-  if (!value) return 'Not set'
-  return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const filteredJobs = computed<any[]>(() => {
@@ -128,7 +124,7 @@ const statusClasses: Record<string, string> = {
             </div>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-surface-500">
               <span v-if="item.location" class="inline-flex items-center gap-1"><MapPin class="size-3.5" />{{ item.location }}</span>
-              <span class="inline-flex items-center gap-1"><Clock3 class="size-3.5" />Created {{ formatDate(item.createdAt) }}</span>
+              <span class="inline-flex items-center gap-1"><Clock3 class="size-3.5" />Created {{ formatDateTime(item.createdAt) || 'Not set' }}</span>
             </div>
           </div>
 
