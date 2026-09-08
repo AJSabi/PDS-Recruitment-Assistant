@@ -6,7 +6,7 @@ definePageMeta({ layout: 'dashboard', middleware: ['auth', 'require-org'] })
 const route = useRoute()
 const localePath = useLocalePath()
 const jobId = route.params.id as string
-const { formatPersonName } = useOrgSettings()
+const { formatDateTime, formatPersonName } = useOrgSettings()
 const { job: jobData, status: jobFetchStatus, error: jobError } = useJob(jobId)
 
 const { data: requirementData, status: requirementStatus, error: requirementError } = useFetch(() => `/api/jobs/${jobId}/requirement-profile`, {
@@ -135,7 +135,7 @@ useSeoMeta({ title: computed(() => jobData.value ? `Requirement Command Centre â
         <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
           <p class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Recruiter Allocation</p>
           <p class="mt-2 text-xl font-bold" :class="profile.allocated ? 'text-success-700 dark:text-success-300' : 'text-warning-700 dark:text-warning-300'">{{ profile.allocated ? 'Allocated' : 'Not Allocated' }}</p>
-          <p class="mt-1 text-xs text-surface-500">{{ profile.assignmentDate ? `TAT started ${new Date(profile.assignmentDate).toLocaleDateString()}` : 'TAT has not started' }}</p>
+          <p class="mt-1 text-xs text-surface-500">{{ profile.assignmentDate ? `TAT started ${formatDateTime(profile.assignmentDate)}` : 'TAT has not started' }}</p>
         </div>
         <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
           <p class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">TAT</p>
@@ -145,7 +145,7 @@ useSeoMeta({ title: computed(() => jobData.value ? `Requirement Command Centre â
         <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
           <p class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Closure Health</p>
           <p class="mt-2 text-lg font-bold" :class="daysToClosure != null && daysToClosure < 0 ? 'text-danger-700 dark:text-danger-300' : daysToClosure != null && daysToClosure <= 7 ? 'text-warning-700 dark:text-warning-300' : 'text-[#102A43] dark:text-white'">{{ closureRisk }}</p>
-          <p class="mt-1 text-xs text-surface-500">{{ profile.closureDate ? `Target ${new Date(profile.closureDate).toLocaleDateString()}` : 'Target date not recorded' }}</p>
+          <p class="mt-1 text-xs text-surface-500">{{ profile.closureDate ? `Target ${formatDateTime(profile.closureDate)}` : 'Target date not recorded' }}</p>
         </div>
         <div class="rounded-2xl border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900">
           <p class="text-[11px] font-semibold uppercase tracking-wide text-surface-400">Active Candidates</p>
