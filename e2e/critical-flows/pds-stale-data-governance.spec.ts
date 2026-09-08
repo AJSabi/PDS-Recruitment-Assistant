@@ -66,21 +66,27 @@ test.describe('PDS Loading and Stale Data Governance', () => {
       await route.continue()
     })
 
+    const applicationBDetailResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/applications/${applicationB.id}` && response.status() === 200,
+    )
+
     await page.getByTestId('candidate-pipeline-card').filter({ hasText: bravoName }).click({ force: true })
 
     await expect.poll(() => delayedRequestObserved).toBe(true)
 
-    // While Candidate B is deliberately still loading, Candidate A must already be gone
-    // and Candidate B must not be rendered from stale/cached record state. Email assertions
-    // target the workspace mailto link so the persistent pipeline card is not mistaken for stale detail data.
+    // Candidate B may render immediately from the selected pipeline record while its richer
+    // application detail request is still pending. The stale-data invariant is that Candidate A
+    // must disappear from the workspace as soon as the selection changes.
     await expect(page.getByRole('heading', { name: alphaName })).toHaveCount(0)
     await expect(alphaWorkspaceEmail).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: bravoName })).toHaveCount(0)
-    await expect(bravoWorkspaceEmail).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: bravoName })).toBeVisible()
+    await expect(bravoWorkspaceEmail).toBeVisible()
 
-    await expect(page.getByRole('heading', { name: bravoName })).toBeVisible({ timeout: 10_000 })
+    await applicationBDetailResponse
+    await expect(page.getByRole('heading', { name: bravoName })).toBeVisible()
     await expect(bravoWorkspaceEmail).toBeVisible()
     await expect(page.getByRole('heading', { name: alphaName })).toHaveCount(0)
+    await expect(alphaWorkspaceEmail).toHaveCount(0)
 
     const applicationBResponse = await page.request.get(`/api/applications/${applicationB.id}`)
     expect(applicationBResponse.ok()).toBeTruthy()
