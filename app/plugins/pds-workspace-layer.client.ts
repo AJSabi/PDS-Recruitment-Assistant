@@ -3,7 +3,7 @@ export default defineNuxtPlugin(() => {
     style: [
       {
         key: 'pds-recruiter-workspace-layer',
-        children: `
+        textContent: `
           [data-testid="pds-recruiter-candidate-workspace"] {
             z-index: 60 !important;
           }
