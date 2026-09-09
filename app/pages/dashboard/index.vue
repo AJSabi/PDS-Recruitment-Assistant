@@ -33,11 +33,6 @@ const {
   refresh,
 } = useDashboard()
 
-const { data: recruiterKpiData, status: recruiterKpiStatus } = useFetch('/api/dashboard/recruiter-daily-kpis', {
-  key: 'recruiter-daily-kpis',
-  headers: useRequestHeaders(['cookie']),
-})
-
 const canCreateRequirement = computed(() => ['owner', 'admin'].includes(scope.value.role))
 const canSeeManagementAnalytics = computed(() => ['owner', 'admin'].includes(scope.value.role))
 const scopeLabel = computed(() => scope.value.allocatedOnly ? 'My Recruitment Command Centre' : 'Recruitment Command Centre')
@@ -77,52 +72,6 @@ const pipelineStages = computed(() => [
   { key: 'hired', label: 'Hired', value: pipeline.value.hired ?? 0 },
 ])
 
-const emptyRecruiterKpis = {
-  candidatesSourced: 0,
-  recruiterScreeningsCompleted: 0,
-  interviewsScheduled: 0,
-  interviewsCompleted: 0,
-  hiringManagerCompleted: 0,
-  hodCompleted: 0,
-  hrCompleted: 0,
-  offersRaised: 0,
-  offersAccepted: 0,
-  offersDeclined: 0,
-  joined: 0,
-}
-const recruiterDaily = computed(() => recruiterKpiData.value?.daily ?? emptyRecruiterKpis)
-const recruiterAverage = computed(() => recruiterKpiData.value?.average ?? emptyRecruiterKpis)
-const recruiterKpiGroups = computed(() => [
-  {
-    title: 'Sourcing & Screening',
-    description: 'Top-of-funnel activity completed by you',
-    items: [
-      { label: 'Candidates sourced', daily: recruiterDaily.value.candidatesSourced, average: recruiterAverage.value.candidatesSourced },
-      { label: 'Recruiter screenings', daily: recruiterDaily.value.recruiterScreeningsCompleted, average: recruiterAverage.value.recruiterScreeningsCompleted },
-    ],
-  },
-  {
-    title: 'Interview Movement',
-    description: 'Candidate movement through interview rounds',
-    items: [
-      { label: 'Rounds scheduled', daily: recruiterDaily.value.interviewsScheduled, average: recruiterAverage.value.interviewsScheduled },
-      { label: 'Rounds completed', daily: recruiterDaily.value.interviewsCompleted, average: recruiterAverage.value.interviewsCompleted },
-      { label: 'Hiring Manager', daily: recruiterDaily.value.hiringManagerCompleted, average: recruiterAverage.value.hiringManagerCompleted },
-      { label: 'HOD / HR', daily: recruiterDaily.value.hodCompleted + recruiterDaily.value.hrCompleted, average: Number((recruiterAverage.value.hodCompleted + recruiterAverage.value.hrCompleted).toFixed(1)) },
-    ],
-  },
-  {
-    title: 'Offer & Joining Movement',
-    description: 'Late-stage recruitment outcomes progressed by you',
-    items: [
-      { label: 'Offers raised', daily: recruiterDaily.value.offersRaised, average: recruiterAverage.value.offersRaised },
-      { label: 'Offers accepted', daily: recruiterDaily.value.offersAccepted, average: recruiterAverage.value.offersAccepted },
-      { label: 'Offers declined', daily: recruiterDaily.value.offersDeclined, average: recruiterAverage.value.offersDeclined },
-      { label: 'Joined', daily: recruiterDaily.value.joined, average: recruiterAverage.value.joined },
-    ],
-  },
-])
-
 function pipelineWidth(value: number) {
   if (!pipelineTotal.value || value <= 0) return '0%'
   return `${Math.max(5, Math.round((value / pipelineTotal.value) * 100))}%`
@@ -131,11 +80,6 @@ function pipelineWidth(value: number) {
 function formatDate(value?: string | Date | null) {
   if (!value) return 'Not set'
   return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function formatKpiDate(value?: string | null) {
-  if (!value) return 'Previous working day'
-  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' })
 }
 
 function daysTo(value?: string | Date | null) {
