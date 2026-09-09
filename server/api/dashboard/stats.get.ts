@@ -20,7 +20,18 @@ export default defineEventHandler(async (event) => {
       jobsByStatus: { draft: 0, open: 0, closed: 0, archived: 0 },
       recentApplications: [],
       topJobs: [],
-      recruitment: { overdueRequirements: 0, dueSoonRequirements: 0, actionPending: 0 },
+      recruitment: {
+        overdueRequirements: 0,
+        dueSoonRequirements: 0,
+        actionPending: 0,
+        activeRequirementAging: {
+          averageDays: 0,
+          oldestDays: 0,
+          allocatedRequirements: 0,
+          unallocatedRequirements: 0,
+          buckets: { days0to15: 0, days16to30: 0, days31to45: 0, days46to60: 0, days61plus: 0 },
+        },
+      },
     }
   }
 
@@ -49,6 +60,7 @@ export default defineEventHandler(async (event) => {
     overdueRows,
     dueSoonRows,
     actionPendingRows,
+    agingRows,
   ] = await Promise.all([
     db.$count(job, and(...jobScope, activeRequirementCondition)),
 
@@ -167,6 +179,24 @@ export default defineEventHandler(async (event) => {
         sql`trim(${recruitmentApplicationProfile.nextAction}) <> ''`,
         ...(visibleRequirementIds ? [inArray(application.jobId, visibleRequirementIds)] : []),
       )),
+
+    db.select({
+      allocatedRequirements: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null)`.as('allocated_requirements'),
+      unallocatedRequirements: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is null)`.as('unallocated_requirements'),
+      averageDays: sql<number>`coalesce(round(avg(greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date)) filter (where ${recruitmentRequirementState.assignmentDate} is not null)), 0)`.as('average_days'),
+      oldestDays: sql<number>`coalesce(max(greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date)) filter (where ${recruitmentRequirementState.assignmentDate} is not null), 0)`.as('oldest_days'),
+      days0to15: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null and greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date) between 0 and 15)`.as('days_0_15'),
+      days16to30: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null and greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date) between 16 and 30)`.as('days_16_30'),
+      days31to45: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null and greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date) between 31 and 45)`.as('days_31_45'),
+      days46to60: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null and greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date) between 46 and 60)`.as('days_46_60'),
+      days61plus: sql<number>`count(*) filter (where ${recruitmentRequirementState.assignmentDate} is not null and greatest(0, current_date - ${recruitmentRequirementState.assignmentDate}::date) >= 61)`.as('days_61_plus'),
+    })
+      .from(job)
+      .leftJoin(recruitmentRequirementState, and(
+        eq(recruitmentRequirementState.jobId, job.id),
+        eq(recruitmentRequirementState.organizationId, orgId),
+      ))
+      .where(and(...jobScope, activeRequirementCondition)),
   ])
 
   const pipeline: Record<string, number> = { new: 0, screening: 0, interview: 0, offer: 0, hired: 0, rejected: 0 }
@@ -174,6 +204,8 @@ export default defineEventHandler(async (event) => {
 
   const jobsByStatus: Record<string, number> = { draft: 0, open: 0, closed: 0, archived: 0 }
   for (const row of jobStatusRows) jobsByStatus[row.status] = row.count
+
+  const aging = agingRows[0]
 
   return {
     scope: { role: visibility.role, allocatedOnly: !visibility.canSeeAll },
@@ -191,6 +223,19 @@ export default defineEventHandler(async (event) => {
       overdueRequirements: Number(overdueRows[0]?.count ?? 0),
       dueSoonRequirements: Number(dueSoonRows[0]?.count ?? 0),
       actionPending: Number(actionPendingRows[0]?.count ?? 0),
+      activeRequirementAging: {
+        averageDays: Number(aging?.averageDays ?? 0),
+        oldestDays: Number(aging?.oldestDays ?? 0),
+        allocatedRequirements: Number(aging?.allocatedRequirements ?? 0),
+        unallocatedRequirements: Number(aging?.unallocatedRequirements ?? 0),
+        buckets: {
+          days0to15: Number(aging?.days0to15 ?? 0),
+          days16to30: Number(aging?.days16to30 ?? 0),
+          days31to45: Number(aging?.days31to45 ?? 0),
+          days46to60: Number(aging?.days46to60 ?? 0),
+          days61plus: Number(aging?.days61plus ?? 0),
+        },
+      },
     },
   }
 })
