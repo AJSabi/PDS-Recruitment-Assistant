@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray } from 'drizzle-orm'
 import { application, recruitmentEvidence, user } from '../../database/schema'
 import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
@@ -15,8 +15,10 @@ const emptyMetrics = () => ({
 })
 
 type Metrics = ReturnType<typeof emptyMetrics>
+type MetricKey = keyof Metrics
 
 type EvidenceRow = {
+  applicationId: string
   createdBy: string | null
   recruiterName: string | null
   type: string
@@ -43,19 +45,17 @@ function shiftDate(date: string, days: number) {
   return value.toISOString().slice(0, 10)
 }
 
-function addMetric(target: Metrics, row: EvidenceRow) {
-  if (row.type === 'sourcing') {
-    target.candidatesSourced++
-    return
-  }
-  if (row.type !== 'stage_change') return
+function metricKey(row: EvidenceRow): MetricKey | null {
+  if (row.type === 'sourcing') return 'candidatesSourced'
+  if (row.type !== 'stage_change') return null
 
   const to = typeof row.payload?.to === 'string' ? row.payload.to : ''
-  if (to === 'recruiter_screening_completed') target.recruiterScreeningsCompleted++
-  if (to === 'hiring_manager_round_completed') target.interviewsCompleted++
-  if (to === 'offer_stage') target.offersRaised++
-  if (to === 'offer_accepted') target.offersAccepted++
-  if (to === 'joined') target.joined++
+  if (to === 'recruiter_screening_completed') return 'recruiterScreeningsCompleted'
+  if (to === 'hiring_manager_round_completed') return 'interviewsCompleted'
+  if (to === 'offer_stage') return 'offersRaised'
+  if (to === 'offer_accepted') return 'offersAccepted'
+  if (to === 'joined') return 'joined'
+  return null
 }
 
 function conversion(numerator: number, denominator: number) {
@@ -108,6 +108,7 @@ export default defineEventHandler(async (event) => {
   if (visibleRequirementIds) conditions.push(inArray(application.jobId, visibleRequirementIds))
 
   const rows = await db.select({
+    applicationId: recruitmentEvidence.applicationId,
     createdBy: recruitmentEvidence.createdBy,
     recruiterName: user.name,
     type: recruitmentEvidence.type,
@@ -118,19 +119,28 @@ export default defineEventHandler(async (event) => {
     .innerJoin(application, eq(application.id, recruitmentEvidence.applicationId))
     .leftJoin(user, eq(user.id, recruitmentEvidence.createdBy))
     .where(and(...conditions))
+    .orderBy(asc(recruitmentEvidence.createdAt))
 
   const totals = emptyMetrics()
   const dayMap = new Map<string, Metrics>()
   const recruiterMap = new Map<string, string>()
+  const seenMetricApplications = new Set<string>()
 
   for (const row of rows as EvidenceRow[]) {
     const eventDate = dateInTimeZone(new Date(row.createdAt))
     if (eventDate < startDate || eventDate > endDate) continue
-    addMetric(totals, row)
-    const daily = dayMap.get(eventDate) ?? emptyMetrics()
-    addMetric(daily, row)
-    dayMap.set(eventDate, daily)
     if (visibility.canSeeAll && row.createdBy) recruiterMap.set(row.createdBy, row.recruiterName ?? 'Recruiter')
+
+    const key = metricKey(row)
+    if (!key) continue
+    const uniqueMetricApplication = `${key}:${row.applicationId}`
+    if (seenMetricApplications.has(uniqueMetricApplication)) continue
+    seenMetricApplications.add(uniqueMetricApplication)
+
+    totals[key]++
+    const daily = dayMap.get(eventDate) ?? emptyMetrics()
+    daily[key]++
+    dayMap.set(eventDate, daily)
   }
 
   const series = Array.from({ length: period }, (_, index) => {
@@ -160,6 +170,6 @@ export default defineEventHandler(async (event) => {
     },
     series,
     recruiters,
-    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence. Interviewed counts candidates reaching the first completed interview round (Hiring Manager), not every downstream interview round. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The endpoint is descriptive and does not rank recruiters or candidates.',
+    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence and counts each application once per milestone within the selected period. Interviewed counts candidates reaching the first completed interview round (Hiring Manager), not every downstream interview round. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The endpoint is descriptive and does not rank recruiters or candidates.',
   }
 })
