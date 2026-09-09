@@ -52,7 +52,7 @@ function addMetric(target: Metrics, row: EvidenceRow) {
 
   const to = typeof row.payload?.to === 'string' ? row.payload.to : ''
   if (to === 'recruiter_screening_completed') target.recruiterScreeningsCompleted++
-  if (['hiring_manager_round_completed', 'hod_round_completed', 'hr_round_completed'].includes(to)) target.interviewsCompleted++
+  if (to === 'hiring_manager_round_completed') target.interviewsCompleted++
   if (to === 'offer_stage') target.offersRaised++
   if (to === 'offer_accepted') target.offersAccepted++
   if (to === 'joined') target.joined++
@@ -160,6 +160,6 @@ export default defineEventHandler(async (event) => {
     },
     series,
     recruiters,
-    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The endpoint is descriptive and does not rank recruiters or candidates.',
+    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence. Interviewed counts candidates reaching the first completed interview round (Hiring Manager), not every downstream interview round. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The endpoint is descriptive and does not rank recruiters or candidates.',
   }
 })
