@@ -34,8 +34,8 @@ function sourceFromEvidence(row: { payload: Record<string, unknown> | null; sour
   )
 }
 
-function stageReached(status: string | null, stages: string[]) {
-  return !!status && stages.includes(status)
+function stageReached(reachedStages: Set<string>, stages: string[]) {
+  return stages.some(stage => reachedStages.has(stage))
 }
 
 export default defineEventHandler(async (event) => {
@@ -88,7 +88,31 @@ export default defineEventHandler(async (event) => {
         ))
     : []
 
-  const profileByApplication = new Map(profiles.map(row => [row.applicationId, row.lastStatus]))
+  const stageRows = applicationIds.length
+    ? await db.select({
+        applicationId: recruitmentEvidence.applicationId,
+        payload: recruitmentEvidence.payload,
+      })
+        .from(recruitmentEvidence)
+        .where(and(
+          eq(recruitmentEvidence.organizationId, orgId),
+          eq(recruitmentEvidence.type, 'stage_change'),
+          inArray(recruitmentEvidence.applicationId, applicationIds),
+        ))
+    : []
+
+  const reachedStagesByApplication = new Map<string, Set<string>>()
+  for (const row of profiles) {
+    reachedStagesByApplication.set(row.applicationId, new Set(row.lastStatus ? [row.lastStatus] : []))
+  }
+  for (const row of stageRows) {
+    const toStage = typeof row.payload?.to === 'string' ? row.payload.to : null
+    if (!toStage) continue
+    const reachedStages = reachedStagesByApplication.get(row.applicationId) ?? new Set<string>()
+    reachedStages.add(toStage)
+    reachedStagesByApplication.set(row.applicationId, reachedStages)
+  }
+
   const buckets = new Map<SourceCategory, { source: SourceCategory; candidates: number; interviewed: number; offered: number; joined: number }>(
     SOURCE_CATEGORIES.map(source => [source, { source, candidates: 0, interviewed: 0, offered: 0, joined: 0 }]),
   )
@@ -99,11 +123,11 @@ export default defineEventHandler(async (event) => {
 
   for (const [applicationId, source] of sourceByApplication) {
     const bucket = buckets.get(source)!
-    const status = profileByApplication.get(applicationId) ?? null
+    const reachedStages = reachedStagesByApplication.get(applicationId) ?? new Set<string>()
     bucket.candidates++
-    if (stageReached(status, interviewStages)) bucket.interviewed++
-    if (stageReached(status, offerStages)) bucket.offered++
-    if (stageReached(status, joinedStages)) bucket.joined++
+    if (stageReached(reachedStages, interviewStages)) bucket.interviewed++
+    if (stageReached(reachedStages, offerStages)) bucket.offered++
+    if (stageReached(reachedStages, joinedStages)) bucket.joined++
   }
 
   return {
@@ -115,6 +139,6 @@ export default defineEventHandler(async (event) => {
         joinConversion: row.candidates ? Number(((row.joined / row.candidates) * 100).toFixed(1)) : 0,
       }
     }),
-    note: 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Unmapped or missing source labels are grouped under Others.',
+    note: 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
   }
 })
