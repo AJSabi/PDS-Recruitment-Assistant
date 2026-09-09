@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray } from 'drizzle-orm'
-import { application, recruitmentEvidence, user } from '../../database/schema'
+import { application, recruitmentEvidence, recruitmentRequirementState, user } from '../../database/schema'
 import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 const TIME_ZONE = 'Asia/Kolkata'
@@ -107,24 +107,39 @@ export default defineEventHandler(async (event) => {
   if (actorId) conditions.push(eq(recruitmentEvidence.createdBy, actorId))
   if (visibleRequirementIds) conditions.push(inArray(application.jobId, visibleRequirementIds))
 
-  const rows = await db.select({
-    applicationId: recruitmentEvidence.applicationId,
-    createdBy: recruitmentEvidence.createdBy,
-    recruiterName: user.name,
-    type: recruitmentEvidence.type,
-    payload: recruitmentEvidence.payload,
-    createdAt: recruitmentEvidence.createdAt,
-  })
-    .from(recruitmentEvidence)
-    .innerJoin(application, eq(application.id, recruitmentEvidence.applicationId))
-    .leftJoin(user, eq(user.id, recruitmentEvidence.createdBy))
-    .where(and(...conditions))
-    .orderBy(asc(recruitmentEvidence.createdAt))
+  const [rows, allocatedRecruiterRows] = await Promise.all([
+    db.select({
+      applicationId: recruitmentEvidence.applicationId,
+      createdBy: recruitmentEvidence.createdBy,
+      recruiterName: user.name,
+      type: recruitmentEvidence.type,
+      payload: recruitmentEvidence.payload,
+      createdAt: recruitmentEvidence.createdAt,
+    })
+      .from(recruitmentEvidence)
+      .innerJoin(application, eq(application.id, recruitmentEvidence.applicationId))
+      .leftJoin(user, eq(user.id, recruitmentEvidence.createdBy))
+      .where(and(...conditions))
+      .orderBy(asc(recruitmentEvidence.createdAt)),
+    visibility.canSeeAll
+      ? db.select({
+          recruiterId: recruitmentRequirementState.ownerUserId,
+          recruiterName: user.name,
+        })
+          .from(recruitmentRequirementState)
+          .leftJoin(user, eq(user.id, recruitmentRequirementState.ownerUserId))
+          .where(eq(recruitmentRequirementState.organizationId, orgId))
+      : Promise.resolve([]),
+  ])
 
   const totals = emptyMetrics()
   const dayMap = new Map<string, Metrics>()
   const recruiterMap = new Map<string, string>()
   const seenMetricApplications = new Set<string>()
+
+  for (const row of allocatedRecruiterRows) {
+    if (row.recruiterId) recruiterMap.set(row.recruiterId, row.recruiterName ?? 'Recruiter')
+  }
 
   for (const row of rows as EvidenceRow[]) {
     const eventDate = dateInTimeZone(new Date(row.createdAt))
@@ -170,6 +185,6 @@ export default defineEventHandler(async (event) => {
     },
     series,
     recruiters,
-    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence and counts each application once per milestone within the selected period. Interviewed counts candidates reaching the first completed interview round (Hiring Manager), not every downstream interview round. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The endpoint is descriptive and does not rank recruiters or candidates.',
+    attributionNote: 'Recruiter performance uses immutable sourcing and stage-change evidence and counts each application once per milestone within the selected period. The same candidate aligned to different requirements remains separate through distinct application records. Interviewed counts candidates reaching the first completed interview round (Hiring Manager), not every downstream interview round. Recruiters see only their own authorized scope; owners/admins may view the team or select one recruiter. The recruiter selector includes requirement owners even when they have no evidence in the selected period. The endpoint is descriptive and does not rank recruiters or candidates.',
   }
 })
