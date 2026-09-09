@@ -222,36 +222,7 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
         </div>
       </section>
 
-      <section v-if="scope.allocatedOnly" class="overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="recruiter-daily-performance-pulse">
-        <div class="flex flex-col gap-2 border-b border-surface-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between dark:border-surface-800">
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <h2 class="font-bold text-[#102A43] dark:text-white">My Daily Recruitment Pulse</h2>
-              <span class="rounded-full bg-[#EAF4FB] px-2 py-0.5 text-[10px] font-semibold text-[#1F6FA3]">{{ formatKpiDate(recruiterKpiData?.date) }}</span>
-            </div>
-            <p class="mt-1 text-xs text-surface-400">Previous working day activity compared with your rolling 30-day daily average.</p>
-          </div>
-          <div class="flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-surface-400"><span>Last working day</span><span>30-day avg/day</span></div>
-        </div>
-
-        <div v-if="recruiterKpiStatus === 'pending'" class="flex items-center justify-center gap-2 px-5 py-10 text-sm text-surface-400"><Loader2 class="size-4 animate-spin" />Loading recruiter performance…</div>
-        <div v-else class="grid lg:grid-cols-3">
-          <div v-for="(group, groupIndex) in recruiterKpiGroups" :key="group.title" class="p-5" :class="groupIndex ? 'border-t border-surface-100 lg:border-l lg:border-t-0 dark:border-surface-800' : ''">
-            <h3 class="text-sm font-bold text-surface-800 dark:text-surface-100">{{ group.title }}</h3>
-            <p class="mt-0.5 text-[11px] text-surface-400">{{ group.description }}</p>
-            <div class="mt-4 divide-y divide-surface-100 dark:divide-surface-800">
-              <div v-for="item in group.items" :key="item.label" class="grid grid-cols-[1fr_52px_62px] items-center gap-2 py-2.5">
-                <span class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ item.label }}</span>
-                <span class="text-right text-lg font-bold text-[#102A43] dark:text-white">{{ item.daily }}</span>
-                <span class="text-right text-xs font-semibold text-surface-400">{{ item.average }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="border-t border-surface-100 bg-[#F9FBFC] px-5 py-2.5 text-[10px] leading-4 text-surface-400 dark:border-surface-800 dark:bg-surface-950/30">
-          Daily averages use the 30 calendar days ending on the previous working day. Interview, offer and joining movement is based on recruiter stage-event history. Candidate sourcing currently follows the application's recruiter ownership until immutable sourcing attribution is added.
-        </div>
-      </section>
+      <DashboardRecruiterPerformanceChart />
 
       <section v-if="riskTotal || recruitment.actionPending" class="grid gap-3 lg:grid-cols-3" data-testid="priority-actions">
         <div class="lg:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl border border-[#E6D7B5] bg-[#FFF9ED] px-5 py-4 dark:border-warning-900 dark:bg-warning-950/20">
