@@ -17,7 +17,8 @@ function daysBetween(from: Date | string, to: Date | string) {
   const end = new Date(to)
   start.setHours(0, 0, 0, 0)
   end.setHours(0, 0, 0, 0)
-  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000))
+  const days = Math.floor((end.getTime() - start.getTime()) / 86400000)
+  return days >= 0 ? days : null
 }
 
 function average(values: number[]) {
@@ -95,7 +96,8 @@ export default defineEventHandler(async (event) => {
     values = requirementRows
       .filter(row => row.assignmentDate && row.closedAt && new Date(row.closedAt) >= startDate)
       .map(row => daysBetween(row.assignmentDate!, row.closedAt!))
-    note = 'Allocation → Closure uses the requirement allocation date and the governed requirement closedAt timestamp. Unallocated or open requirements are excluded.'
+      .filter((value): value is number => value != null)
+    note = 'Allocation → Closure uses the requirement allocation date and the governed requirement closedAt timestamp. Unallocated, open or chronologically invalid samples are excluded.'
   } else {
     const stageRows = await db.select({
       applicationId: recruitmentEvidence.applicationId,
@@ -129,7 +131,7 @@ export default defineEventHandler(async (event) => {
         return assignmentDate ? daysBetween(assignmentDate, row.at) : null
       })
       .filter((value): value is number => value != null)
-    note = 'Allocation → Offer uses the requirement allocation date and the first governed stage event that reaches offer_stage for each application. Applications without an allocation date or offer event are excluded.'
+    note = 'Allocation → Offer uses the requirement allocation date and the first governed stage event that reaches offer_stage for each application. Applications without an allocation date, offer event or valid chronological sequence are excluded.'
   }
 
   return {
