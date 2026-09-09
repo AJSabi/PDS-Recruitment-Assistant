@@ -90,6 +90,4 @@ function volumeWidth(value: number) {
       Sources are grouped only as Naukri, Social Media, Referral, Database, Consultant and Others. Unmapped source labels are included in Others.
     </div>
   </section>
-
-  <DashboardCycleTimeChart />
 </template>
