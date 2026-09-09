@@ -188,11 +188,11 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
       <section v-if="riskTotal || recruitment.actionPending" class="grid gap-3 lg:grid-cols-3" data-testid="priority-actions">
         <div class="lg:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl border border-[#E6D7B5] bg-[#FFF9ED] px-5 py-4 dark:border-warning-900 dark:bg-warning-950/20">
           <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-[#986C16] shadow-sm dark:bg-surface-900"><AlertTriangle class="size-4.5" /></span>
-          <div class="min-w-0"><p class="text-sm font-bold text-[#664A13] dark:text-warning-200">Priority hiring attention</p><p class="mt-0.5 text-xs text-[#866A32] dark:text-warning-300">{{ recruitment.overdueRequirements }} overdue requisitions, {{ recruitment.dueSoonRequirements }} due soon and {{ recruitment.actionPending }} candidate actions pending.</p></div>
+          <div class="min-w-0"><p class="text-sm font-bold text-[#664A13] dark:text-warning-200">Priority hiring attention</p><p class="mt-0.5 text-xs text-[#866A32] dark:text-warning-300">{{ recruitment.overdueRequirements }} overdue requirements, {{ recruitment.dueSoonRequirements }} due soon and {{ recruitment.actionPending }} candidate actions pending.</p></div>
           <NuxtLink :to="localePath('/dashboard/closure-risk')" class="ml-auto inline-flex items-center gap-1 text-xs font-bold text-[#765410] no-underline hover:underline dark:text-warning-200">Review risks <ArrowRight class="size-3.5" /></NuxtLink>
         </div>
         <div class="flex items-center justify-between rounded-2xl border border-[#D6E8DD] bg-[#F5FBF7] px-5 py-4 dark:border-success-900 dark:bg-success-950/20">
-          <div><p class="text-xs font-semibold uppercase tracking-wide text-[#5C7F66]">Requisition health</p><p class="mt-1 text-xl font-bold text-[#315C3D] dark:text-success-200">{{ requirementsOnTrack }} on track</p></div><CheckCircle2 class="size-6 text-[#4D8B5D]" />
+          <div><p class="text-xs font-semibold uppercase tracking-wide text-[#5C7F66]">Requirement health</p><p class="mt-1 text-xl font-bold text-[#315C3D] dark:text-success-200">{{ requirementsOnTrack }} on track</p></div><CheckCircle2 class="size-6 text-[#4D8B5D]" />
         </div>
       </section>
 
@@ -221,7 +221,7 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
 
           <section class="rounded-2xl border border-surface-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900" data-testid="requisition-health">
             <div class="flex items-center justify-between border-b border-surface-100 px-5 py-4 dark:border-surface-800">
-              <div><h2 class="font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'My Requisition Health' : 'Requisition Health' }}</h2><p class="mt-0.5 text-xs text-surface-400">TAT, target closure and candidate load at a glance</p></div>
+              <div><h2 class="font-bold text-[#102A43] dark:text-white">{{ scope.allocatedOnly ? 'My Requirement Health' : 'Requirement Health' }}</h2><p class="mt-0.5 text-xs text-surface-400">TAT, target closure and candidate load at a glance</p></div>
               <NuxtLink :to="localePath('/dashboard/jobs')" class="text-xs font-bold text-[#176B87] no-underline hover:underline">View all</NuxtLink>
             </div>
             <div class="max-h-[470px] divide-y divide-surface-100 overflow-y-auto dark:divide-surface-800">
