@@ -5,6 +5,7 @@ type CycleMetric = 'allocation_to_offer' | 'allocation_to_closure'
 
 const metric = ref<CycleMetric>('allocation_to_offer')
 const period = ref<30 | 90 | 365>(90)
+const periods = [30, 90, 365] as const
 
 const query = computed(() => ({ metric: metric.value, period: period.value }))
 const { data, status, error, refresh } = useFetch('/api/dashboard/cycle-time', {
@@ -60,7 +61,7 @@ function bucketWidth(value: number) {
 
         <div class="inline-flex rounded-lg border border-surface-200 p-0.5 dark:border-surface-700">
           <button
-            v-for="value in ([30, 90, 365] as const)"
+            v-for="value in periods"
             :key="value"
             type="button"
             class="rounded-md px-3 py-1.5 text-xs font-semibold transition"
