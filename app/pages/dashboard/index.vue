@@ -183,7 +183,20 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
         </div>
       </section>
 
-      <DashboardRecruiterPerformanceChart />
+      <section class="space-y-5" data-testid="recruitment-analytics-overview">
+        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-sm font-bold uppercase tracking-[0.12em] text-surface-500">Performance & Conversion</h2>
+            <p class="mt-1 text-xs text-surface-400">Recruiter productivity, sourcing effectiveness and cycle-time efficiency in one analytics layer.</p>
+          </div>
+          <span class="text-[11px] text-surface-400">Scope follows your recruitment access</span>
+        </div>
+        <DashboardRecruiterPerformanceChart />
+        <div class="grid gap-5 xl:grid-cols-2">
+          <DashboardSourceAnalyticsChart />
+          <DashboardCycleTimeChart />
+        </div>
+      </section>
 
       <section v-if="riskTotal || recruitment.actionPending" class="grid gap-3 lg:grid-cols-3" data-testid="priority-actions">
         <div class="lg:col-span-2 flex flex-wrap items-center gap-3 rounded-2xl border border-[#E6D7B5] bg-[#FFF9ED] px-5 py-4 dark:border-warning-900 dark:bg-warning-950/20">
