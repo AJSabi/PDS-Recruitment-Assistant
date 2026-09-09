@@ -50,8 +50,25 @@ const terminalPipeline = computed(() => (pipeline.value.hired ?? 0) + (pipeline.
 const pipelineTotal = computed(() => activePipeline.value + terminalPipeline.value)
 const riskTotal = computed(() => recruitment.value.overdueRequirements + recruitment.value.dueSoonRequirements)
 const requirementsOnTrack = computed(() => Math.max(0, counts.value.openJobs - riskTotal.value))
-const avgRequirementAge = computed(() => (recruitment.value as any).averageRequirementAgeDays ?? null)
-const oldestRequirementAge = computed(() => (recruitment.value as any).oldestRequirementAgeDays ?? null)
+const activeRequirementAging = computed(() => (recruitment.value as any).activeRequirementAging ?? {
+  averageDays: 0,
+  oldestDays: 0,
+  allocatedRequirements: 0,
+  unallocatedRequirements: 0,
+  buckets: {
+    days0to15: 0,
+    days16to30: 0,
+    days31to45: 0,
+    days46to60: 0,
+    days61plus: 0,
+  },
+})
+const avgRequirementAge = computed(() => activeRequirementAging.value.allocatedRequirements > 0
+  ? activeRequirementAging.value.averageDays
+  : null)
+const oldestRequirementAge = computed(() => activeRequirementAging.value.allocatedRequirements > 0
+  ? activeRequirementAging.value.oldestDays
+  : null)
 const pipelineStages = computed(() => [
   { key: 'new', label: 'New / Sourced', value: pipeline.value.new ?? 0 },
   { key: 'screening', label: 'Screening', value: pipeline.value.screening ?? 0 },
@@ -193,12 +210,12 @@ const isEmpty = computed(() => counts.value.openJobs === 0 && counts.value.total
         <NuxtLink :to="localePath('/dashboard/jobs')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#8BB8C8] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-9 items-center justify-center rounded-xl bg-[#E9F4F7] text-[#176B87]"><BriefcaseBusiness class="size-4.5" /></span>
           <p class="mt-4 text-2xl font-bold text-[#102A43] dark:text-white">{{ counts.openJobs }}</p>
-          <p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Active Requisitions</p>
+          <p class="text-sm font-semibold text-surface-700 dark:text-surface-200">Active Requirements</p>
           <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-surface-500">
             <span>Avg age <strong class="text-surface-700 dark:text-surface-200">{{ avgRequirementAge == null ? '—' : `${avgRequirementAge}d` }}</strong></span>
             <span>Oldest <strong class="text-surface-700 dark:text-surface-200">{{ oldestRequirementAge == null ? '—' : `${oldestRequirementAge}d` }}</strong></span>
           </div>
-          <p class="mt-1 text-xs text-surface-400">{{ scope.allocatedOnly ? 'Allocated to me' : 'Organisation-wide' }} · aging from allocation</p>
+          <p class="mt-1 text-xs text-surface-400">{{ activeRequirementAging.allocatedRequirements === 0 ? 'TAT not started' : `${scope.allocatedOnly ? 'Allocated to me' : 'Organisation-wide'} · aging from allocation` }}</p>
         </NuxtLink>
         <NuxtLink :to="localePath('/dashboard/closure-risk')" class="rounded-2xl border border-surface-200 bg-white p-4 no-underline shadow-sm transition hover:border-[#D6B26A] hover:shadow-md dark:border-surface-800 dark:bg-surface-900">
           <span class="flex size-9 items-center justify-center rounded-xl bg-[#FFF6E5] text-[#9A6A10]"><AlertTriangle class="size-4.5" /></span>
