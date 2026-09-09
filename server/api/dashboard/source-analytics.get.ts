@@ -93,9 +93,9 @@ export default defineEventHandler(async (event) => {
     SOURCE_CATEGORIES.map(source => [source, { source, candidates: 0, interviewed: 0, offered: 0, joined: 0 }]),
   )
 
-  const interviewStages = ['hiring_manager_round_pending', 'hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed', 'hr_round_pending', 'hr_round_completed', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined', 'closed']
-  const offerStages = ['offer_stage', 'offer_accepted', 'offer_declined', 'joined', 'closed']
-  const joinedStages = ['joined', 'closed']
+  const interviewStages = ['hiring_manager_round_pending', 'hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed', 'hr_round_pending', 'hr_round_completed', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined']
+  const offerStages = ['offer_stage', 'offer_accepted', 'offer_declined', 'joined']
+  const joinedStages = ['joined']
 
   for (const [applicationId, source] of sourceByApplication) {
     const bucket = buckets.get(source)!
