@@ -49,6 +49,11 @@ function trendHeight(row: any) {
 function shortDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
 }
+
+function formatConversion(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return '—'
+  return `${value}%`
+}
 </script>
 
 <template>
@@ -141,7 +146,7 @@ function shortDate(value: string) {
             <div v-for="item in conversionMetrics" :key="item.label" class="rounded-xl border border-surface-100 bg-[#F9FBFC] p-3 dark:border-surface-800 dark:bg-surface-950/30">
               <div class="flex items-end justify-between gap-3">
                 <p class="text-xs font-medium text-surface-600 dark:text-surface-300">{{ item.label }}</p>
-                <p class="text-xl font-bold text-[#102A43] dark:text-white">{{ item.value }}%</p>
+                <p class="text-xl font-bold text-[#102A43] dark:text-white">{{ formatConversion(item.value) }}</p>
               </div>
               <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-100 dark:bg-surface-800">
                 <div class="h-full rounded-full bg-[#39784A]" :style="{ width: `${Math.min(100, Math.max(0, Number(item.value ?? 0)))}%` }" />
