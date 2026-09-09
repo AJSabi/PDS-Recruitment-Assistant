@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray } from 'drizzle-orm'
 import { recruitmentApplicationProfile, recruitmentEvidence } from '../../database/schema'
 import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
@@ -69,6 +69,7 @@ export default defineEventHandler(async (event) => {
       gte(recruitmentEvidence.createdAt, startDate),
       visibleRequirementIds ? inArray(recruitmentEvidence.jobId, visibleRequirementIds) : undefined,
     ))
+    .orderBy(asc(recruitmentEvidence.createdAt))
 
   const sourceByApplication = new Map<string, SourceCategory>()
   for (const row of sourcingRows) {
