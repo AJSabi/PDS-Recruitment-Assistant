@@ -5,14 +5,19 @@ type CycleMetric = 'allocation_to_offer' | 'allocation_to_closure'
 
 const metric = ref<CycleMetric>('allocation_to_offer')
 const period = ref<30 | 90 | 365>(90)
+const recruiterId = useState<string | null>('dashboard-recruiter-filter', () => null)
 const periods = [30, 90, 365] as const
 
-const query = computed(() => ({ metric: metric.value, period: period.value }))
+const query = computed(() => ({
+  metric: metric.value,
+  period: period.value,
+  ...(recruiterId.value ? { recruiterId: recruiterId.value } : {}),
+}))
 const { data, status, error, refresh } = useFetch('/api/dashboard/cycle-time', {
   key: 'dashboard-cycle-time',
   headers: useRequestHeaders(['cookie']),
   query,
-  watch: [metric, period],
+  watch: [metric, period, recruiterId],
 })
 
 const buckets = computed(() => data.value?.buckets ?? {
