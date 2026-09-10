@@ -44,7 +44,7 @@ Confirm recruiters can work only on requirements allocated to them, while privil
 
 ## AI governance
 
-- Confirm AI recommendations are advisory only.
+- Confirm AI recommendations used in the V1 recruitment workflow are advisory only.
 - Confirm AI cannot automatically select, reject, rank candidates for an employment decision, or move an application to another recruitment stage without the governed user action.
 - Confirm recruiter or hiring-user judgement remains the controlling action.
 
@@ -84,18 +84,26 @@ Confirm recruiters can work only on requirements allocated to them, while privil
 - Confirm recruiter filtering follows the current Requirement owner/current allocation cycle.
 - Confirm average, median and sample counts reflect the selected scope.
 
-## Chatbot
+## Shared dashboard recruiter filter
 
-- Open the dashboard chatbot and confirm the V1 recruiter-assistance entry point is accessible to the intended users.
-- Confirm chatbot guidance remains advisory and does not bypass recruiter permissions, screening controls or governed recruitment-stage actions.
-- Confirm candidate/application context remains tied to the correct Requirement when multiple applications exist for the same person.
+- For TA/Admin/Management users, select a recruiter in Recruiter Performance and confirm the same recruiter filter is propagated to Source Analytics and Cycle Time.
+- Confirm Source Analytics applies the selected recruiter by immutable sourcing-evidence creator.
+- Confirm Cycle Time applies the selected recruiter by current Requirement ownership/current allocation cycle.
+- Clear the recruiter selection and confirm all three panels return to the authorized team scope.
+- Confirm ordinary recruiters cannot select another recruiter and remain scoped to their own authorized recruitment work.
+
+## Chatbot scope decision
+
+The feature-flagged dashboard chatbot is **deferred from the frozen V1 scope** and is not a mandatory V1 UAT item. It will be assessed separately for V1.1 after chatbot-specific AI-governance acceptance, including neutral candidate comparison, prohibition of automated ranking/shortlisting decisions, requirement-scope enforcement and governed stage-action boundaries.
+
+The V1 functional document should therefore describe the governed recruitment workflow and its embedded advisory AI functions, but should not present the dashboard chatbot as an approved V1 production function.
 
 ## Regression and release gate
 
-- Exact-head Browser E2E for commit `ecfdc00b5ea5ff95ab150c774bc2b783a291ac13` passed before this checklist was added.
-- The corresponding Validation workflow is not green: its zero-vulnerability dependency audit reported 12 vulnerabilities (4 high, 2 moderate, 6 low), and typecheck, unit tests and production build were skipped after that gate failed.
+- Exact-head Browser E2E for commit `ecfdc00b5ea5ff95ab150c774bc2b783a291ac13` passed before the later shared-filter UI work.
+- The Validation workflow remains blocked by the zero-vulnerability dependency audit, which reported 12 vulnerabilities (4 high, 2 moderate, 6 low); downstream typecheck, unit tests and production build are skipped once that gate fails.
 - Do not treat V1 as release-ready while the dependency security gate remains red.
-- After all UAT items are signed off and dependency remediation is complete, run exact-head Browser E2E and Validation again and require both to pass before release.
+- After functional UAT is signed off and dependency remediation is complete, run exact-head Browser E2E and Validation again and require both to pass before release.
 
 ## Freeze decision
 
