@@ -2,12 +2,16 @@
 import { Loader2, RefreshCw } from '@lucide/vue'
 
 const period = ref<30 | 90 | 365>(90)
+const recruiterId = useState<string | null>('dashboard-recruiter-filter', () => null)
 const periods = [30, 90, 365] as const
 const { data, status, error, refresh } = useFetch('/api/dashboard/source-analytics', {
   key: 'source-analytics',
   headers: useRequestHeaders(['cookie']),
-  query: computed(() => ({ period: period.value })),
-  watch: [period],
+  query: computed(() => ({
+    period: period.value,
+    ...(recruiterId.value ? { recruiterId: recruiterId.value } : {}),
+  })),
+  watch: [period, recruiterId],
 })
 
 const categories = computed(() => data.value?.categories ?? [])
@@ -87,7 +91,7 @@ function volumeWidth(value: number) {
     </div>
 
     <div class="border-t border-surface-100 bg-[#F9FBFC] px-5 py-2.5 text-[10px] leading-4 text-surface-400 dark:border-surface-800 dark:bg-surface-950/30">
-      Sources are grouped only as Naukri, Social Media, Referral, Database, Consultant and Others. Unmapped source labels are included in Others.
+      {{ data?.note ?? 'Sources are grouped only as Naukri, Social Media, Referral, Database, Consultant and Others. Unmapped source labels are included in Others.' }}
     </div>
   </section>
 </template>
