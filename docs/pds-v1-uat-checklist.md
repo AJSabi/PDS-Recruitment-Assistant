@@ -74,6 +74,8 @@ Confirm recruiters can work only on requirements allocated to them, while privil
 - Confirm repeated sourcing evidence does not inflate the application count.
 - Confirm downstream interview, offer and joined counts follow governed recruitment milestones rather than generic closure.
 - Confirm privileged recruiter filtering attributes sourcing to the recruiter who created the sourcing evidence.
+- Confirm ordinary recruiters see only applications they personally sourced within their authorized Requirement scope.
+- Confirm an invalid privileged recruiter selector is rejected rather than silently accepted.
 
 ## Cycle Time analytics
 
@@ -82,6 +84,8 @@ Confirm recruiters can work only on requirements allocated to them, while privil
 - Confirm Allocation → Closure uses the Requirement allocation date and governed Requirement `closedAt`.
 - Confirm unallocated and chronologically invalid samples are excluded while valid zero-day samples remain valid.
 - Confirm recruiter filtering follows the current Requirement owner/current allocation cycle.
+- Confirm ordinary recruiters remain limited to Requirements currently owned by them.
+- Confirm an invalid privileged recruiter selector is rejected rather than silently accepted.
 - Confirm average, median and sample counts reflect the selected scope.
 
 ## Shared dashboard recruiter filter
@@ -100,11 +104,16 @@ The V1 functional document should therefore describe the governed recruitment wo
 
 ## Regression and release gate
 
-- Exact-head Browser E2E for commit `ecfdc00b5ea5ff95ab150c774bc2b783a291ac13` passed before the later shared-filter UI work.
-- The Validation workflow remains blocked by the zero-vulnerability dependency audit, which reported 12 vulnerabilities (4 high, 2 moderate, 6 low); downstream typecheck, unit tests and production build are skipped once that gate fails.
+- Exact-head Browser E2E for commit `1400aeb9d4ca3c6ab4a99404cca5e09c14715d4f` passed after the recruiter-performance response mapping, Source Analytics recruiter-scope validation and Cycle Time recruiter-scope validation changes.
+- The Validation workflow on the same functional checkpoint remains blocked by the zero-vulnerability dependency audit; downstream typecheck, unit tests and production build are skipped once that gate fails.
+- The dependency-security failure is a release-readiness blocker, not an unresolved V1 business-function definition.
 - Do not treat V1 as release-ready while the dependency security gate remains red.
-- After functional UAT is signed off and dependency remediation is complete, run exact-head Browser E2E and Validation again and require both to pass before release.
+- After business UAT is signed off and dependency remediation is complete, run exact-head Browser E2E and Validation again and require both to pass before release.
 
-## Freeze decision
+## Functional freeze status
 
-V1 may be considered functionally frozen only when the mandatory business scenarios above are signed off with no unresolved functional blocker. Release approval is a separate decision and additionally requires a green zero-vulnerability validation gate. Keep PR #1 draft and unmerged until an explicit release/merge decision is made.
+The V1 functional scope is now defined as the governed Requirement-to-closure recruitment workflow, including Skill Matrix, candidate/application independence, recruitment profile, recruiter-controlled screening, advisory AI, governed stage movement, Recruiter Performance, Source Analytics, Cycle Time and role-based visibility. The dashboard chatbot is explicitly outside V1 and deferred to V1.1.
+
+No known functional-design ambiguity remains before preparation of the functional document. The remaining mandatory step is business UAT sign-off by representative Recruiter, TA/Admin and Management/Owner/Admin users. This sign-off cannot be substituted by automated test results.
+
+Keep PR #1 draft and unmerged until an explicit release/merge decision is made.
