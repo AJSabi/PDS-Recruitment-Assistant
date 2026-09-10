@@ -148,6 +148,7 @@ test.describe('PDS Recruiter KPI Governance', () => {
       await expect(performance.getByRole('combobox', { name: 'Recruiter' })).toHaveCount(0)
 
       const performanceText = (await performance.innerText()).toLowerCase()
+        .replace('this view is descriptive and does not rank recruiters.', '')
       expect(performanceText).not.toMatch(/leaderboard|ranking|\brank\b|top recruiter|vs team|team average|peer comparison/)
       await expect(recruiterA.page.getByRole('link', { name: 'Recruitment Analytics' })).toHaveCount(0)
     }
