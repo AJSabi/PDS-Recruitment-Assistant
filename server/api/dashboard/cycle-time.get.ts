@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { application, job, recruitmentEvidence, recruitmentRequirementState } from '../../database/schema'
-import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
+import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 type CycleMetric = 'allocation_to_offer' | 'allocation_to_closure'
 type StageEventPayload = { event?: unknown; to?: unknown }
@@ -55,7 +55,13 @@ export default defineEventHandler(async (event) => {
   const requestedPeriod = Number(query.period ?? 90)
   const period = [30, 90, 365].includes(requestedPeriod) ? requestedPeriod : 90
   const startDate = startDateForPeriod(period)
-  const visibleRequirementIds = await getVisibleRequirementIds(orgId, userId)
+  const [visibility, visibleRequirementIds] = await Promise.all([
+    getRequirementVisibility(orgId, userId),
+    getVisibleRequirementIds(orgId, userId),
+  ])
+  const requestedRecruiterId = visibility.canSeeAll && typeof query.recruiterId === 'string' && query.recruiterId.trim()
+    ? query.recruiterId.trim()
+    : null
 
   if (visibleRequirementIds && visibleRequirementIds.length === 0) {
     return {
@@ -80,6 +86,7 @@ export default defineEventHandler(async (event) => {
     .where(and(
       eq(recruitmentRequirementState.organizationId, orgId),
       eq(job.organizationId, orgId),
+      requestedRecruiterId ? eq(recruitmentRequirementState.ownerUserId, requestedRecruiterId) : undefined,
       visibleRequirementIds ? inArray(recruitmentRequirementState.jobId, visibleRequirementIds) : undefined,
     ))
 
@@ -97,7 +104,9 @@ export default defineEventHandler(async (event) => {
       .filter(row => row.assignmentDate && row.closedAt && new Date(row.closedAt) >= startDate)
       .map(row => daysBetween(row.assignmentDate!, row.closedAt!))
       .filter((value): value is number => value != null)
-    note = 'Allocation → Closure uses the requirement allocation date and the governed requirement closedAt timestamp. Unallocated, open or chronologically invalid samples are excluded.'
+    note = requestedRecruiterId
+      ? 'Allocation → Closure is filtered to requirements currently allocated to the selected recruiter and uses the current requirement allocation date with the governed closedAt timestamp.'
+      : 'Allocation → Closure uses the requirement allocation date and the governed requirement closedAt timestamp. Unallocated, open or chronologically invalid samples are excluded.'
   } else {
     const stageRows = await db.select({
       applicationId: recruitmentEvidence.applicationId,
@@ -131,7 +140,9 @@ export default defineEventHandler(async (event) => {
         return assignmentDate ? daysBetween(assignmentDate, row.at) : null
       })
       .filter((value): value is number => value != null)
-    note = 'Allocation → Offer uses the requirement allocation date and the first governed stage event that reaches offer_stage for each application. Applications without an allocation date, offer event or valid chronological sequence are excluded.'
+    note = requestedRecruiterId
+      ? 'Allocation → Offer is filtered to requirements currently allocated to the selected recruiter and uses the current requirement allocation date with the first governed offer-stage event for each application.'
+      : 'Allocation → Offer uses the requirement allocation date and the first governed stage event that reaches offer_stage for each application. Applications without an allocation date, offer event or valid chronological sequence are excluded.'
   }
 
   return {
