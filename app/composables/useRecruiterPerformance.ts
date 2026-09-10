@@ -16,10 +16,22 @@ export function useRecruiterPerformance() {
     watch: [period, recruiterId],
   })
 
-  const scope = computed(() => data.value?.scope ?? {
-    canSelectRecruiter: false,
-    selectedRecruiterId: null,
-    selectedRecruiterName: 'My Performance',
+  const recruiters = computed(() => (data.value?.recruiters ?? []).map(recruiter => ({
+    id: recruiter.recruiterId,
+    name: recruiter.recruiterName,
+  })))
+
+  const scope = computed(() => {
+    const responseScope = data.value?.scope
+    const selectedRecruiterName = recruiterId.value
+      ? recruiters.value.find(recruiter => recruiter.id === recruiterId.value)?.name ?? 'Recruiter'
+      : responseScope?.mode === 'self' ? 'My Performance' : 'All Recruiters'
+
+    return {
+      canSelectRecruiter: responseScope?.mode === 'team' || responseScope?.mode === 'recruiter',
+      selectedRecruiterId: responseScope?.recruiterId ?? null,
+      selectedRecruiterName,
+    }
   })
 
   const totals = computed(() => data.value?.totals ?? {
@@ -38,8 +50,7 @@ export function useRecruiterPerformance() {
     offerToJoin: 0,
   })
 
-  const trend = computed(() => data.value?.trend ?? [])
-  const recruiters = computed(() => data.value?.recruiters ?? [])
+  const trend = computed(() => data.value?.series ?? [])
 
   function setPeriod(value: RecruiterPerformancePeriod) {
     period.value = value
