@@ -118,7 +118,7 @@ export default defineEventHandler(async (event) => {
     SOURCE_CATEGORIES.map(source => [source, { source, candidates: 0, interviewed: 0, offered: 0, joined: 0 }]),
   )
 
-  const interviewStages = ['hiring_manager_round_pending', 'hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed', 'hr_round_pending', 'hr_round_completed', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined']
+  const interviewStages = ['hiring_manager_round_completed', 'hod_round_pending', 'hod_round_completed', 'hr_round_pending', 'hr_round_completed', 'offer_stage', 'offer_accepted', 'offer_declined', 'joined']
   const offerStages = ['offer_stage', 'offer_accepted', 'offer_declined', 'joined']
   const joinedStages = ['joined']
 
@@ -140,6 +140,6 @@ export default defineEventHandler(async (event) => {
         joinConversion: row.candidates ? Number(((row.joined / row.candidates) * 100).toFixed(1)) : 0,
       }
     }),
-    note: 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
+    note: 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Interview conversion begins only after the first interview has been completed; downstream stages imply that milestone was already reached. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
   }
 })
