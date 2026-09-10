@@ -81,7 +81,7 @@ export default defineEventHandler(async (event) => {
     : null
 
   // Recruiters can only inspect their own performance. Owners/admins may select a
-  // recruiter or retain the default team aggregate. This avoids peer leaderboard exposure.
+  // recruiter from the authorized selector or retain the default team aggregate.
   const actorId = visibility.canSeeAll ? requestedRecruiterId : userId
   const endDate = dateInTimeZone()
   const startDate = shiftDate(endDate, -(period - 1))
@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
     inArray(recruitmentEvidence.type, ['sourcing', 'stage_change']),
     gte(recruitmentEvidence.createdAt, queryStart),
   ]
-  if (actorId) conditions.push(eq(recruitmentEvidence.createdBy, actorId))
+  if (!visibility.canSeeAll) conditions.push(eq(recruitmentEvidence.createdBy, userId))
   if (visibleRequirementIds) conditions.push(inArray(application.jobId, visibleRequirementIds))
 
   const [rows, allocatedRecruiterRows] = await Promise.all([
@@ -142,9 +142,20 @@ export default defineEventHandler(async (event) => {
   }
 
   for (const row of rows as EvidenceRow[]) {
+    if (visibility.canSeeAll && row.createdBy) recruiterMap.set(row.createdBy, row.recruiterName ?? 'Recruiter')
+  }
+
+  if (visibility.canSeeAll && requestedRecruiterId && !recruiterMap.has(requestedRecruiterId)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid recruiter selection' })
+  }
+
+  const metricRows = visibility.canSeeAll && requestedRecruiterId
+    ? (rows as EvidenceRow[]).filter(row => row.createdBy === requestedRecruiterId)
+    : rows as EvidenceRow[]
+
+  for (const row of metricRows) {
     const eventDate = dateInTimeZone(new Date(row.createdAt))
     if (eventDate < startDate || eventDate > endDate) continue
-    if (visibility.canSeeAll && row.createdBy) recruiterMap.set(row.createdBy, row.recruiterName ?? 'Recruiter')
 
     const key = metricKey(row)
     if (!key) continue
