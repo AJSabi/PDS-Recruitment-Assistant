@@ -141,15 +141,14 @@ test.describe('PDS Recruiter KPI Governance', () => {
 
       await recruiterA.page.goto('/dashboard')
       await recruiterA.page.waitForLoadState('networkidle')
-      const pulse = recruiterA.page.getByTestId('recruiter-daily-performance-pulse')
-      await expect(pulse).toBeVisible()
-      await expect(pulse.getByRole('heading', { name: 'My Daily Recruitment Pulse' })).toBeVisible()
-      await expect(pulse.getByText('Previous working day activity compared with your rolling 30-day daily average.')).toBeVisible()
-      await expect(pulse.getByText('Top-of-funnel activity completed by you')).toBeVisible()
-      await expect(pulse.getByText('Late-stage recruitment outcomes progressed by you')).toBeVisible()
+      const performance = recruiterA.page.getByTestId('recruiter-performance-chart')
+      await expect(performance).toBeVisible()
+      await expect(performance.getByRole('heading', { name: 'Recruiter Performance' })).toBeVisible()
+      await expect(performance.getByText('Recruiters see only their own performance. TA Lead and Management can view the team or select a recruiter. This view is descriptive and does not rank recruiters.')).toBeVisible()
+      await expect(performance.getByRole('combobox', { name: 'Recruiter' })).toHaveCount(0)
 
-      const pulseText = (await pulse.innerText()).toLowerCase()
-      expect(pulseText).not.toMatch(/leaderboard|ranking|\brank\b|top recruiter|vs team|team average|peer comparison/)
+      const performanceText = (await performance.innerText()).toLowerCase()
+      expect(performanceText).not.toMatch(/leaderboard|ranking|\brank\b|top recruiter|vs team|team average|peer comparison/)
       await expect(recruiterA.page.getByRole('link', { name: 'Recruitment Analytics' })).toHaveCount(0)
     }
     finally {
