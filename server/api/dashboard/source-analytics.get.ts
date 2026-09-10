@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray } from 'drizzle-orm'
 import { recruitmentApplicationProfile, recruitmentEvidence } from '../../database/schema'
-import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
+import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 const SOURCE_CATEGORIES = ['Naukri', 'Social Media', 'Referral', 'Database', 'Consultant', 'Others'] as const
 type SourceCategory = typeof SOURCE_CATEGORIES[number]
@@ -46,7 +46,13 @@ export default defineEventHandler(async (event) => {
   const requestedPeriod = Number(query.period ?? 90)
   const period = [30, 90, 365].includes(requestedPeriod) ? requestedPeriod : 90
   const startDate = startDateForPeriod(period)
-  const visibleRequirementIds = await getVisibleRequirementIds(orgId, userId)
+  const [visibility, visibleRequirementIds] = await Promise.all([
+    getRequirementVisibility(orgId, userId),
+    getVisibleRequirementIds(orgId, userId),
+  ])
+  const requestedRecruiterId = visibility.canSeeAll && typeof query.recruiterId === 'string' && query.recruiterId.trim()
+    ? query.recruiterId.trim()
+    : null
 
   if (visibleRequirementIds && visibleRequirementIds.length === 0) {
     return {
@@ -67,6 +73,7 @@ export default defineEventHandler(async (event) => {
       eq(recruitmentEvidence.organizationId, orgId),
       eq(recruitmentEvidence.type, 'sourcing'),
       gte(recruitmentEvidence.createdAt, startDate),
+      requestedRecruiterId ? eq(recruitmentEvidence.createdBy, requestedRecruiterId) : undefined,
       visibleRequirementIds ? inArray(recruitmentEvidence.jobId, visibleRequirementIds) : undefined,
     ))
     .orderBy(asc(recruitmentEvidence.createdAt))
@@ -140,6 +147,8 @@ export default defineEventHandler(async (event) => {
         joinConversion: row.candidates ? Number(((row.joined / row.candidates) * 100).toFixed(1)) : 0,
       }
     }),
-    note: 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Interview conversion begins only after the first interview has been completed; downstream stages imply that milestone was already reached. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
+    note: requestedRecruiterId
+      ? 'Source analytics is filtered to applications sourced by the selected recruiter. Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others.'
+      : 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Interview conversion begins only after the first interview has been completed; downstream stages imply that milestone was already reached. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
   }
 })
