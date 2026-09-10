@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
   ] = await Promise.all([
     db.$count(job, and(...jobScope, activeRequirementCondition)),
 
-    db.select({ count: sql<number>`count(distinct ${application.candidateId})` })
+    db.select({ count: sql<number>`count(distinct ${application.id})` })
       .from(application)
       .innerJoin(job, eq(job.id, application.jobId))
       .leftJoin(recruitmentApplicationProfile, eq(recruitmentApplicationProfile.applicationId, application.id))
