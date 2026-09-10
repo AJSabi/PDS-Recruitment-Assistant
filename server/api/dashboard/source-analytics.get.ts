@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray } from 'drizzle-orm'
-import { recruitmentApplicationProfile, recruitmentEvidence } from '../../database/schema'
+import { recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../database/schema'
 import { getRequirementVisibility, getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 const SOURCE_CATEGORIES = ['Naukri', 'Social Media', 'Referral', 'Database', 'Consultant', 'Others'] as const
@@ -50,15 +50,46 @@ export default defineEventHandler(async (event) => {
     getRequirementVisibility(orgId, userId),
     getVisibleRequirementIds(orgId, userId),
   ])
-  const requestedRecruiterId = visibility.canSeeAll && typeof query.recruiterId === 'string' && query.recruiterId.trim()
+  const requestedRecruiterId = typeof query.recruiterId === 'string' && query.recruiterId.trim()
     ? query.recruiterId.trim()
     : null
+  const actorId = visibility.canSeeAll ? requestedRecruiterId : userId
 
   if (visibleRequirementIds && visibleRequirementIds.length === 0) {
     return {
       period,
       categories: SOURCE_CATEGORIES.map(source => ({ source, candidates: 0, interviewed: 0, offered: 0, joined: 0, joinConversion: 0 })),
       note: 'Source analytics is limited to candidates in your visible recruitment scope.',
+    }
+  }
+
+  if (visibility.canSeeAll && requestedRecruiterId) {
+    const selectorConditions = [
+      eq(recruitmentEvidence.organizationId, orgId),
+      inArray(recruitmentEvidence.type, ['sourcing', 'stage_change']),
+      gte(recruitmentEvidence.createdAt, startDate),
+    ]
+    if (visibleRequirementIds) selectorConditions.push(inArray(recruitmentEvidence.jobId, visibleRequirementIds))
+
+    const [ownerRows, evidenceRows] = await Promise.all([
+      db.select({ recruiterId: recruitmentRequirementState.ownerUserId })
+        .from(recruitmentRequirementState)
+        .where(eq(recruitmentRequirementState.organizationId, orgId)),
+      db.select({ recruiterId: recruitmentEvidence.createdBy })
+        .from(recruitmentEvidence)
+        .where(and(...selectorConditions)),
+    ])
+
+    const authorizedRecruiterIds = new Set<string>()
+    for (const row of ownerRows) {
+      if (row.recruiterId) authorizedRecruiterIds.add(row.recruiterId)
+    }
+    for (const row of evidenceRows) {
+      if (row.recruiterId) authorizedRecruiterIds.add(row.recruiterId)
+    }
+
+    if (!authorizedRecruiterIds.has(requestedRecruiterId)) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid recruiter selection' })
     }
   }
 
@@ -73,7 +104,7 @@ export default defineEventHandler(async (event) => {
       eq(recruitmentEvidence.organizationId, orgId),
       eq(recruitmentEvidence.type, 'sourcing'),
       gte(recruitmentEvidence.createdAt, startDate),
-      requestedRecruiterId ? eq(recruitmentEvidence.createdBy, requestedRecruiterId) : undefined,
+      actorId ? eq(recruitmentEvidence.createdBy, actorId) : undefined,
       visibleRequirementIds ? inArray(recruitmentEvidence.jobId, visibleRequirementIds) : undefined,
     ))
     .orderBy(asc(recruitmentEvidence.createdAt))
@@ -147,7 +178,7 @@ export default defineEventHandler(async (event) => {
         joinConversion: row.candidates ? Number(((row.joined / row.candidates) * 100).toFixed(1)) : 0,
       }
     }),
-    note: requestedRecruiterId
+    note: actorId
       ? 'Source analytics is filtered to applications sourced by the selected recruiter. Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others.'
       : 'Sources are standardised to Naukri, Social Media, Referral, Database, Consultant and Others. Interview conversion begins only after the first interview has been completed; downstream stages imply that milestone was already reached. Conversion stages use confirmed recruitment history when available, and unmapped or missing source labels are grouped under Others.',
   }
