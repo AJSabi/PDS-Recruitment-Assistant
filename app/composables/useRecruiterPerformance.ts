@@ -2,7 +2,7 @@ type RecruiterPerformancePeriod = 7 | 30 | 90
 
 export function useRecruiterPerformance() {
   const period = ref<RecruiterPerformancePeriod>(30)
-  const recruiterId = ref<string | null>(null)
+  const recruiterId = useState<string | null>('dashboard-recruiter-filter', () => null)
 
   const query = computed(() => ({
     period: period.value,
