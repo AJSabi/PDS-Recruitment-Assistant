@@ -62,6 +62,7 @@ export default defineEventHandler(async (event) => {
   const requestedRecruiterId = visibility.canSeeAll && typeof query.recruiterId === 'string' && query.recruiterId.trim()
     ? query.recruiterId.trim()
     : null
+  const selectedRecruiterId = visibility.canSeeAll ? requestedRecruiterId : userId
 
   if (visibleRequirementIds && visibleRequirementIds.length === 0) {
     return {
@@ -76,6 +77,29 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  if (visibility.canSeeAll && requestedRecruiterId) {
+    const [ownerRows, evidenceRows] = await Promise.all([
+      db.select({ recruiterId: recruitmentRequirementState.ownerUserId })
+        .from(recruitmentRequirementState)
+        .where(and(
+          eq(recruitmentRequirementState.organizationId, orgId),
+          visibleRequirementIds ? inArray(recruitmentRequirementState.jobId, visibleRequirementIds) : undefined,
+        )),
+      db.select({ recruiterId: recruitmentEvidence.createdBy })
+        .from(recruitmentEvidence)
+        .where(and(
+          eq(recruitmentEvidence.organizationId, orgId),
+          visibleRequirementIds ? inArray(recruitmentEvidence.jobId, visibleRequirementIds) : undefined,
+        )),
+    ])
+    const validRecruiterIds = new Set<string>()
+    for (const row of ownerRows) if (row.recruiterId) validRecruiterIds.add(row.recruiterId)
+    for (const row of evidenceRows) if (row.recruiterId) validRecruiterIds.add(row.recruiterId)
+    if (!validRecruiterIds.has(requestedRecruiterId)) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid recruiter selection' })
+    }
+  }
+
   const requirementRows = await db.select({
     jobId: recruitmentRequirementState.jobId,
     assignmentDate: recruitmentRequirementState.assignmentDate,
@@ -86,7 +110,7 @@ export default defineEventHandler(async (event) => {
     .where(and(
       eq(recruitmentRequirementState.organizationId, orgId),
       eq(job.organizationId, orgId),
-      requestedRecruiterId ? eq(recruitmentRequirementState.ownerUserId, requestedRecruiterId) : undefined,
+      selectedRecruiterId ? eq(recruitmentRequirementState.ownerUserId, selectedRecruiterId) : undefined,
       visibleRequirementIds ? inArray(recruitmentRequirementState.jobId, visibleRequirementIds) : undefined,
     ))
 
@@ -104,7 +128,7 @@ export default defineEventHandler(async (event) => {
       .filter(row => row.assignmentDate && row.closedAt && new Date(row.closedAt) >= startDate)
       .map(row => daysBetween(row.assignmentDate!, row.closedAt!))
       .filter((value): value is number => value != null)
-    note = requestedRecruiterId
+    note = selectedRecruiterId
       ? 'Allocation → Closure is filtered to requirements currently allocated to the selected recruiter and uses the current requirement allocation date with the governed closedAt timestamp.'
       : 'Allocation → Closure uses the requirement allocation date and the governed requirement closedAt timestamp. Unallocated, open or chronologically invalid samples are excluded.'
   } else {
@@ -121,6 +145,7 @@ export default defineEventHandler(async (event) => {
         eq(application.organizationId, orgId),
         eq(recruitmentEvidence.type, 'stage_change'),
         gte(recruitmentEvidence.createdAt, startDate),
+        selectedRecruiterId ? inArray(application.jobId, requirementRows.map(row => row.jobId)) : undefined,
         visibleRequirementIds ? inArray(application.jobId, visibleRequirementIds) : undefined,
       ))
 
@@ -140,7 +165,7 @@ export default defineEventHandler(async (event) => {
         return assignmentDate ? daysBetween(assignmentDate, row.at) : null
       })
       .filter((value): value is number => value != null)
-    note = requestedRecruiterId
+    note = selectedRecruiterId
       ? 'Allocation → Offer is filtered to requirements currently allocated to the selected recruiter and uses the current requirement allocation date with the first governed offer-stage event for each application.'
       : 'Allocation → Offer uses the requirement allocation date and the first governed stage event that reaches offer_stage for each application. Applications without an allocation date, offer event or valid chronological sequence are excluded.'
   }
