@@ -116,12 +116,13 @@ describe('PDS recruitment stage integrity', () => {
     expect(lifecycle).toContain('canCloseTerminalOutcome')
   })
 
-  it('keeps stage changes human-confirmed, sequential, access-controlled and auditable', () => {
+  it('keeps stage changes human-confirmed, sequential, access-controlled, concurrency-safe and auditable', () => {
     const source = readSource('server/api/applications/[id]/stage/confirm.post.ts')
     expect(source).toContain('assertApplicationAccess')
     expect(source).toContain('CONFIRMED_STAGE_TRANSITIONS[profile.lastStatus]')
     expect(source).toContain('stagesRequiringDecisionNote')
     expect(source).toContain('defaultNextActionByStage')
+    expect(source).toContain('eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus)')
     expect(source).toContain("type: 'stage_change'")
     expect(source).toContain("event: 'stage_confirmed'")
     expect(source).toContain('aiSummaryStale: true')
