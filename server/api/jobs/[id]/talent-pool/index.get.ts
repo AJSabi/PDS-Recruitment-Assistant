@@ -1,10 +1,9 @@
-import { and, desc, eq, gte, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull } from 'drizzle-orm'
 import { application, candidate, recruitmentRequirementState, talentPoolMatch } from '../../../../database/schema'
 import { assertRequirementAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
-const FINAL_POOL_THRESHOLD = 50
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
@@ -23,10 +22,11 @@ export default defineEventHandler(async (event) => {
   if (!requirementState?.skillMatrixApproved) {
     return {
       jobId,
-      threshold: FINAL_POOL_THRESHOLD,
+      threshold: null,
       total: 0,
       ranking: [],
       available: false,
+      advisoryOnly: true,
       reason: 'Approve the current Skill Matrix to generate the AI Candidate Pool.',
     }
   }
@@ -61,17 +61,18 @@ export default defineEventHandler(async (event) => {
       eq(talentPoolMatch.organizationId, orgId),
       eq(talentPoolMatch.jobId, jobId),
       eq(talentPoolMatch.requirementVersion, requirementState.revision),
-      gte(talentPoolMatch.score, FINAL_POOL_THRESHOLD),
       isNull(talentPoolMatch.promotedApplicationId),
       isNull(application.id),
     ))
-    .orderBy(desc(talentPoolMatch.score), desc(talentPoolMatch.assessedAt))
+    .orderBy(asc(candidate.firstName), asc(candidate.lastName), asc(talentPoolMatch.id))
 
   return {
     jobId,
-    threshold: FINAL_POOL_THRESHOLD,
+    threshold: null,
     total: rows.length,
-    ranking: rows.map((row, index) => ({ rank: index + 1, ...row })),
+    ranking: rows.map(row => ({ rank: null, ...row })),
     available: true,
+    advisoryOnly: true,
+    note: 'AI match information is advisory. Candidates are not hidden, ranked or excluded by score.',
   }
 })
