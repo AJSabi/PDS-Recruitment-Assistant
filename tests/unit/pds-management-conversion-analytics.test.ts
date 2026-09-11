@@ -14,7 +14,9 @@ describe('PDS management conversion analytics', () => {
 
   it('calculates unique-application interview, offer acceptance and joining cohorts', () => {
     const source = readSource('server/api/dashboard/management.get.ts')
-    expect(source).toContain("'hiring_manager_round_pending'")
+    expect(source).toContain("'hiring_manager_round_completed'")
+    expect(source).toContain("reached.get('hiring_manager_round_completed')")
+    expect(source).toContain("denominatorLabel: 'Hiring Manager Completed'")
     expect(source).toContain("'offer_stage'")
     expect(source).toContain("'offer_accepted'")
     expect(source).toContain("'joined'")
