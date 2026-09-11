@@ -58,40 +58,122 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const requirementRevision = requirementState.revision
 
-  const existing = await db.query.resumeAssessment.findFirst({ where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)), columns: { id: true } })
+  const existing = await db.query.resumeAssessment.findFirst({
+    where: and(eq(resumeAssessment.applicationId, applicationId), eq(resumeAssessment.organizationId, orgId)),
+    columns: { id: true, updatedAt: true },
+  })
   const values = {
-    organizationId: orgId, applicationId, candidateSnapshot: generated.candidateSnapshot, jdAlignment: generated.jdAlignment, skillAssessment: generated.skillAssessment, keyGaps: generated.keyGaps, verificationAreas: generated.verificationAreas,
-    mandatoryScore: generated.mandatoryScore, preferredScore: generated.preferredScore, experienceScore: generated.experienceScore, optionalScore: generated.optionalScore, provisionalFitScore: ranking.score, mandatoryMatch: generated.mandatoryMatch,
-    keyStrength: generated.keyStrength, mainGap: generated.mainGap, priority: ranking.priority, requirementVersion: requirementRevision, source: 'ai' as const, assessedBy: session.user.id, assessedAt: now, updatedAt: now,
+    organizationId: orgId,
+    applicationId,
+    candidateSnapshot: generated.candidateSnapshot,
+    jdAlignment: generated.jdAlignment,
+    skillAssessment: generated.skillAssessment,
+    keyGaps: generated.keyGaps,
+    verificationAreas: generated.verificationAreas,
+    mandatoryScore: generated.mandatoryScore,
+    preferredScore: generated.preferredScore,
+    experienceScore: generated.experienceScore,
+    optionalScore: generated.optionalScore,
+    provisionalFitScore: ranking.score,
+    mandatoryMatch: generated.mandatoryMatch,
+    keyStrength: generated.keyStrength,
+    mainGap: generated.mainGap,
+    priority: ranking.priority,
+    requirementVersion: requirementRevision,
+    source: 'ai' as const,
+    assessedBy: session.user.id,
+    assessedAt: now,
+    updatedAt: now,
   }
-  const [assessment] = existing ? await db.update(resumeAssessment).set(values).where(eq(resumeAssessment.id, existing.id)).returning() : await db.insert(resumeAssessment).values(values).returning()
 
   // Resume assessment and recruiter-call preparation are intentionally separate AI actions.
   // This endpoint never creates or replaces screening questions. Questions are generated only
   // from the explicit Prepare Questions with AI action in screening/generate.post.ts.
   const remainsInReassess = profile.lastStatus === 'reassess'
-  await db.update(recruitmentApplicationProfile).set({
-    lastStatus: remainsInReassess ? 'reassess' : 'resume_reviewed',
-    statusDate: now,
-    resumeBrief: generated.candidateSnapshot,
-    provisionalFitScore: ranking.score,
-    priority: ranking.priority,
-    mandatoryMatch: generated.mandatoryMatch,
-    keyStrength: generated.keyStrength,
-    mainGap: generated.mainGap,
-    aiCandidateSummary: generated.candidateSnapshot,
-    aiOverallAssessment: generated.jdAlignment,
-    aiInterviewBriefs: [],
-    aiFinalBrief: null,
-    aiEvidenceConfidence: 'limited',
-    aiSummaryStale: remainsInReassess,
-    aiSummaryUpdatedAt: now,
-    requirementVersionAssessed: requirementRevision,
-    nextAction: remainsInReassess ? 'Revalidate recruiter screening' : 'Review AI assessment and prepare recruiter screening',
-    lastUpdatedBy: session.user.id,
-    updatedAt: now,
-  }).where(eq(recruitmentApplicationProfile.id, profile.id))
-  await db.insert(recruitmentEvidence).values({ organizationId: orgId, applicationId, type: 'resume', summary: generated.candidateSnapshot, payload: { event: 'resume_assessed', selectedResumeDocumentId: resume.id, selectedResumeFilename: resume.originalFilename, provisionalFitScore: ranking.score, priority: ranking.priority, mandatoryMatch: generated.mandatoryMatch, requirementRevision, screeningQuestionsGenerated: 0, source: 'ai', provider: config.provider, model: config.model }, createdBy: session.user.id })
+  const nextStatus = remainsInReassess ? 'reassess' : 'resume_reviewed'
+
+  const assessment = await db.transaction(async (tx) => {
+    let assessmentRow
+    if (existing) {
+      ;[assessmentRow] = await tx.update(resumeAssessment).set(values).where(and(
+        eq(resumeAssessment.id, existing.id),
+        eq(resumeAssessment.organizationId, orgId),
+        eq(resumeAssessment.updatedAt, existing.updatedAt),
+      )).returning()
+      if (!assessmentRow) throw createError({ statusCode: 409, statusMessage: 'Resume assessment changed while AI analysis was running. Refresh and review the latest assessment before retrying.' })
+    } else {
+      ;[assessmentRow] = await tx.insert(resumeAssessment).values(values).returning()
+    }
+
+    const [profileUpdated] = await tx.update(recruitmentApplicationProfile).set({
+      lastStatus: nextStatus,
+      statusDate: now,
+      resumeBrief: generated.candidateSnapshot,
+      provisionalFitScore: ranking.score,
+      priority: ranking.priority,
+      mandatoryMatch: generated.mandatoryMatch,
+      keyStrength: generated.keyStrength,
+      mainGap: generated.mainGap,
+      aiCandidateSummary: generated.candidateSnapshot,
+      aiOverallAssessment: generated.jdAlignment,
+      aiInterviewBriefs: [],
+      aiFinalBrief: null,
+      aiEvidenceConfidence: 'limited',
+      aiSummaryStale: remainsInReassess,
+      aiSummaryUpdatedAt: now,
+      requirementVersionAssessed: requirementRevision,
+      nextAction: remainsInReassess ? 'Revalidate recruiter screening' : 'Review AI assessment and prepare recruiter screening',
+      lastUpdatedBy: session.user.id,
+      updatedAt: now,
+    }).where(and(
+      eq(recruitmentApplicationProfile.id, profile.id),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+      eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus),
+      eq(recruitmentApplicationProfile.updatedAt, profile.updatedAt),
+    )).returning({ id: recruitmentApplicationProfile.id })
+    if (!profileUpdated) throw createError({ statusCode: 409, statusMessage: 'Recruitment profile changed while AI analysis was running. Refresh and review the current candidate state.' })
+
+    if (!remainsInReassess && profile.lastStatus !== 'resume_reviewed') {
+      await tx.insert(recruitmentEvidence).values({
+        organizationId: orgId,
+        applicationId,
+        type: 'stage_change',
+        summary: `Recruitment stage changed from ${profile.lastStatus} to resume_reviewed`,
+        payload: {
+          event: 'stage_changed',
+          from: profile.lastStatus,
+          to: 'resume_reviewed',
+          source: 'ai_resume_assessment',
+          requirementRevision,
+        },
+        createdBy: session.user.id,
+      })
+    }
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      applicationId,
+      type: 'resume',
+      summary: generated.candidateSnapshot,
+      payload: {
+        event: 'resume_assessed',
+        selectedResumeDocumentId: resume.id,
+        selectedResumeFilename: resume.originalFilename,
+        provisionalFitScore: ranking.score,
+        priority: ranking.priority,
+        mandatoryMatch: generated.mandatoryMatch,
+        requirementRevision,
+        screeningQuestionsGenerated: 0,
+        source: 'ai',
+        provider: config.provider,
+        model: config.model,
+      },
+      createdBy: session.user.id,
+    })
+
+    return assessmentRow
+  })
+
   await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
   return { assessment, questions: [], ranking: { provisionalFitScore: ranking.score, priority: ranking.priority }, currentFit: profile.currentFit, requirementRevision, source: 'ai', screeningQuestionsGenerated: 0 }
