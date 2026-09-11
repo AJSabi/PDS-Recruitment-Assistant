@@ -1,9 +1,8 @@
 import { and, eq } from 'drizzle-orm'
-import { recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
+import { application, recruiterScreeningSession, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../../database/schema'
 import { completeScreeningSchema } from '../../../../utils/schemas/recruitmentWorkflow'
-import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
+import { coarseStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { refreshRequirementReassessmentFlag } from '../../../../utils/recruitmentLifecycle'
-import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -56,66 +55,92 @@ export default defineEventHandler(async (event) => {
   })
   const requirementRevision = requirementState?.revision ?? profile.requirementVersionAssessed
   const finalStatus = completionStageForDecision(body.recommendedNextStep)
+  const coarseStatus = coarseStatusForRecruitmentStage(finalStatus)
   const now = new Date()
 
-  const [updatedScreening] = await db.update(recruiterScreeningSession).set({
-    status: 'completed',
-    finalFit: body.finalFit,
-    recommendedNextStep: body.recommendedNextStep,
-    conversationBrief: body.conversationBrief ?? screening.conversationBrief,
-    recruiterNotes: body.conversationBrief ?? screening.recruiterNotes,
-    recommendation: body.recommendedNextStep,
-    validationFocus: body.validationFocus,
-    completedAt: now,
-    updatedAt: now,
-  }).where(eq(recruiterScreeningSession.id, screening.id)).returning()
-
-  await db.update(recruitmentApplicationProfile).set({
-    currentFit: body.finalFit,
-    lastStatus: finalStatus,
-    statusDate: now,
-    lastContactAt: now,
-    conversationBrief: body.conversationBrief ?? profile.conversationBrief,
-    nextAction: nextActionLabels[body.recommendedNextStep] ?? body.recommendedNextStep,
-    assessmentLocked: true,
-    aiSummaryStale: true,
-    requirementVersionAssessed: requirementRevision,
-    lastUpdatedBy: session.user.id,
-    updatedAt: now,
-  }).where(eq(recruitmentApplicationProfile.id, profile.id))
-
-  await syncApplicationStatusForRecruitmentStage(orgId, applicationId, finalStatus)
-  await recordRecruitmentStageChange({
-    organizationId: orgId,
-    applicationId,
-    from: profile.lastStatus,
-    to: finalStatus,
-    actorId: session.user.id,
-    source: 'screening_completion',
-    summary: body.conversationBrief,
-    metadata: {
+  const updatedScreening = await db.transaction(async (tx) => {
+    const [screeningUpdated] = await tx.update(recruiterScreeningSession).set({
+      status: 'completed',
       finalFit: body.finalFit,
       recommendedNextStep: body.recommendedNextStep,
-      requirementRevision,
-      ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
-    },
-  })
-  await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    applicationId,
-    type: 'recruiter_screening',
-    summary: body.conversationBrief ?? `Recruiter screening completed: ${body.finalFit}`,
-    payload: {
-      finalFit: body.finalFit,
-      recommendedNextStep: body.recommendedNextStep,
-      resultingStage: finalStatus,
-      ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
+      conversationBrief: body.conversationBrief ?? screening.conversationBrief,
+      recruiterNotes: body.conversationBrief ?? screening.recruiterNotes,
+      recommendation: body.recommendedNextStep,
       validationFocus: body.validationFocus,
-      responses,
-      requirementRevision,
-    },
-    createdBy: session.user.id,
+      completedAt: now,
+      updatedAt: now,
+    }).where(and(
+      eq(recruiterScreeningSession.id, screening.id),
+      eq(recruiterScreeningSession.organizationId, orgId),
+      eq(recruiterScreeningSession.status, screening.status),
+    )).returning()
+    if (!screeningUpdated) throw createError({ statusCode: 409, statusMessage: 'Screening changed before completion could be saved. Refresh and try again.' })
+
+    const [profileUpdated] = await tx.update(recruitmentApplicationProfile).set({
+      currentFit: body.finalFit,
+      lastStatus: finalStatus,
+      statusDate: now,
+      lastContactAt: now,
+      conversationBrief: body.conversationBrief ?? profile.conversationBrief,
+      nextAction: nextActionLabels[body.recommendedNextStep] ?? body.recommendedNextStep,
+      assessmentLocked: true,
+      aiSummaryStale: true,
+      requirementVersionAssessed: requirementRevision,
+      lastUpdatedBy: session.user.id,
+      updatedAt: now,
+    }).where(and(
+      eq(recruitmentApplicationProfile.id, profile.id),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+      eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus),
+    )).returning({ id: recruitmentApplicationProfile.id })
+    if (!profileUpdated) throw createError({ statusCode: 409, statusMessage: 'Recruitment profile changed before screening completion could be saved. Refresh and try again.' })
+
+    if (coarseStatus) {
+      const [applicationUpdated] = await tx.update(application)
+        .set({ status: coarseStatus, updatedAt: now })
+        .where(and(eq(application.id, applicationId), eq(application.organizationId, orgId)))
+        .returning({ id: application.id })
+      if (!applicationUpdated) throw createError({ statusCode: 409, statusMessage: 'Application changed before screening completion could be saved. Refresh and try again.' })
+    }
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      applicationId,
+      type: 'stage_change',
+      summary: body.conversationBrief?.trim() || `Recruitment stage changed from ${profile.lastStatus} to ${finalStatus}`,
+      payload: {
+        event: 'stage_changed',
+        from: profile.lastStatus,
+        to: finalStatus,
+        source: 'screening_completion',
+        finalFit: body.finalFit,
+        recommendedNextStep: body.recommendedNextStep,
+        requirementRevision,
+        ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
+      },
+      createdBy: session.user.id,
+    })
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      applicationId,
+      type: 'recruiter_screening',
+      summary: body.conversationBrief ?? `Recruiter screening completed: ${body.finalFit}`,
+      payload: {
+        finalFit: body.finalFit,
+        recommendedNextStep: body.recommendedNextStep,
+        resultingStage: finalStatus,
+        ...(finalStatus === 'hold_for_comparison' ? { holdResumeStage: 'hiring_manager_round_pending' } : {}),
+        validationFocus: body.validationFocus,
+        responses,
+        requirementRevision,
+      },
+      createdBy: session.user.id,
+    })
+
+    return screeningUpdated
   })
+
   await refreshRequirementReassessmentFlag(orgId, app.jobId)
 
   return {
