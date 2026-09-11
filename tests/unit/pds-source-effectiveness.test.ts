@@ -48,7 +48,7 @@ describe('PDS governed recruitment source effectiveness', () => {
     const management = readSource('server/api/dashboard/management.get.ts')
     expect(management).toContain("SOURCE_EFFECTIVENESS_START = new Date('2026-09-01T05:55:20.000Z')")
     expect(management).toContain('gte(applicationSource.createdAt, SOURCE_EFFECTIVENESS_START)')
-    expect(management).toContain("'recruiter_screening_completed', 'hiring_manager_round_pending', 'offer_stage', 'joined'")
+    expect(management).toContain("'recruiter_screening_completed', 'hiring_manager_round_completed', 'offer_stage', 'joined'")
     expect(management).toContain('buildSourceEffectiveness(sourceRows, sourceStageRows)')
   })
 })
