@@ -51,12 +51,17 @@ export default defineEventHandler(async (event) => {
       : null
     const closedAt = state?.closedAt ?? null
     const allocated = Boolean(assignmentDate)
-    const effectiveEnd = closedAt ?? now
-    const daysOpen = assignmentDate ? daysBetween(assignmentDate, effectiveEnd) : null
-    const daysToTarget = targetClosureDate
+    const isClosed = Boolean(closedAt) || requirement.status === 'closed'
+
+    // A legacy job can be marked closed without the governed recruitment closedAt timestamp.
+    // In that case do not keep aging the requirement to "now" and do not invent a closure date.
+    // Its completed TAT remains unknown until historical data is backfilled explicitly.
+    const daysOpen = assignmentDate && (!isClosed || closedAt)
+      ? daysBetween(assignmentDate, closedAt ?? now)
+      : null
+    const daysToTarget = !isClosed && targetClosureDate
       ? Math.ceil((targetClosureDate.getTime() - now.getTime()) / DAY_MS)
       : null
-    const isClosed = Boolean(closedAt) || requirement.status === 'closed'
     const overdue = allocated && !isClosed && daysToTarget !== null && daysToTarget < 0
     const approaching = allocated && !isClosed && daysToTarget !== null && daysToTarget >= 0 && daysToTarget <= 10
     const candidateRows = apps.filter(row => row.jobId === requirement.id)
