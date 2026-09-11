@@ -19,40 +19,9 @@ import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 const limiter = createRateLimiter({ windowMs: 60_000, maxRequests: 4, message: 'Talent pool sync is already running too frequently. Please wait before retrying.' })
-const FINAL_POOL_THRESHOLD = 50
-const LIGHTWEIGHT_PREFILTER_THRESHOLD = 25
 // Keep each user-triggered refresh short enough to stay inside the preview/proxy request window.
-// Plausible candidates beyond this limit remain deferred for the next explicit refresh.
+// Candidates beyond this limit remain deferred for the next explicit refresh; none are excluded by score.
 const MAX_FULL_AI_ANALYSES_PER_SYNC = 3
-
-type MatrixSkill = { skill?: string; priority?: 'mandatory' | 'preferred' | 'optional' }
-type MatrixClassification = { skills?: MatrixSkill[] }
-type SkillMatrix = { classifications?: MatrixClassification[] }
-
-function normalize(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9+#. ]+/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-function skillMentioned(resumeText: string, skill: string) {
-  const haystack = normalize(resumeText)
-  const needle = normalize(skill)
-  if (!needle) return false
-  if (haystack.includes(needle)) return true
-  const words = needle.split(' ').filter(word => word.length >= 3)
-  if (!words.length) return haystack.includes(needle)
-  const hits = words.filter(word => haystack.includes(word)).length
-  return hits >= Math.max(1, Math.ceil(words.length * 0.6))
-}
-
-function lightweightSkillMatch(matrix: unknown, resumeText: string) {
-  const classifications = (matrix as SkillMatrix)?.classifications ?? []
-  const skills = classifications.flatMap(c => c.skills ?? []).filter(s => s.skill?.trim())
-  if (!skills.length) return 0
-  const weight = (priority?: string) => priority === 'mandatory' ? 6 : priority === 'preferred' ? 2 : 1
-  const total = skills.reduce((sum, skill) => sum + weight(skill.priority), 0)
-  const matched = skills.reduce((sum, skill) => sum + (skillMentioned(resumeText, skill.skill ?? '') ? weight(skill.priority) : 0), 0)
-  return total ? Math.round((matched / total) * 100) : 0
-}
 
 export default defineEventHandler(async (event) => {
   await limiter(event)
@@ -120,12 +89,10 @@ export default defineEventHandler(async (event) => {
   let considered = 0
   let skippedExistingApplication = 0
   let skippedCurrent = 0
-  let skippedPrefilter = 0
   let deferredForAiBudget = 0
   let aiAttempts = 0
   let analyzed = 0
-  let visibleMatches = 0
-  let belowThreshold = 0
+  let assessedMatches = 0
   const failures: Array<{ candidateId: string; error: string }> = []
 
   for (const [candidateId, resume] of latestResumeByCandidate) {
@@ -145,18 +112,7 @@ export default defineEventHandler(async (event) => {
 
     if (existing?.resumeDocumentId === resume.documentId && existing.requirementVersion === requirementVersion && existing.assessedAt) {
       skippedCurrent++
-      if ((existing.score ?? 0) >= FINAL_POOL_THRESHOLD) visibleMatches++
-      else belowThreshold++
-      continue
-    }
-
-    const resumeText = extractResumeText(resume.parsedContent)
-    if (!resumeText) continue
-
-    const preMatch = lightweightSkillMatch(matrixRecord.approvedMatrix, resumeText)
-    if (preMatch < LIGHTWEIGHT_PREFILTER_THRESHOLD) {
-      skippedPrefilter++
-      if (existing) await db.delete(talentPoolMatch).where(eq(talentPoolMatch.id, existing.id))
+      assessedMatches++
       continue
     }
 
@@ -180,6 +136,7 @@ export default defineEventHandler(async (event) => {
         optionalScore: generated.optionalScore,
       })
       analyzed++
+      assessedMatches++
 
       const now = new Date()
       const values = {
@@ -207,14 +164,14 @@ export default defineEventHandler(async (event) => {
       }
 
       if (existing) {
-        await db.update(talentPoolMatch).set(values).where(eq(talentPoolMatch.id, existing.id))
+        await db.update(talentPoolMatch).set(values).where(and(
+          eq(talentPoolMatch.id, existing.id),
+          eq(talentPoolMatch.organizationId, orgId),
+        ))
       }
       else {
         await db.insert(talentPoolMatch).values({ ...values, source: 'database' })
       }
-
-      if (ranking.score < FINAL_POOL_THRESHOLD) belowThreshold++
-      else visibleMatches++
     }
     catch (error: any) {
       failures.push({ candidateId, error: error?.data?.statusMessage ?? error?.message ?? 'AI analysis failed' })
@@ -223,18 +180,22 @@ export default defineEventHandler(async (event) => {
 
   return {
     jobId,
-    threshold: FINAL_POOL_THRESHOLD,
-    prefilterThreshold: LIGHTWEIGHT_PREFILTER_THRESHOLD,
+    threshold: null,
+    prefilterThreshold: null,
     maxFullAiAnalysesPerSync: MAX_FULL_AI_ANALYSES_PER_SYNC,
     considered,
     analyzed,
     aiAttempts,
-    visibleMatches,
-    belowThreshold,
+    assessedMatches,
+    // Compatibility aliases for the existing UI/client contract. They no longer represent a score threshold.
+    visibleMatches: assessedMatches,
+    belowThreshold: 0,
     skippedExistingApplication,
     skippedCurrent,
-    skippedPrefilter,
+    skippedPrefilter: 0,
     deferredForAiBudget,
+    advisoryOnly: true,
+    note: 'No candidate is excluded or hidden by an AI or keyword score. Batch limits only defer analysis to a later explicit refresh.',
     failures,
   }
 })
