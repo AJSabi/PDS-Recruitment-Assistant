@@ -49,8 +49,17 @@ export default defineEventHandler(async (event) => {
   })
 
   const now = new Date()
+  const sameOwner = Boolean(
+    body.ownerUserId
+      && existing?.ownerUserId === body.ownerUserId
+      && existing.assignmentDate,
+  )
   const assignmentDate = body.ownerUserId
-    ? body.assignmentDate ? new Date(body.assignmentDate) : now
+    ? body.assignmentDate
+      ? new Date(body.assignmentDate)
+      : sameOwner
+        ? existing!.assignmentDate
+        : now
     : null
 
   const targetClosureDate = body.targetClosureDate !== undefined
