@@ -39,53 +39,57 @@ export default defineEventHandler(async (event) => {
   })
   if (existing) throw createError({ statusCode: 409, statusMessage: 'This candidate is already in recruitment for this requirement' })
 
-  const [created] = await db.insert(application).values({
-    organizationId: orgId,
-    candidateId: body.candidateId,
-    jobId: body.jobId,
-    notes: body.notes,
-    status: 'new',
-  }).returning({
-    id: application.id,
-    candidateId: application.candidateId,
-    jobId: application.jobId,
-    status: application.status,
-    score: application.score,
-    notes: application.notes,
-    createdAt: application.createdAt,
-    updatedAt: application.updatedAt,
-  })
-  if (!created) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
-
   const sourcePersistence = applicationSourcePersistence('recruiter_sourcing')
-  await db.insert(applicationSource).values({
-    organizationId: orgId,
-    applicationId: created.id,
-    channel: sourcePersistence.channel,
-    utmSource: sourcePersistence.utmSource,
-  })
+  const created = await db.transaction(async (tx) => {
+    const [createdApplication] = await tx.insert(application).values({
+      organizationId: orgId,
+      candidateId: body.candidateId,
+      jobId: body.jobId,
+      notes: body.notes,
+      status: 'new',
+    }).returning({
+      id: application.id,
+      candidateId: application.candidateId,
+      jobId: application.jobId,
+      status: application.status,
+      score: application.score,
+      notes: application.notes,
+      createdAt: application.createdAt,
+      updatedAt: application.updatedAt,
+    })
+    if (!createdApplication) throw createError({ statusCode: 500, statusMessage: 'Failed to create application' })
 
-  await db.insert(recruitmentApplicationProfile).values({
-    organizationId: orgId,
-    applicationId: created.id,
-    assignedRecruiterId: requirementState?.ownerUserId ?? null,
-    currentFit: 'not_yet_assessed',
-    lastStatus: 'candidate_added',
-    assessmentLocked: false,
-    nextAction: 'Upload or verify the latest resume.',
-    lastUpdatedBy: session.user.id,
-  })
+    await tx.insert(applicationSource).values({
+      organizationId: orgId,
+      applicationId: createdApplication.id,
+      channel: sourcePersistence.channel,
+      utmSource: sourcePersistence.utmSource,
+    })
 
-  await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    jobId: body.jobId,
-    applicationId: created.id,
-    candidateId: body.candidateId,
-    type: 'sourcing',
-    summary: 'Candidate sourced for requirement',
-    sourceRef: 'recruiter_sourcing',
-    payload: { event: 'candidate_sourced', source: 'recruiter_sourcing' },
-    createdBy: session.user.id,
+    await tx.insert(recruitmentApplicationProfile).values({
+      organizationId: orgId,
+      applicationId: createdApplication.id,
+      assignedRecruiterId: requirementState?.ownerUserId ?? null,
+      currentFit: 'not_yet_assessed',
+      lastStatus: 'candidate_added',
+      assessmentLocked: false,
+      nextAction: 'Upload or verify the latest resume.',
+      lastUpdatedBy: session.user.id,
+    })
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      jobId: body.jobId,
+      applicationId: createdApplication.id,
+      candidateId: body.candidateId,
+      type: 'sourcing',
+      summary: 'Candidate sourced for requirement',
+      sourceRef: 'recruiter_sourcing',
+      payload: { event: 'candidate_sourced', source: 'recruiter_sourcing' },
+      createdBy: session.user.id,
+    })
+
+    return createdApplication
   })
 
   recordActivity({
