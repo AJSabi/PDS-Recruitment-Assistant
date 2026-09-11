@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { activityLog, application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentRequirementState } from '../../../database/schema'
+import { activityLog, application, applicationSource, candidate, job, recruitmentApplicationProfile, recruitmentEvidence, recruitmentRequirementState } from '../../../database/schema'
 import { candidateIntakeSchema } from '../../../utils/schemas/candidateIntake'
 import { findCandidateIdentityConflicts } from '../../../utils/candidateIdentityConflict'
 import { findCandidateIdentityMatch, normalizeCandidateEmail, normalizeCandidatePhone } from '../../../utils/candidateIdentityMatch'
@@ -268,6 +268,18 @@ export default defineEventHandler(async (event) => {
       nextAction: 'Upload or verify the latest resume.',
       lastUpdatedBy: session.user.id,
     }).returning({ id: recruitmentApplicationProfile.id })
+
+    await tx.insert(recruitmentEvidence).values({
+      organizationId: orgId,
+      jobId,
+      applicationId: createdApplication.id,
+      candidateId,
+      type: 'sourcing',
+      summary: 'Candidate sourced for requirement',
+      sourceRef: body.source,
+      payload: { event: 'candidate_sourced', source: body.source },
+      createdBy: session.user.id,
+    })
 
     if (resolutionAudit) {
       await tx.insert(activityLog).values({
