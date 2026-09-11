@@ -17,6 +17,13 @@ describe('PDS pre-sync audit hardening', () => {
     expect(allocation).toContain('if (!visibility.canSeeAll)')
   })
 
+  it('preserves the original assignment date when allocation is saved for the same recruiter', () => {
+    const allocation = readSource('server/api/requirement-allocations/[jobId].put.ts')
+    expect(allocation).toContain('existing?.ownerUserId === body.ownerUserId')
+    expect(allocation).toContain('existing.assignmentDate')
+    expect(allocation).toContain('sameOwner')
+  })
+
   it('keeps assignment, target closure and closure timing administrator-governed', () => {
     const timing = readSource('server/api/jobs/[id]/requirement-timing.put.ts')
     const profile = readSource('server/api/jobs/[id]/requirement-profile.put.ts')
