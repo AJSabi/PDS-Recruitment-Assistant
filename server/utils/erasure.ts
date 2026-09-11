@@ -1,29 +1,20 @@
 /**
- * ─────────────────────────────────────────────
- * Candidate erasure service — the single source of truth for deletion
- * ─────────────────────────────────────────────
+ * Candidate erasure service — the single source of truth for deletion.
  *
- * Both manual deletion ([server/api/candidates/[id].delete.ts]) and the
- * automated retention cron ([server/api/admin/retention-cleanup.post.ts])
- * route through `eraseCandidates` so they produce identical results.
+ * Manual deletion and automated retention both route through eraseCandidates.
+ * The service removes S3 objects plus the complete candidate data graph,
+ * including polymorphic property/comment/activity rows that are not protected by
+ * relational cascades.
  *
- * Why this exists: a plain `DELETE FROM candidate` relies on FK cascades and
- * therefore LEAKS data — it orphans S3 objects and leaves behind the
- * polymorphic `property_value`, `comment`, and `activity_log` rows (which link
- * to candidates by id, with no FK). This service erases all of it.
+ * For automated retention, the candidate row is locked before destructive S3
+ * work begins and eligibility is re-checked while the lock is held. A concurrent
+ * public reapplication therefore either restores the candidate first (purge is
+ * skipped before S3 deletion) or waits until the purge commits. This closes the
+ * former window where S3 objects could be deleted after a candidate had reapplied.
  *
- * Ordering & safety:
- *   1. Delete S3 objects FIRST. If any fail, we DO NOT delete the DB rows —
- *      the `document.storageKey` is the only handle for a retry, so losing it
- *      would orphan the object forever. The candidate is left in place and the
- *      next cron run retries (idempotent).
- *   2. Then, in one transaction, delete the polymorphic rows and the candidate.
- *      The candidate delete cascades application → responses / interviews /
- *      criterion_score / analysis_run / application_source, and document rows.
- *
- * `db`, `deleteFromS3`, `logWarn`, `logInfo`, `logError` are Nitro auto-imports (globals).
+ * `db`, `deleteFromS3`, `logWarn`, `logInfo`, `logError` are Nitro auto-imports.
  */
-import { and, eq, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import {
   candidate,
   application,
@@ -37,23 +28,10 @@ import {
 import { isPurgeEligible } from './retention'
 
 export interface ErasureOptions {
-  /** When true, compute and report what would be deleted but mutate nothing. */
   dryRun?: boolean
-  /** Triggering user id, or null/undefined for scheduled cron runs. */
   actorId?: string | null
-  /** Additional privacy-safe context persisted with the erasure audit row. */
   auditMetadata?: Record<string, number | string>
-  /**
-   * Automated retention only. When true, erasure proceeds ONLY if the candidate
-   * is still quarantined and purge-eligible (past purge, not exempt) — re-checked
-   * in JS before any destructive work AND enforced atomically inside the delete
-   * transaction. This closes the reapplication race: a data subject who reapplies
-   * (which restores them out of quarantine and attaches a fresh application) after
-   * the sweep selected them must NOT be erased. Manual deletion leaves this off and
-   * erases unconditionally. See [server/utils/candidate-retention.ts].
-   */
   requirePurgeEligible?: boolean
-  /** Reference time for eligibility checks; defaults to now. Pass the sweep's `now`. */
   now?: Date
 }
 
@@ -64,9 +42,9 @@ export type ErasureStatus =
   | 'not_found'
   | 'would_erase'
 
-/** Internal sentinel: thrown to roll back the delete transaction when the atomic
- *  purge guard finds the candidate is no longer eligible (e.g. just reapplied). */
 class PurgeNoLongerEligibleError extends Error {}
+class CandidateNoLongerExistsError extends Error {}
+class S3DeletionFailedError extends Error {}
 
 export interface ErasureResult {
   candidateId: string
@@ -76,7 +54,6 @@ export interface ErasureResult {
   properties: number
   activityLogs: number
   s3Failures: number
-  /** True when the candidate was erased but its audit row could not be written. */
   auditFailed?: boolean
   error?: string
 }
@@ -89,12 +66,6 @@ export interface ErasureReport {
   results: ErasureResult[]
 }
 
-/**
- * Permanently erase one or more candidates and their entire data graph + S3 objects.
- * Org-scoped: only candidates belonging to `orgId` are touched. Idempotent and
- * safe to retry — already-gone candidates report `not_found` and missing S3
- * objects delete silently.
- */
 export async function eraseCandidates(
   orgId: string,
   candidateIds: string[],
@@ -140,7 +111,6 @@ async function eraseOne(
   requirePurgeEligible: boolean,
   now: Date,
 ): Promise<ErasureResult> {
-  // Confirm the candidate exists in THIS org (tenant isolation + idempotency).
   const existing = await db.query.candidate.findFirst({
     where: and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)),
     columns: {
@@ -151,14 +121,8 @@ async function eraseOne(
     },
   })
 
-  if (!existing) {
-    return blank(candidateId, 'not_found')
-  }
+  if (!existing) return blank(candidateId, 'not_found')
 
-  // Reapplication race, first line of defence: re-confirm eligibility in JS before
-  // doing any destructive work. The atomic guard inside the transaction below is the
-  // hard guarantee; this just shrinks the window in which S3 objects could be deleted
-  // for a candidate that reapplied mid-sweep.
   if (requirePurgeEligible) {
     const stillEligible = existing.quarantinedAt !== null && isPurgeEligible({
       scheduledPurgeAt: existing.scheduledPurgeAt,
@@ -171,7 +135,6 @@ async function eraseOne(
     }
   }
 
-  // Gather everything tied to the candidate (org-scoped on every query).
   const docs = await db.query.document.findMany({
     where: and(eq(document.candidateId, candidateId), eq(document.organizationId, orgId)),
     columns: { id: true, storageKey: true },
@@ -242,54 +205,50 @@ async function eraseOne(
     return { candidateId, status: 'would_erase', s3Failures: 0, ...counts }
   }
 
-  // ── Step 1: delete S3 objects first ──
   let s3Failures = 0
-  for (const doc of docs) {
-    try {
-      await deleteFromS3(doc.storageKey)
-    }
-    catch (err) {
-      s3Failures++
-      logWarn('retention.s3_delete_failed', {
-        org_id: orgId,
-        error_message: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  // Abort DB deletion if any object failed — keep the storageKeys for a retry.
-  if (s3Failures > 0) {
-    const audited = await writeAudit(orgId, candidateId, 'erased', 'partial', actorId, {
-      ...counts,
-      s3Failures,
-      ...auditMetadata,
-    })
-    return {
-      candidateId,
-      status: 'skipped_s3_failure',
-      s3Failures,
-      ...counts,
-      auditFailed: !audited,
-    }
-  }
-
-  // ── Step 2: delete the DB graph in one transaction ──
-  // For automated retention, the candidate delete carries an atomic purge guard:
-  // it only matches a row that is STILL quarantined, past purge, and not exempt.
-  // If a reapplication restored the candidate after our pre-check, the delete
-  // matches nothing and we throw to roll back the entire transaction — the
-  // polymorphic deletes above are undone with it, so the restored candidate and
-  // their new application survive intact.
-  const purgeGuard = requirePurgeEligible
-    ? and(
-        isNotNull(candidate.quarantinedAt),
-        lte(candidate.scheduledPurgeAt, now),
-        or(isNull(candidate.retentionExemptUntil), lte(candidate.retentionExemptUntil, now)),
-      )
-    : undefined
 
   try {
     await db.transaction(async (tx) => {
+      const [locked] = await tx.select({
+        id: candidate.id,
+        quarantinedAt: candidate.quarantinedAt,
+        scheduledPurgeAt: candidate.scheduledPurgeAt,
+        retentionExemptUntil: candidate.retentionExemptUntil,
+      })
+        .from(candidate)
+        .where(and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)))
+        .for('update')
+
+      if (!locked) throw new CandidateNoLongerExistsError()
+
+      if (requirePurgeEligible) {
+        const stillEligible = locked.quarantinedAt !== null && isPurgeEligible({
+          scheduledPurgeAt: locked.scheduledPurgeAt,
+          exemptUntil: locked.retentionExemptUntil,
+          now,
+        })
+        if (!stillEligible) throw new PurgeNoLongerEligibleError()
+      }
+
+      // External object deletion is intentionally performed while the candidate row
+      // lock is held. This prevents a concurrent public reapplication from restoring
+      // the candidate between eligibility confirmation and destructive storage work.
+      for (const doc of docs) {
+        try {
+          await deleteFromS3(doc.storageKey)
+        }
+        catch (err) {
+          s3Failures++
+          logWarn('retention.s3_delete_failed', {
+            org_id: orgId,
+            candidate_id: candidateId,
+            error_message: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+
+      if (s3Failures > 0) throw new S3DeletionFailedError()
+
       await tx.delete(comment).where(
         and(eq(comment.organizationId, orgId), commentScope),
       )
@@ -299,24 +258,35 @@ async function eraseOne(
       await tx.delete(activityLog).where(
         and(eq(activityLog.organizationId, orgId), activityScope),
       )
-      // Cascades application → responses / interviews / scores / analysis / source, and documents.
+
       const deleted = await tx.delete(candidate).where(
-        and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId), purgeGuard),
+        and(eq(candidate.id, candidateId), eq(candidate.organizationId, orgId)),
       ).returning({ id: candidate.id })
 
-      if (requirePurgeEligible && deleted.length === 0) {
-        throw new PurgeNoLongerEligibleError()
-      }
+      if (deleted.length !== 1) throw new CandidateNoLongerExistsError()
     })
   }
   catch (err) {
     if (err instanceof PurgeNoLongerEligibleError) {
-      // Lost the race to a reapplication between the pre-check and the transaction.
-      // DB is intact (rolled back). NOTE: S3 objects for the candidate's prior
-      // documents were already deleted in Step 1; this residual window is tiny but
-      // non-zero. The candidate record and any new application are preserved.
-      logWarn('retention.purge_skipped_reapplied', { org_id: orgId, candidate_id: candidateId })
+      logInfo('retention.purge_skipped_not_eligible', { org_id: orgId, candidate_id: candidateId, phase: 'locked_recheck' })
       return blank(candidateId, 'skipped_not_eligible')
+    }
+    if (err instanceof CandidateNoLongerExistsError) {
+      return blank(candidateId, 'not_found')
+    }
+    if (err instanceof S3DeletionFailedError) {
+      const audited = await writeAudit(orgId, candidateId, 'erased', 'partial', actorId, {
+        ...counts,
+        s3Failures,
+        ...auditMetadata,
+      })
+      return {
+        candidateId,
+        status: 'skipped_s3_failure',
+        s3Failures,
+        ...counts,
+        auditFailed: !audited,
+      }
     }
     throw err
   }
@@ -325,7 +295,7 @@ async function eraseOne(
     ...counts,
     ...auditMetadata,
   })
-  logInfo('retention.candidate_erased', { org_id: orgId, ...counts })
+  logInfo('retention.candidate_erased', { org_id: orgId, candidate_id: candidateId, ...counts })
 
   return { candidateId, status: 'erased', s3Failures: 0, ...counts, auditFailed: !audited }
 }
@@ -350,9 +320,6 @@ async function writeAudit(
     return true
   }
   catch (err) {
-    // A missing audit trail for an irreversible erasure is a compliance problem,
-    // not a warning — escalate to error so it is alerted on, and report back to
-    // the caller (the result carries `auditFailed`) rather than swallowing it.
     logError('retention.audit_write_failed', {
       org_id: orgId,
       candidate_id: candidateId,
@@ -363,7 +330,6 @@ async function writeAudit(
   }
 }
 
-/** Re-exported so endpoints can record quarantine/restore/exempt without duplicating the helper. */
 export { writeAudit as recordRetentionAudit }
 
 function blank(candidateId: string, status: ErasureStatus): ErasureResult {
