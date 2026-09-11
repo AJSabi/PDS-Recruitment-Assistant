@@ -59,10 +59,21 @@ describe('PDS recruitment stage integrity', () => {
     expect(source).toContain("if (decision === 'reassess') return 'reassess'")
     expect(source).toContain('const finalStatus = completionStageForDecision(body.recommendedNextStep)')
     expect(source).toContain('lastStatus: finalStatus')
-    expect(source).toContain('syncApplicationStatusForRecruitmentStage(orgId, applicationId, finalStatus)')
+    expect(source).toContain('coarseStatusForRecruitmentStage(finalStatus)')
     expect(source).toContain('resultingStage: finalStatus')
     expect(source).toContain("hold_for_comparison: 'Resume Hiring Manager Round'")
     expect(source).toContain("holdResumeStage: 'hiring_manager_round_pending'")
+  })
+
+  it('commits screening completion, profile stage, coarse status and evidence atomically', () => {
+    const source = readSource('server/api/applications/[id]/screening/complete.post.ts')
+    expect(source).toContain('db.transaction(async (tx) =>')
+    expect(source).toContain('eq(recruiterScreeningSession.status, screening.status)')
+    expect(source).toContain('eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus)')
+    expect(source).toContain('tx.update(application)')
+    expect(source).toContain('tx.insert(recruitmentEvidence)')
+    expect(source).not.toContain('syncApplicationStatusForRecruitmentStage')
+    expect(source).not.toContain('recordRecruitmentStageChange')
   })
 
   it('requires an explicit recruiter decision before HM when screening asks for recruiter judgement', () => {
