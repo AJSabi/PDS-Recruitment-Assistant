@@ -44,8 +44,15 @@ export default defineEventHandler(async (event) => {
 
   const [updated] = await db.update(recruiterScreeningSession)
     .set({ responses: previousResponses, questions: restoredQuestions, updatedAt: now })
-    .where(eq(recruiterScreeningSession.id, screening.id))
+    .where(and(
+      eq(recruiterScreeningSession.id, screening.id),
+      eq(recruiterScreeningSession.organizationId, orgId),
+      eq(recruiterScreeningSession.status, 'in_progress'),
+      eq(recruiterScreeningSession.updatedAt, screening.updatedAt),
+    ))
     .returning()
+
+  if (!updated) throw createError({ statusCode: 409, statusMessage: 'Screening changed before the previous answer could be reopened. Refresh and continue from the latest response.' })
 
   return {
     screening: updated,
