@@ -1,7 +1,6 @@
 import { and, eq } from 'drizzle-orm'
-import { document, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
-import { syncApplicationStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
-import { recordRecruitmentStageChange } from '../../../../utils/recruitmentStageHistory'
+import { application, document, recruitmentApplicationProfile, recruitmentEvidence } from '../../../../database/schema'
+import { coarseStatusForRecruitmentStage } from '../../../../utils/recruitmentApplicationStatus'
 import { assertApplicationAccess } from '../../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
@@ -34,29 +33,67 @@ export default defineEventHandler(async (event) => {
   const initialReceipt = profile.lastStatus === 'candidate_added'
   const nextStatus = initialReceipt ? 'resume_received' : profile.lastStatus
   const nextAction = profile.lastStatus === 'reassess' ? 'Complete reassessment using the selected resume.' : 'Complete resume assessment against the approved requirement baseline.'
+  const coarseStatus = initialReceipt ? coarseStatusForRecruitmentStage('resume_received') : null
 
-  const [updatedProfile] = await db.update(recruitmentApplicationProfile).set({ selectedResumeDocumentId: resume.id, lastStatus: nextStatus, ...(initialReceipt ? { statusDate: now } : {}), nextAction, lastUpdatedBy: session.user.id, updatedAt: now }).where(eq(recruitmentApplicationProfile.id, profile.id)).returning()
-  if (initialReceipt) {
-    await syncApplicationStatusForRecruitmentStage(orgId, applicationId, 'resume_received')
-    await recordRecruitmentStageChange({
+  const result = await db.transaction(async (tx) => {
+    const [updatedProfile] = await tx.update(recruitmentApplicationProfile).set({
+      selectedResumeDocumentId: resume.id,
+      lastStatus: nextStatus,
+      ...(initialReceipt ? { statusDate: now } : {}),
+      nextAction,
+      lastUpdatedBy: session.user.id,
+      updatedAt: now,
+    }).where(and(
+      eq(recruitmentApplicationProfile.id, profile.id),
+      eq(recruitmentApplicationProfile.organizationId, orgId),
+      eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus),
+      eq(recruitmentApplicationProfile.updatedAt, profile.updatedAt),
+    )).returning()
+    if (!updatedProfile) throw createError({ statusCode: 409, statusMessage: 'Recruitment profile changed before the resume could be selected. Refresh and try again.' })
+
+    if (coarseStatus) {
+      const [applicationUpdated] = await tx.update(application)
+        .set({ status: coarseStatus, updatedAt: now })
+        .where(and(eq(application.id, applicationId), eq(application.organizationId, orgId)))
+        .returning({ id: application.id })
+      if (!applicationUpdated) throw createError({ statusCode: 409, statusMessage: 'Application changed before the resume could be selected. Refresh and try again.' })
+    }
+
+    if (initialReceipt) {
+      await tx.insert(recruitmentEvidence).values({
+        organizationId: orgId,
+        applicationId,
+        type: 'stage_change',
+        summary: `Recruitment stage changed from ${profile.lastStatus} to resume_received`,
+        payload: {
+          event: 'stage_changed',
+          from: profile.lastStatus,
+          to: 'resume_received',
+          source: 'resume_selection',
+          documentId: resume.id,
+        },
+        createdBy: session.user.id,
+      })
+    }
+
+    const [evidence] = await tx.insert(recruitmentEvidence).values({
       organizationId: orgId,
       applicationId,
-      from: profile.lastStatus,
-      to: 'resume_received',
-      actorId: session.user.id,
-      source: 'resume_selection',
-      metadata: { documentId: resume.id },
-    })
-  }
+      type: 'resume',
+      summary: `Resume selected for application: ${resume.originalFilename}`,
+      payload: {
+        event: profile.lastStatus === 'reassess' ? 'resume_selected_for_reassessment' : 'resume_selected',
+        documentId: resume.id,
+        originalFilename: resume.originalFilename,
+        previousDocumentId: profile.selectedResumeDocumentId ?? null,
+        previousStatus: profile.lastStatus,
+        currentFitPreserved: profile.currentFit,
+      },
+      createdBy: session.user.id,
+    }).returning()
 
-  const [evidence] = await db.insert(recruitmentEvidence).values({
-    organizationId: orgId,
-    applicationId,
-    type: 'resume',
-    summary: `Resume selected for application: ${resume.originalFilename}`,
-    payload: { event: profile.lastStatus === 'reassess' ? 'resume_selected_for_reassessment' : 'resume_selected', documentId: resume.id, originalFilename: resume.originalFilename, previousDocumentId: profile.selectedResumeDocumentId ?? null, previousStatus: profile.lastStatus, currentFitPreserved: profile.currentFit },
-    createdBy: session.user.id,
-  }).returning()
+    return { updatedProfile, evidence }
+  })
 
-  return { profile: updatedProfile, resume, evidence, statusChanged: initialReceipt }
+  return { profile: result.updatedProfile, resume, evidence: result.evidence, statusChanged: initialReceipt }
 })
