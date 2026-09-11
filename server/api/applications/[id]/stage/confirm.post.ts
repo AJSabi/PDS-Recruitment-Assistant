@@ -112,6 +112,7 @@ export default defineEventHandler(async (event) => {
     }).where(and(
       eq(recruitmentApplicationProfile.id, profile.id),
       eq(recruitmentApplicationProfile.organizationId, orgId),
+      eq(recruitmentApplicationProfile.lastStatus, profile.lastStatus),
     )).returning()
 
     if (!profileUpdated) throw createError({ statusCode: 409, statusMessage: 'Recruitment profile changed before this stage could be confirmed. Refresh and try again.' })
