@@ -55,7 +55,7 @@ function percentage(numerator: number, denominator: number) {
 function buildHistoricalConversions(rows: Array<{ applicationId: string; payload: Record<string, unknown> | null }>) {
   const reached = new Map<string, Set<string>>()
   const stages = [
-    'hiring_manager_round_pending',
+    'hiring_manager_round_completed',
     'offer_stage',
     'offer_accepted',
     'joined',
@@ -69,7 +69,7 @@ function buildHistoricalConversions(rows: Array<{ applicationId: string; payload
     reached.get(payload.to)?.add(row.applicationId)
   }
 
-  const hmApplications = reached.get('hiring_manager_round_pending') ?? new Set<string>()
+  const hmApplications = reached.get('hiring_manager_round_completed') ?? new Set<string>()
   const offerApplications = reached.get('offer_stage') ?? new Set<string>()
   const acceptedApplications = reached.get('offer_accepted') ?? new Set<string>()
   const joinedApplications = reached.get('joined') ?? new Set<string>()
@@ -89,7 +89,7 @@ function buildHistoricalConversions(rows: Array<{ applicationId: string; payload
         denominator: hmApplications.size,
         rate: percentage(offerFromHm, hmApplications.size),
         numeratorLabel: 'Reached Offer',
-        denominatorLabel: 'Reached Hiring Manager',
+        denominatorLabel: 'Hiring Manager Completed',
       },
       {
         key: 'offerToAcceptance',
@@ -121,7 +121,7 @@ function buildSourceEffectiveness(
   for (const row of sourceRows) sourceByApplication.set(row.applicationId, recruitmentSourceFromPersistence(row.channel, row.utmSource))
 
   const reachedByStage = new Map<string, Set<string>>()
-  for (const stage of ['recruiter_screening_completed', 'hiring_manager_round_pending', 'offer_stage', 'joined']) reachedByStage.set(stage, new Set())
+  for (const stage of ['recruiter_screening_completed', 'hiring_manager_round_completed', 'offer_stage', 'joined']) reachedByStage.set(stage, new Set())
   for (const row of stageRows) {
     if (!sourceByApplication.has(row.applicationId)) continue
     const payload = (row.payload ?? {}) as StageEventPayload
@@ -152,7 +152,7 @@ function buildSourceEffectiveness(
     }
     group.profiles.add(applicationId)
     if (reachedByStage.get('recruiter_screening_completed')?.has(applicationId)) group.screened.add(applicationId)
-    if (reachedByStage.get('hiring_manager_round_pending')?.has(applicationId)) group.interviews.add(applicationId)
+    if (reachedByStage.get('hiring_manager_round_completed')?.has(applicationId)) group.interviews.add(applicationId)
     if (reachedByStage.get('offer_stage')?.has(applicationId)) group.offers.add(applicationId)
     if (reachedByStage.get('joined')?.has(applicationId)) group.joined.add(applicationId)
     grouped.set(source, group)
