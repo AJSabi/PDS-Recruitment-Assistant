@@ -2,7 +2,7 @@
 import {
   User, Lock, Save, Loader2, Eye, EyeOff, Check,
   KeyRound, Mail, Calendar,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({})
 

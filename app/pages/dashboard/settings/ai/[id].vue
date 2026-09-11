@@ -4,7 +4,7 @@
  *
  * Full-page form for editing an existing AI configuration.
  */
-import { Loader2, AlertTriangle } from 'lucide-vue-next'
+import { Loader2, AlertTriangle } from '@lucide/vue'
 
 definePageMeta({})
 

@@ -1,6 +1,6 @@
 /**
  * Composable for fetching and updating organization localization settings.
- * Provides reactive settings and a utility for formatting candidate names/dates.
+ * Provides reactive settings and utilities for formatting candidate names/dates.
  */
 export function useOrgSettings() {
   const { data, status, refresh } = useFetch('/api/org-settings', {
@@ -46,14 +46,40 @@ export function useOrgSettings() {
     return `${first} ${last}`
   }
 
+  function localDateInput(value: string | Date): string | null {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   /**
-   * Format a full ISO timestamp (or Date) according to the org's date format.
+   * Format a timestamp or Date as an organization-formatted local date.
    * Returns an empty string for null/undefined values.
    */
   function formatDateTime(value: string | Date | null | undefined): string {
     if (!value) return ''
-    const iso = typeof value === 'string' ? value : value.toISOString()
-    return formatDate(iso.slice(0, 10))
+    const dateInput = localDateInput(value)
+    return dateInput ? formatDate(dateInput) : String(value)
+  }
+
+  /**
+   * Format a timestamp or Date as organization-formatted local date plus 24-hour time.
+   * Date-only values remain date-only so calendar dates do not acquire an invented time.
+   */
+  function formatTimestamp(value: string | Date | null | undefined): string {
+    if (!value) return ''
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDate(value)
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return String(value)
+    const dateInput = localDateInput(date)
+    if (!dateInput) return String(value)
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${formatDate(dateInput)} ${hours}:${minutes}`
   }
 
   /**
@@ -98,6 +124,7 @@ export function useOrgSettings() {
     formatPersonName,
     formatDate,
     formatDateTime,
+    formatTimestamp,
     updateSettings,
     refresh,
   }

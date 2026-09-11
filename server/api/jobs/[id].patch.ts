@@ -1,25 +1,24 @@
 import { eq, and } from 'drizzle-orm'
 import { job } from '../../database/schema'
 import { idParamSchema, updateJobSchema, JOB_STATUS_TRANSITIONS } from '../../utils/schemas/job'
+import { flagRequirementChange } from '../../utils/recruitmentLifecycle'
+import { assertRequirementAccess } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['update'] })
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, idParamSchema.parse)
+  await assertRequirementAccess(orgId, session.user.id, id)
   const body = await readValidatedBody(event, updateJobSchema.parse)
 
-  // Fetch existing job — needed for status transition check and slug regeneration
   const existing = await db.query.job.findFirst({
     where: and(eq(job.id, id), eq(job.organizationId, orgId)),
-    columns: { status: true, title: true, slug: true },
+    columns: { status: true, title: true, slug: true, description: true },
   })
 
-  if (!existing) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
-  }
+  if (!existing) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
 
-  // Validate status transition if status is being changed
   if (body.status) {
     const allowed = JOB_STATUS_TRANSITIONS[existing.status] ?? []
     if (!allowed.includes(body.status)) {
@@ -30,12 +29,9 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Regenerate slug when title or custom slug changes
   const updates: Record<string, unknown> = { ...body, updatedAt: new Date() }
-  delete (updates as any).slug // remove raw slug from spread — we set it explicitly below
-  if (body.title || body.slug) {
-    updates.slug = generateJobSlug(body.title ?? existing.title, id, body.slug)
-  }
+  delete (updates as any).slug
+  if (body.title || body.slug) updates.slug = generateJobSlug(body.title ?? existing.title, id, body.slug)
 
   const [updated] = await db.update(job)
     .set(updates)
@@ -64,8 +60,17 @@ export default defineEventHandler(async (event) => {
       updatedAt: job.updatedAt,
     })
 
-  if (!updated) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!updated) throw createError({ statusCode: 404, statusMessage: 'Requirement not found' })
+
+  const descriptionChanged = body.description !== undefined && (body.description ?? null) !== (existing.description ?? null)
+  if (descriptionChanged) {
+    await flagRequirementChange({
+      organizationId: orgId,
+      jobId: id,
+      actorId: session.user.id,
+      changeType: 'jd',
+      summary: 'Active JD changed. Existing candidate assessments were preserved and flagged for reassessment.',
+    })
   }
 
   recordActivity({
@@ -76,7 +81,7 @@ export default defineEventHandler(async (event) => {
     resourceId: id,
     metadata: body.status && body.status !== existing.status
       ? { from: existing.status, to: body.status }
-      : { title: updated.title },
+      : { title: updated.title, descriptionChanged },
   })
 
   if (body.status && body.status !== existing.status) {

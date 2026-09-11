@@ -5,7 +5,7 @@ import {
   MoreHorizontal, Trash2, ChevronDown, Loader2,
   Mail, Clock, X, Check, AlertTriangle, RefreshCw,
   Link2, Copy, Eye, EyeOff, UserCheck, UserX, MessageSquare, Search,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({})
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ShieldAlert, Save, Check, Loader2, Trash2, RotateCcw, ShieldOff, Download } from 'lucide-vue-next'
+import { ShieldAlert, Save, Check, Loader2, Trash2, RotateCcw, ShieldOff, Download } from '@lucide/vue'
 
 definePageMeta({})
 const { t } = useI18n()

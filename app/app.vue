@@ -5,8 +5,8 @@ const i18nHead = useLocaleHead({
 
 useHead(() => ({
   htmlAttrs: i18nHead.value.htmlAttrs,
-  link: i18nHead.value.link,
-  meta: i18nHead.value.meta,
+  link: i18nHead.value.link as any,
+  meta: i18nHead.value.meta as any,
 }))
 
 // Blocking inline script to apply dark mode before first paint (prevents white

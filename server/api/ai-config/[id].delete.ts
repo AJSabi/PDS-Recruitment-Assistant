@@ -1,22 +1,14 @@
 import { and, eq, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import { aiConfig } from '../../database/schema'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
-/**
- * DELETE /api/ai-config/:id
- *
- * Deletes an AI configuration. If it was a default for chatbot/analysis,
- * the most recently created remaining config is automatically promoted to
- * fill the slot — so the org never silently loses its AI capability.
- *
- * Conversations referencing this config keep working: the FK uses ON DELETE
- * SET NULL and the chat handler falls back to the org default.
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
 
   const existing = await db.query.aiConfig.findFirst({
@@ -28,7 +20,6 @@ export default defineEventHandler(async (event) => {
   await db.transaction(async (tx) => {
     await tx.delete(aiConfig).where(and(eq(aiConfig.id, id), eq(aiConfig.organizationId, orgId)))
 
-    // Promote a successor for any default slot we just vacated.
     if (existing.isDefaultChatbot || existing.isDefaultAnalysis) {
       const successor = await tx.query.aiConfig.findFirst({
         where: and(eq(aiConfig.organizationId, orgId), ne(aiConfig.id, id)),
@@ -44,13 +35,6 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  recordActivity({
-    organizationId: orgId,
-    actorId: session.user.id,
-    action: 'deleted',
-    resourceType: 'aiConfig',
-    resourceId: id,
-  })
-
+  recordActivity({ organizationId: orgId, actorId: session.user.id, action: 'deleted', resourceType: 'aiConfig', resourceId: id })
   return { success: true }
 })

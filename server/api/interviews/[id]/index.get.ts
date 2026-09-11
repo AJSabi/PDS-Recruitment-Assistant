@@ -1,12 +1,14 @@
 import { and, eq } from 'drizzle-orm'
 import { interview, application, candidate, job } from '../../../database/schema'
 import { interviewIdParamSchema } from '../../../utils/schemas/interview'
+import { assertInterviewAccess } from '../../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { interview: ['read'] })
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, interviewIdParamSchema.parse)
+  await assertInterviewAccess(orgId, session.user.id, id)
 
   const [data] = await db
     .select({
@@ -42,9 +44,6 @@ export default defineEventHandler(async (event) => {
     .innerJoin(job, eq(job.id, application.jobId))
     .where(and(eq(interview.id, id), eq(interview.organizationId, orgId)))
 
-  if (!data) {
-    throw createError({ statusCode: 404, statusMessage: 'Interview not found' })
-  }
-
+  if (!data) throw createError({ statusCode: 404, statusMessage: 'Interview not found' })
   return data
 })

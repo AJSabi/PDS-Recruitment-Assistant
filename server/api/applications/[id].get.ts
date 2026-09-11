@@ -2,16 +2,19 @@ import { eq, and } from 'drizzle-orm'
 import { application } from '../../database/schema'
 import { applicationIdParamSchema } from '../../utils/schemas/application'
 import { loadPropertyEntriesForEntity } from '../../utils/properties'
+import { assertApplicationAccess } from '../../utils/recruitmentVisibility'
 
 /**
  * GET /api/applications/:id
- * Single application detail with related candidate, job, and question responses.
+ * Legacy application detail retained for compatibility and protected by
+ * PDS requirement-allocation visibility.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
   const orgId = session.session.activeOrganizationId
 
   const { id } = await getValidatedRouterParams(event, applicationIdParamSchema.parse)
+  await assertApplicationAccess(orgId, session.user.id, id)
 
   const result = await db.query.application.findFirst({
     where: and(eq(application.id, id), eq(application.organizationId, orgId)),
@@ -45,9 +48,7 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  if (!result) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
-  }
+  if (!result) throw createError({ statusCode: 404, statusMessage: 'Application not found' })
 
   const properties = await loadPropertyEntriesForEntity({
     organizationId: orgId,

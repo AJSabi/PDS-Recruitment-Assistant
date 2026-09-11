@@ -5,7 +5,12 @@ Emergent's ingress sends every `/api/*` request to port 8001 (this process)
 and everything else to port 3000 (the Nuxt server). Reqcore is a single Nuxt
 app that serves BOTH its UI and its `/api/*` routes on port 3000, so this proxy
 forwards the `/api/*` (and auth) traffic it receives on 8001 to the Nuxt server
-on 3000, streaming responses so SSE (AI chat/analysis) keeps working.
+on 3000.
+
+Normal API responses are buffered before headers are returned to the browser.
+This lets transient upstream transport failures become a controlled 502 rather
+than a browser-level "Failed to fetch" connection reset. Event-stream responses
+remain streamed so SSE/AI features continue to work.
 
 Cloudflare (the platform ingress) rewrites the incoming `Host`/`Origin` headers
 to an internal `*.emergentcf.cloud` domain while preserving the real public
@@ -13,15 +18,24 @@ domain in `x-forwarded-host`. better-auth performs a strict Origin check against
 its configured base URL (the public preview domain), so this proxy realigns the
 `Origin`/`Host`/`Referer` headers to the public host before forwarding.
 """
+import asyncio
+
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 NUXT_ORIGIN = "http://127.0.0.1:3000"
 
 app = FastAPI()
 
-client = httpx.AsyncClient(base_url=NUXT_ORIGIN, timeout=httpx.Timeout(300.0))
+# Do not reuse upstream TCP connections in the Emergent preview environment.
+# Pods/services may suspend or restart between requests, making pooled
+# keep-alive connections prone to intermittent httpx.ReadError failures.
+client = httpx.AsyncClient(
+    base_url=NUXT_ORIGIN,
+    timeout=httpx.Timeout(300.0),
+    limits=httpx.Limits(max_keepalive_connections=0),
+)
 
 # Hop-by-hop headers that must not be forwarded.
 _HOP_BY_HOP = {
@@ -36,6 +50,29 @@ def _public_host(request: Request) -> str | None:
     if xfh:
         return xfh.split(",")[0].strip()
     return None
+
+
+def _response_headers(upstream: httpx.Response) -> dict[str, str]:
+    return {
+        k: v for k, v in upstream.headers.items()
+        if k.lower() not in _HOP_BY_HOP
+    }
+
+
+async def _send_with_retry(req: httpx.Request) -> httpx.Response:
+    """Retry once when the upstream disconnects before response delivery begins."""
+    last_error: httpx.TransportError | None = None
+    for attempt in range(2):
+        try:
+            return await client.send(req, stream=True)
+        except httpx.TransportError as exc:
+            last_error = exc
+            if attempt == 0:
+                await asyncio.sleep(0.15)
+                continue
+            break
+    assert last_error is not None
+    raise last_error
 
 
 @app.api_route(
@@ -72,21 +109,62 @@ async def proxy(path: str, request: Request):
     req = client.build_request(
         request.method, url, headers=fwd_headers, content=body
     )
-    upstream = await client.send(req, stream=True)
 
-    resp_headers = {
-        k: v for k, v in upstream.headers.items()
-        if k.lower() not in _HOP_BY_HOP
-    }
+    try:
+        upstream = await _send_with_retry(req)
+    except httpx.TransportError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "statusCode": 502,
+                "statusMessage": "Recruitment service temporarily unavailable. Please retry.",
+                "error": type(exc).__name__,
+            },
+        )
 
-    async def body_iter():
-        async for chunk in upstream.aiter_raw():
-            yield chunk
+    resp_headers = _response_headers(upstream)
+    content_type = upstream.headers.get("content-type", "")
+
+    # SSE must remain streamed. If an upstream disconnect occurs after SSE
+    # headers have already been sent, HTTP cannot replace that partial response
+    # with JSON; the generator still guarantees upstream cleanup.
+    if content_type.lower().startswith("text/event-stream"):
+        async def body_iter():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+
+        return StreamingResponse(
+            body_iter(),
+            status_code=upstream.status_code,
+            headers=resp_headers,
+            media_type=content_type,
+        )
+
+    # Buffer normal API responses before returning headers. A ReadError while
+    # Nitro is producing JSON/file content can therefore be converted to 502
+    # rather than abruptly terminating the browser connection.
+    try:
+        content = await upstream.aread()
+    except httpx.TransportError as exc:
         await upstream.aclose()
+        return JSONResponse(
+            status_code=502,
+            content={
+                "statusCode": 502,
+                "statusMessage": "Recruitment service connection was interrupted. Please retry.",
+                "error": type(exc).__name__,
+            },
+        )
+    finally:
+        if not upstream.is_closed:
+            await upstream.aclose()
 
-    return StreamingResponse(
-        body_iter(),
+    return Response(
+        content=content,
         status_code=upstream.status_code,
         headers=resp_headers,
-        media_type=upstream.headers.get("content-type"),
+        media_type=content_type or None,
     )

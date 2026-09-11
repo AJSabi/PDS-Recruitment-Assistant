@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GripVertical, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import { GripVertical, Pencil, Plus, Trash2, X } from '@lucide/vue'
 import {
   PROPERTY_COLOR_CLASSES,
   PROPERTY_OPTION_COLORS,

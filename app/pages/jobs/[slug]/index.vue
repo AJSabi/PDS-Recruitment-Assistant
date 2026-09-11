@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MapPin, Briefcase, Building2, ArrowLeft, ExternalLink, Calendar } from 'lucide-vue-next'
+import { MapPin, Briefcase, Building2, ArrowLeft, ExternalLink, Calendar } from '@lucide/vue'
 
 definePageMeta({
   layout: 'public',

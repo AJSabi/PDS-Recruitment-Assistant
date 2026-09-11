@@ -1,25 +1,21 @@
 import { eq, and, desc, sql, count, sum } from 'drizzle-orm'
 import { analysisRun, job, application, candidate, aiConfig } from '../../database/schema'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 /**
- * GET /api/ai-analysis/stats
- * Returns AI analysis usage statistics for the current organization:
- * - Total runs, completed, failed
- * - Token usage (prompt + completion)
- * - Runs over time (last 30 days, grouped by day)
- * - Recent runs with job/candidate info
- * - Per-model breakdown
+ * Organization-wide AI usage/cost reporting is restricted to recruitment
+ * administrators. Recruiters receive AI results only inside requirements
+ * allocated to them.
  */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['read'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const thirtyDaysAgoISO = thirtyDaysAgo.toISOString()
 
-  // Fetch pricing from ALL configs in the org so historical model breakdown
-  // can be priced correctly even if the user has multiple configurations.
   const pricingConfigs = await db.query.aiConfig.findMany({
     where: eq(aiConfig.organizationId, orgId),
     columns: {
@@ -40,88 +36,54 @@ export default defineEventHandler(async (event) => {
   }
   const defaultAnalysisConfig = pricingConfigs.find(c => c.isDefaultAnalysis) ?? pricingConfigs[0] ?? null
 
-  const [
-    totalRuns,
-    completedRuns,
-    failedRuns,
-    tokenUsage,
-    dailyRuns,
-    recentRuns,
-    modelBreakdown,
-  ] = await Promise.all([
-    // 1. Total runs
+  const [totalRuns, completedRuns, failedRuns, tokenUsage, dailyRuns, recentRuns, modelBreakdown] = await Promise.all([
     db.$count(analysisRun, eq(analysisRun.organizationId, orgId)),
-
-    // 2. Completed runs
     db.$count(analysisRun, and(eq(analysisRun.organizationId, orgId), eq(analysisRun.status, 'completed'))),
-
-    // 3. Failed runs
     db.$count(analysisRun, and(eq(analysisRun.organizationId, orgId), eq(analysisRun.status, 'failed'))),
-
-    // 4. Total token usage
-    db
-      .select({
-        totalPromptTokens: sum(analysisRun.promptTokens).as('total_prompt_tokens'),
-        totalCompletionTokens: sum(analysisRun.completionTokens).as('total_completion_tokens'),
-      })
-      .from(analysisRun)
-      .where(eq(analysisRun.organizationId, orgId)),
-
-    // 5. Daily runs (last 30 days)
-    db
-      .select({
-        date: sql<string>`DATE(${analysisRun.createdAt})`.as('date'),
-        count: count().as('count'),
-        promptTokens: sum(analysisRun.promptTokens).as('prompt_tokens'),
-        completionTokens: sum(analysisRun.completionTokens).as('completion_tokens'),
-      })
-      .from(analysisRun)
-      .where(and(
-        eq(analysisRun.organizationId, orgId),
-        sql`${analysisRun.createdAt} >= ${thirtyDaysAgoISO}`,
-      ))
+    db.select({
+      totalPromptTokens: sum(analysisRun.promptTokens).as('total_prompt_tokens'),
+      totalCompletionTokens: sum(analysisRun.completionTokens).as('total_completion_tokens'),
+    }).from(analysisRun).where(eq(analysisRun.organizationId, orgId)),
+    db.select({
+      date: sql<string>`DATE(${analysisRun.createdAt})`.as('date'),
+      count: count().as('count'),
+      promptTokens: sum(analysisRun.promptTokens).as('prompt_tokens'),
+      completionTokens: sum(analysisRun.completionTokens).as('completion_tokens'),
+    }).from(analysisRun)
+      .where(and(eq(analysisRun.organizationId, orgId), sql`${analysisRun.createdAt} >= ${thirtyDaysAgoISO}`))
       .groupBy(sql`DATE(${analysisRun.createdAt})`)
       .orderBy(sql`DATE(${analysisRun.createdAt})`),
-
-    // 6. Recent runs (last 20)
-    db
-      .select({
-        id: analysisRun.id,
-        status: analysisRun.status,
-        provider: analysisRun.provider,
-        model: analysisRun.model,
-        compositeScore: analysisRun.compositeScore,
-        promptTokens: analysisRun.promptTokens,
-        completionTokens: analysisRun.completionTokens,
-        createdAt: analysisRun.createdAt,
-        candidateFirstName: candidate.firstName,
-        candidateLastName: candidate.lastName,
-        jobTitle: job.title,
-      })
-      .from(analysisRun)
+    db.select({
+      id: analysisRun.id,
+      status: analysisRun.status,
+      provider: analysisRun.provider,
+      model: analysisRun.model,
+      compositeScore: analysisRun.compositeScore,
+      promptTokens: analysisRun.promptTokens,
+      completionTokens: analysisRun.completionTokens,
+      createdAt: analysisRun.createdAt,
+      candidateFirstName: candidate.firstName,
+      candidateLastName: candidate.lastName,
+      jobTitle: job.title,
+    }).from(analysisRun)
       .innerJoin(application, eq(application.id, analysisRun.applicationId))
       .innerJoin(candidate, eq(candidate.id, application.candidateId))
       .innerJoin(job, eq(job.id, application.jobId))
       .where(eq(analysisRun.organizationId, orgId))
       .orderBy(desc(analysisRun.createdAt))
       .limit(20),
-
-    // 7. Per-model breakdown
-    db
-      .select({
-        provider: analysisRun.provider,
-        model: analysisRun.model,
-        runCount: count().as('run_count'),
-        totalPromptTokens: sum(analysisRun.promptTokens).as('total_prompt_tokens'),
-        totalCompletionTokens: sum(analysisRun.completionTokens).as('total_completion_tokens'),
-      })
-      .from(analysisRun)
+    db.select({
+      provider: analysisRun.provider,
+      model: analysisRun.model,
+      runCount: count().as('run_count'),
+      totalPromptTokens: sum(analysisRun.promptTokens).as('total_prompt_tokens'),
+      totalCompletionTokens: sum(analysisRun.completionTokens).as('total_completion_tokens'),
+    }).from(analysisRun)
       .where(eq(analysisRun.organizationId, orgId))
       .groupBy(analysisRun.provider, analysisRun.model),
   ])
 
   const usage = tokenUsage[0]
-
   const inputPrice = defaultAnalysisConfig?.inputPricePer1m != null ? Number(defaultAnalysisConfig.inputPricePer1m) : null
   const outputPrice = defaultAnalysisConfig?.outputPricePer1m != null ? Number(defaultAnalysisConfig.outputPricePer1m) : null
 

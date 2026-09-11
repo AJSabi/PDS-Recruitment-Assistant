@@ -5,7 +5,7 @@ import {
   UserRound, Briefcase, Pencil, MapPin, Users, MessageSquare,
   Save, X, Mail, Send, CheckCheck, ChevronDown, ExternalLink,
   Check, AlertCircle,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

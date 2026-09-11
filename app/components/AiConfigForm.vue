@@ -10,7 +10,7 @@
 import {
   Brain, Sparkles, Eye, EyeOff, ExternalLink, Loader2, Check,
   Save, Zap, Star, AlertTriangle, ChevronDown, KeyRound, ArrowLeft,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 interface ModelInfo {
   id: string

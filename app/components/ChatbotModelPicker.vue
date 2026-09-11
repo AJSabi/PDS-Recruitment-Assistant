@@ -7,7 +7,7 @@
  * (org's default chatbot config). Includes a "Manage models…" entry that
  * emits `manage` so the host can navigate to /dashboard/settings/ai.
  */
-import { Brain, Check, ChevronUp, Settings, Star, AlertTriangle } from 'lucide-vue-next'
+import { Brain, Check, ChevronUp, Settings, Star, AlertTriangle } from '@lucide/vue'
 
 const { aiConfigs, selectedAiConfigId, currentConversationId, updateConversation } = useChatbot()
 const emit = defineEmits<{ manage: [] }>()

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   ArrowLeft, Save, Eye, EyeOff, Mail, AlertCircle, FileText,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

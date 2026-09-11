@@ -1,115 +1,89 @@
 import { eq, and, desc, or, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { activityLog, user, application, job, candidate } from '../../database/schema'
+import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 const querySchema = z.object({
   candidateId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 })
 
-/**
- * GET /api/activity-log/candidate-timeline?candidateId=…
- *
- * Returns activity-log entries related to a specific candidate:
- *   - Direct candidate-resource events
- *   - Events on any application belonging to this candidate
- *
- * Used by the CandidateDetailSidebar "Timeline" tab.
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { activityLog: ['read'] })
   const orgId = session.session.activeOrganizationId
-
   const query = await getValidatedQuery(event, querySchema.parse)
+  const visibleRequirementIds = await getVisibleRequirementIds(orgId, session.user.id)
 
-  // 1. Load application IDs for this candidate (within the org)
-  const candidateApps = await db
-    .select({ id: application.id })
+  const candidateRow = await db.query.candidate.findFirst({
+    where: and(eq(candidate.id, query.candidateId), eq(candidate.organizationId, orgId)),
+    columns: { id: true, firstName: true, lastName: true },
+  })
+  if (!candidateRow) throw createError({ statusCode: 404, statusMessage: 'Candidate not found' })
+
+  const applicationConditions = [
+    eq(application.organizationId, orgId),
+    eq(application.candidateId, query.candidateId),
+  ]
+  if (visibleRequirementIds) {
+    if (visibleRequirementIds.length === 0) {
+      applicationConditions.push(eq(application.id, '__none__'))
+    } else {
+      applicationConditions.push(inArray(application.jobId, visibleRequirementIds))
+    }
+  }
+
+  const candidateApps = await db.select({ id: application.id })
     .from(application)
-    .where(and(
-      eq(application.organizationId, orgId),
-      eq(application.candidateId, query.candidateId),
-    ))
-
+    .where(and(...applicationConditions))
   const appIds = candidateApps.map(a => a.id)
 
-  // 2. Build OR conditions for resource matching
   const resourceConditions = [
     and(eq(activityLog.resourceType, 'candidate'), eq(activityLog.resourceId, query.candidateId)),
   ]
   if (appIds.length > 0) {
-    resourceConditions.push(
-      and(eq(activityLog.resourceType, 'application'), inArray(activityLog.resourceId, appIds)),
-    )
+    resourceConditions.push(and(eq(activityLog.resourceType, 'application'), inArray(activityLog.resourceId, appIds)))
   }
 
-  // 3. Fetch activity entries
-  const data = await db
-    .select({
-      id: activityLog.id,
-      action: activityLog.action,
-      resourceType: activityLog.resourceType,
-      resourceId: activityLog.resourceId,
-      metadata: activityLog.metadata,
-      createdAt: activityLog.createdAt,
-      actorId: activityLog.actorId,
-      actorName: user.name,
-      actorEmail: user.email,
-      actorImage: user.image,
-    })
-    .from(activityLog)
+  const data = await db.select({
+    id: activityLog.id,
+    action: activityLog.action,
+    resourceType: activityLog.resourceType,
+    resourceId: activityLog.resourceId,
+    metadata: activityLog.metadata,
+    createdAt: activityLog.createdAt,
+    actorId: activityLog.actorId,
+    actorName: user.name,
+    actorEmail: user.email,
+    actorImage: user.image,
+  }).from(activityLog)
     .innerJoin(user, eq(user.id, activityLog.actorId))
-    .where(and(
-      eq(activityLog.organizationId, orgId),
-      or(...resourceConditions),
-    ))
+    .where(and(eq(activityLog.organizationId, orgId), or(...resourceConditions)))
     .orderBy(desc(activityLog.createdAt))
     .limit(query.limit)
 
-  // 4. Enrich application events with job title
-  const jobIdsForApps = new Set<string>()
+  let appJobMap = new Map<string, { jobId: string; jobTitle: string }>()
   if (appIds.length > 0) {
-    const appJobs = await db
-      .select({ id: application.id, jobId: application.jobId, jobTitle: job.title })
+    const appJobs = await db.select({ id: application.id, jobId: application.jobId, jobTitle: job.title })
       .from(application)
       .innerJoin(job, eq(job.id, application.jobId))
-      .where(inArray(application.id, appIds))
-    for (const aj of appJobs) {
-      jobIdsForApps.add(aj.jobId)
-    }
-    var appJobMap = new Map(appJobs.map(a => [a.id, { jobId: a.jobId, jobTitle: a.jobTitle }]))
+      .where(and(eq(application.organizationId, orgId), inArray(application.id, appIds)))
+    appJobMap = new Map(appJobs.map(a => [a.id, { jobId: a.jobId, jobTitle: a.jobTitle }]))
   }
 
-  // 5. Get candidate name for display
-  const [cand] = await db
-    .select({ firstName: candidate.firstName, lastName: candidate.lastName })
-    .from(candidate)
-    .where(and(eq(candidate.id, query.candidateId), eq(candidate.organizationId, orgId)))
-    .limit(1)
-
-  const candidateName = cand ? `${cand.firstName} ${cand.lastName}` : 'Unknown'
-
-  // 6. Enrich items
+  const candidateName = `${candidateRow.firstName} ${candidateRow.lastName}`
   const items = data.map((item) => {
     let resourceName: string | null = null
     let jobTitle: string | null = null
-
     if (item.resourceType === 'candidate') {
       resourceName = candidateName
-    } else if (item.resourceType === 'application' && appJobMap) {
+    } else if (item.resourceType === 'application') {
       const info = appJobMap.get(item.resourceId)
       if (info) {
         resourceName = `${candidateName} → ${info.jobTitle}`
         jobTitle = info.jobTitle
       }
     }
-
-    return {
-      ...item,
-      resourceName,
-      jobTitle,
-      candidateName,
-    }
+    return { ...item, resourceName, jobTitle, candidateName }
   })
 
   return { items, candidateId: query.candidateId, candidateName }

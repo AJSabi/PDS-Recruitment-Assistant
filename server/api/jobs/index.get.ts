@@ -1,6 +1,7 @@
 import { eq, and, desc, count, inArray } from 'drizzle-orm'
 import { job, application } from '../../database/schema'
 import { jobQuerySchema } from '../../utils/schemas/job'
+import { getVisibleRequirementIds } from '../../utils/recruitmentVisibility'
 
 interface PipelineCounts {
   new: number
@@ -14,12 +15,19 @@ interface PipelineCounts {
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { job: ['read'] })
   const orgId = session.session.activeOrganizationId
+  const userId = session.user.id
 
   const query = await getValidatedQuery(event, jobQuerySchema.parse)
+  const visibleRequirementIds = await getVisibleRequirementIds(orgId, userId)
+
+  if (visibleRequirementIds && visibleRequirementIds.length === 0) {
+    return { data: [], total: 0, page: query.page, limit: query.limit }
+  }
 
   const offset = (query.page - 1) * query.limit
   const conditions = [eq(job.organizationId, orgId)]
   if (query.status) conditions.push(eq(job.status, query.status))
+  if (visibleRequirementIds) conditions.push(inArray(job.id, visibleRequirementIds))
 
   const [data, total] = await Promise.all([
     db.query.job.findMany({
@@ -44,9 +52,8 @@ export default defineEventHandler(async (event) => {
     db.$count(job, and(...conditions)),
   ])
 
-  // Fetch pipeline counts (application status breakdown) for returned jobs
-  const jobIds = data.map((j) => j.id)
-  let pipelineMap: Record<string, PipelineCounts> = {}
+  const jobIds = data.map(j => j.id)
+  const pipelineMap: Record<string, PipelineCounts> = {}
 
   if (jobIds.length > 0) {
     const pipelineRows = await db
@@ -68,7 +75,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const enrichedData = data.map((j) => ({
+  const enrichedData = data.map(j => ({
     ...j,
     pipeline: pipelineMap[j.id] ?? { new: 0, screening: 0, interview: 0, offer: 0, hired: 0, rejected: 0 },
   }))

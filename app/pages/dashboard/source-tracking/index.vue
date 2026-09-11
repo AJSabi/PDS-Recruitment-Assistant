@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Clock, Filter,
   Copy, ToggleLeft, ToggleRight,
   Trash2, ChevronDown, ChevronUp, X,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

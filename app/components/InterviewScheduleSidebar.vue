@@ -4,7 +4,7 @@ import {
   Plus, AlertCircle, Mail, ChevronDown, RefreshCw, Globe,
   Send, UserPlus, Bell, Pencil, CheckCircle2, ExternalLink,
   ArrowRight, Eye,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { SYSTEM_TEMPLATES } from '~/utils/system-templates'
 
 const props = withDefaults(defineProps<{

@@ -21,7 +21,7 @@ const dobSchema = z
 /** Schema for creating a new candidate */
 export const createCandidateSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),
-  lastName: z.string().min(1, 'Last name is required').max(100),
+  lastName: z.string().trim().max(100).optional().default(''),
   displayName: z.string().max(200).optional(),
   email: z
     .string()
@@ -38,7 +38,7 @@ export const createCandidateSchema = z.object({
 /** Schema for updating an existing candidate (all fields optional) */
 export const updateCandidateSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100).optional(),
-  lastName: z.string().min(1, 'Last name is required').max(100).optional(),
+  lastName: z.string().trim().max(100).optional(),
   displayName: z.string().max(200).nullish(),
   email: z
     .string()

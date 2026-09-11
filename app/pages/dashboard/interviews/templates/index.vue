@@ -2,7 +2,7 @@
 import {
   ArrowLeft, Plus, Mail, Trash2, Sparkles, Lock,
   FileText, ChevronRight,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

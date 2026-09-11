@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { aiConfig, chatbotAgent, chatbotConversation, chatbotFolder, job } from '../../../database/schema'
+import { aiConfig, chatbotAgent, chatbotConversation, chatbotFolder } from '../../../database/schema'
 import { requireChatbotAccess } from '../../../utils/chatbotAccess'
+import { assertRequirementAccess, getRequirementVisibility } from '../../../utils/recruitmentVisibility'
 import type { ChatbotConversationSummary, ChatbotScope } from '../../../../shared/chatbot'
 
 const bodySchema = z.object({
@@ -29,6 +30,22 @@ export default defineEventHandler(async (event): Promise<{ conversation: Chatbot
   const { id } = await getValidatedRouterParams(event, z.object({ id: z.string().uuid() }).parse)
 
   const body = await readValidatedBody(event, bodySchema.parse)
+
+  if (body.scope) {
+    const visibility = await getRequirementVisibility(orgId, userId)
+    if (body.scope.kind === 'organization' && !visibility.canSeeAll) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'Organization-wide assistant scope is available only to recruitment administrators. Select one of your allocated requirements.',
+      })
+    }
+    if (body.scope.kind === 'job') {
+      if (!body.scope.jobId) {
+        throw createError({ statusCode: 400, statusMessage: 'jobId required for job scope.' })
+      }
+      await assertRequirementAccess(orgId, userId, body.scope.jobId)
+    }
+  }
 
   if (body.folderId) {
     const f = await db.query.chatbotFolder.findFirst({
@@ -58,16 +75,6 @@ export default defineEventHandler(async (event): Promise<{ conversation: Chatbot
       columns: { id: true },
     })
     if (!c) throw createError({ statusCode: 404, statusMessage: 'AI configuration not found.' })
-  }
-  if (body.scope?.kind === 'job') {
-    if (!body.scope.jobId) {
-      throw createError({ statusCode: 400, statusMessage: 'jobId required for job scope.' })
-    }
-    const j = await db.query.job.findFirst({
-      where: and(eq(job.id, body.scope.jobId), eq(job.organizationId, orgId)),
-      columns: { id: true },
-    })
-    if (!j) throw createError({ statusCode: 404, statusMessage: 'Job not found.' })
   }
 
   const updates: Partial<typeof chatbotConversation.$inferInsert> = { updatedAt: new Date() }

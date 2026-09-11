@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   Save, Trash2, ArrowLeft, ExternalLink, Link2, ClipboardCopy,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { z } from 'zod'
 
 definePageMeta({

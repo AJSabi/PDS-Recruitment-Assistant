@@ -1,13 +1,13 @@
 import { eq, and, isNull, max } from 'drizzle-orm'
-import { application, candidate, orgSettings } from '../../database/schema'
+import { application, candidate, job, orgSettings, recruitmentRequirementState } from '../../database/schema'
 import { candidateIdParamSchema } from '../../utils/schemas/candidate'
 import { loadPropertyEntriesForEntity } from '../../utils/properties'
 import { computeRetentionState } from '../../utils/retention'
+import { getRequirementVisibility } from '../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { candidate: ['read'] })
   const orgId = session.session.activeOrganizationId
-
   const { id } = await getValidatedRouterParams(event, candidateIdParamSchema.parse)
 
   const result = await db.query.candidate.findFirst({
@@ -34,15 +34,6 @@ export default defineEventHandler(async (event) => {
       updatedAt: true,
     },
     with: {
-      applications: {
-        columns: { id: true, status: true, createdAt: true },
-        with: {
-          job: {
-            columns: { id: true, title: true },
-          },
-        },
-        orderBy: (application, { desc }) => [desc(application.createdAt)],
-      },
       documents: {
         columns: { id: true, type: true, originalFilename: true, mimeType: true, parsedContent: true, createdAt: true },
         orderBy: (document, { desc }) => [desc(document.createdAt)],
@@ -50,13 +41,37 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  if (!result) {
-    throw createError({ statusCode: 404, statusMessage: 'Not found' })
-  }
+  if (!result) throw createError({ statusCode: 404, statusMessage: 'Not found' })
 
-  // Replace heavy parsedContent with a lightweight `parsed` boolean
+  const visibility = await getRequirementVisibility(orgId, session.user.id)
+  const applicationRows = visibility.canSeeAll
+    ? await db.select({
+        id: application.id,
+        status: application.status,
+        createdAt: application.createdAt,
+        jobId: job.id,
+        jobTitle: job.title,
+      }).from(application)
+        .innerJoin(job, and(eq(job.id, application.jobId), eq(job.organizationId, orgId)))
+        .where(and(eq(application.organizationId, orgId), eq(application.candidateId, id)))
+        .orderBy(application.createdAt)
+    : await db.select({
+        id: application.id,
+        status: application.status,
+        createdAt: application.createdAt,
+        jobId: job.id,
+        jobTitle: job.title,
+      }).from(application)
+        .innerJoin(job, and(eq(job.id, application.jobId), eq(job.organizationId, orgId)))
+        .innerJoin(recruitmentRequirementState, and(
+          eq(recruitmentRequirementState.jobId, application.jobId),
+          eq(recruitmentRequirementState.organizationId, orgId),
+          eq(recruitmentRequirementState.ownerUserId, session.user.id),
+        ))
+        .where(and(eq(application.organizationId, orgId), eq(application.candidateId, id)))
+        .orderBy(application.createdAt)
+
   const { documents, ...rest } = result
-
   const properties = await loadPropertyEntriesForEntity({
     organizationId: orgId,
     entityType: 'candidate',
@@ -71,15 +86,12 @@ export default defineEventHandler(async (event) => {
         retentionActivatedAt: true,
       },
     }),
-    db
-      .select({ latest: max(application.updatedAt) })
-      .from(application)
-      .where(and(
-        eq(application.organizationId, orgId),
-        eq(application.candidateId, id),
-      ))
-      .then(rows => rows[0]?.latest ?? null),
+    db.select({ latest: max(application.updatedAt) }).from(application).where(and(
+      eq(application.organizationId, orgId),
+      eq(application.candidateId, id),
+    )).then(rows => rows[0]?.latest ?? null),
   ])
+
   const retention = settings?.retentionEnabled
     ? {
         enabled: true as const,
@@ -107,11 +119,14 @@ export default defineEventHandler(async (event) => {
 
   return {
     ...publicCandidate,
-    retention,
-    documents: documents.map(({ parsedContent, ...doc }) => ({
-      ...doc,
-      parsed: parsedContent != null,
+    applications: applicationRows.map(row => ({
+      id: row.id,
+      status: row.status,
+      createdAt: row.createdAt,
+      job: { id: row.jobId, title: row.jobTitle },
     })),
+    retention,
+    documents: documents.map(({ parsedContent, ...doc }) => ({ ...doc, parsed: parsedContent != null })),
     properties,
   }
 })

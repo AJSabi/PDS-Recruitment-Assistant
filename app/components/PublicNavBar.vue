@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Github, Sun, Moon } from 'lucide-vue-next'
+import { GitBranch, Sun, Moon } from '@lucide/vue'
 
 defineProps<{
   activePage?: 'features' | 'jobs' | 'roadmap' | 'blog' | 'docs'
@@ -46,7 +46,7 @@ const { isDark, toggle: toggleColorMode } = useColorMode()
           rel="noopener noreferrer"
           class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-surface-500 dark:text-surface-400 transition hover:text-surface-900 dark:hover:text-white"
         >
-          <Github class="h-3.5 w-3.5" />
+          <GitBranch class="h-3.5 w-3.5" />
           {{ t('home.nav.github') }}
         </a>
       </div>

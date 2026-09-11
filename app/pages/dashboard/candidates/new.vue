@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft } from '@lucide/vue'
 import { z } from 'zod'
 
 definePageMeta({
@@ -33,7 +33,7 @@ const submitError = ref<string | null>(null)
 
 const formSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),
-  lastName: z.string().min(1, 'Last name is required').max(100),
+  lastName: z.string().trim().max(100),
   displayName: z.string().max(200).optional(),
   email: z.string().min(1, 'Email is required').email('Invalid email address').max(255),
   phone: z.string().max(50).optional(),
@@ -139,7 +139,7 @@ async function handleSubmit() {
       <!-- Last Name -->
       <div>
         <label for="lastName" class="block text-sm font-medium text-surface-700 dark:text-surface-300 mb-1">
-          Last Name <span class="text-danger-500">*</span>
+          Last Name <span class="ml-1 text-xs font-normal text-surface-400">(optional for single-name candidates)</span>
         </label>
         <input
           id="lastName"

@@ -1,15 +1,14 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { aiConfig } from '../../database/schema'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
-/**
- * GET /api/ai-config/:id — fetch a single AI configuration (no API key).
- */
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['read'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
 
   const row = await db.query.aiConfig.findFirst({

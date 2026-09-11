@@ -2,7 +2,7 @@
 import {
   ArrowLeft, Save, Eye, EyeOff, Copy, Trash2, Lock,
   FileText, Mail, AlertCircle,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

@@ -75,7 +75,7 @@ describe('resume-parser', () => {
       expect(result).not.toBeNull()
       expect(result!.text).toContain('John Doe')
       expect(result!.metadata.sourceFormat).toBe('pdf')
-      expect(result!.metadata.parserVersion).toBe('1.0')
+      expect(result!.metadata.parserVersion).toBe('1.1')
       expect(result!.metadata.wordCount).toBeGreaterThan(0)
       expect(result!.metadata.extractedAt).toBeTruthy()
       expect(result!.metadata.pageCount).toBe(1)

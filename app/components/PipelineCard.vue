@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { User, Calendar } from 'lucide-vue-next'
+import { User, Calendar } from '@lucide/vue'
 
 const props = defineProps<{
   id: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Briefcase, Building2, MapPin } from 'lucide-vue-next'
+import { Briefcase, Building2, MapPin } from '@lucide/vue'
 
 defineProps<{
   job: {

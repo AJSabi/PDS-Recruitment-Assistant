@@ -1,8 +1,8 @@
 import { eq } from 'drizzle-orm'
 import { orgSettings } from '../../database/schema'
 import { updateOrgSettingsSchema } from '../../utils/schemas/orgSettings'
+import { assertRecruitmentAdmin } from '../../utils/recruitmentVisibility'
 
-/** Empty strings from form inputs become NULL for nullable text fields. */
 function emptyToNull(v: string | null | undefined): string | null | undefined {
   if (v === undefined) return undefined
   if (v === null || v === '') return null
@@ -12,16 +12,14 @@ function emptyToNull(v: string | null | undefined): string | null | undefined {
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { organization: ['update'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const body = await readValidatedBody(event, updateOrgSettingsSchema.parse)
-
   const existing = await db.query.orgSettings.findFirst({
     where: eq(orgSettings.organizationId, orgId),
     columns: { retentionActivatedAt: true },
   })
 
-  // Stamp the activation time the first time retention is turned on — this
-  // anchors the review window so existing data isn't deleted immediately.
   const retentionActivatedAt = body.retentionEnabled === true
     ? (existing?.retentionActivatedAt ?? new Date())
     : existing?.retentionActivatedAt ?? null
@@ -30,8 +28,7 @@ export default defineEventHandler(async (event) => {
   const privacyContactEmail = emptyToNull(body.privacyContactEmail)
   const privacyPolicyText = emptyToNull(body.privacyPolicyText)
 
-  const [result] = await db
-    .insert(orgSettings)
+  const [result] = await db.insert(orgSettings)
     .values({
       organizationId: orgId,
       nameDisplayFormat: body.nameDisplayFormat ?? 'first_last',
@@ -71,16 +68,10 @@ export default defineEventHandler(async (event) => {
       privacyContactEmail: orgSettings.privacyContactEmail,
     })
 
-  if (!result) {
-    throw createError({ statusCode: 500, statusMessage: 'Failed to save settings' })
-  }
+  if (!result) throw createError({ statusCode: 500, statusMessage: 'Failed to save settings' })
 
   logApiRequest(event, session, 'org_settings.updated', {})
-  if (
-    body.retentionEnabled !== undefined
-    || body.retentionMonths !== undefined
-    || body.quarantineDays !== undefined
-  ) {
+  if (body.retentionEnabled !== undefined || body.retentionMonths !== undefined || body.quarantineDays !== undefined) {
     await recordActivity({
       organizationId: orgId,
       actorId: session.user.id,

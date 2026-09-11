@@ -1,0 +1,146 @@
+name: PDS Browser E2E
+
+on:
+  push:
+    branches:
+      - feature/pds-skill-matrix
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U e2e -d e2e"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      CI: true
+      NODE_ENV: production
+      PORT: 3333
+      HOST: 0.0.0.0
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3333
+      DATABASE_URL: postgresql://e2e:e2e@127.0.0.1:5432/e2e
+      BETTER_AUTH_SECRET: ${{ github.sha }}-browser-secret
+      BETTER_AUTH_URL: http://127.0.0.1:3333
+      FEATURE_FLAG_CHATBOT_EXPERIENCE: true
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_ACCESS_KEY: e2eaccess${{ github.run_number }}
+      S3_SECRET_KEY: ${{ github.sha }}
+      S3_BUCKET: e2e-bucket
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: true
+      RESEND_API_KEY: re_${{ github.sha }}
+      E2E_TEST_PASSWORD: Aa1!${{ github.run_id }}Bb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Use validated npm resolver
+        run: |
+          npm install --global npm@11.6.0
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Start MinIO document storage
+        shell: bash
+        run: |
+          docker run -d --name pds-minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER="$S3_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
+            minio/minio:latest server /data
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs pds-minio
+              exit 1
+            fi
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint /bin/sh minio/mc:latest -c \
+            "mc alias set local http://127.0.0.1:9000 '$S3_ACCESS_KEY' '$S3_SECRET_KEY' && mc mb --ignore-existing local/$S3_BUCKET"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Apply database migrations
+        run: npm run db:migrate
+
+      - name: Build application
+        run: npm run build
+
+      - name: Start application
+        shell: bash
+        run: |
+          npm run start > /tmp/pds-e2e-server.log 2>&1 &
+          echo $! > /tmp/pds-e2e-server.pid
+
+      - name: Wait for application
+        run: npx wait-on --timeout 60000 http-get://127.0.0.1:3333
+
+      - name: Run PDS browser governance tests
+        run: >-
+          npx playwright test
+          e2e/critical-flows/pds-recruitment-governance.spec.ts
+          e2e/critical-flows/pds-screening-governance.spec.ts
+          e2e/critical-flows/pds-candidate-preservation.spec.ts
+          e2e/critical-flows/pds-identity-conflict-resolution.spec.ts
+          e2e/critical-flows/pds-public-application-atomicity.spec.ts
+          e2e/critical-flows/pds-document-chatbot-scope.spec.ts
+          e2e/critical-flows/pds-session-isolation.spec.ts
+          e2e/critical-flows/pds-recruiter-kpi-governance.spec.ts
+          e2e/critical-flows/pds-dashboard-shared-recruiter-filter.spec.ts
+          e2e/critical-flows/pds-ta-operations-scope.spec.ts
+          e2e/critical-flows/pds-candidate-search-scope.spec.ts
+          e2e/critical-flows/pds-requirement-settings-governance.spec.ts
+          e2e/critical-flows/pds-empty-state-governance.spec.ts
+          e2e/critical-flows/pds-recoverable-error-governance.spec.ts
+          e2e/critical-flows/pds-stale-data-governance.spec.ts
+          e2e/critical-flows/pds-terminology-governance.spec.ts
+          e2e/critical-flows/pds-navigation-governance.spec.ts
+          e2e/critical-flows/pds-date-time-governance.spec.ts
+          e2e/critical-flows/pds-responsive-governance.spec.ts
+          e2e/critical-flows/pds-final-closure-governance.spec.ts
+          --project=chromium
+
+      - name: Show server log on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f /tmp/pds-e2e-server.log ]; then
+            tail -n 300 /tmp/pds-e2e-server.log
+          fi
+          docker logs pds-minio || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pds-browser-e2e-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Columns2, Check } from 'lucide-vue-next'
+import { Columns2, Check } from '@lucide/vue'
 
 const props = defineProps<{
   columns: { key: string; label: string; required?: boolean }[]

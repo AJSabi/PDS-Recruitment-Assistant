@@ -2,19 +2,22 @@ import type { Ref } from 'vue'
 
 /**
  * Composable for managing the jobs list with filtering, pagination, and mutations.
- * Wraps `useFetch('/api/jobs')` with a singleton key for shared state.
+ * Each filter variant gets its own Nuxt fetch key so one page cannot overwrite
+ * another page's requirement list in shared client state.
  */
 export function useJobs(options?: {
   status?: Ref<string | undefined> | string
 }) {
   const { handlePreviewReadOnlyError } = usePreviewReadOnly()
 
+  const normalizedStatus = computed(() => toValue(options?.status) || undefined)
   const query = computed(() => ({
-    ...(toValue(options?.status) && { status: toValue(options?.status) }),
+    ...(normalizedStatus.value && { status: normalizedStatus.value }),
   }))
+  const fetchKey = computed(() => `jobs:${normalizedStatus.value ?? 'all'}`)
 
   const { data, status: fetchStatus, error, refresh } = useFetch('/api/jobs', {
-    key: 'jobs',
+    key: fetchKey,
     query,
     headers: useRequestHeaders(['cookie']),
   })

@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
     action: 'created',
     resourceType: 'candidate',
     resourceId: created.id,
-    metadata: { name: `${created.firstName} ${created.lastName}` },
+    metadata: { name: [created.firstName, created.lastName].filter(Boolean).join(' ') },
   })
 
   trackEvent(event, session, 'candidate created', {

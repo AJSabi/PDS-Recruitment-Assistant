@@ -18,7 +18,7 @@ import {
   ChevronRight, MessageSquare, Pin, PinOff,
   MoreHorizontal, Pencil, Trash2, Sparkles, Inbox,
   X, Check,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { ChatbotConversationSummary, ChatbotFolder } from '~~/shared/chatbot'
 
 const {

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { createDurableDatabaseBackup } from '../../utils/databaseBackup'
 
 const execFileAsync = promisify(execFile)
 
@@ -14,13 +15,7 @@ interface UpdateResult {
  * POST /api/updates/apply
  *
  * Triggers a self-hosted update via Docker Compose.
- * This endpoint orchestrates the update process:
- *   1. Pulls latest code from the default branch
- *   2. Rebuilds the Docker containers
- *   3. Restarts the application
- *
- * Only works for Docker-based deployments. Railway deployments
- * auto-update via GitHub integration.
+ * A durable PostgreSQL backup is mandatory before any code pull/rebuild.
  *
  * Requires authentication (owner only).
  */
@@ -29,7 +24,6 @@ export default defineEventHandler(async (event) => {
 
   const steps: UpdateResult['steps'] = []
 
-  // Read current version before update
   const { readFile } = await import('node:fs/promises')
   const { resolve } = await import('node:path')
   let previousVersion: string | null = null
@@ -41,7 +35,6 @@ export default defineEventHandler(async (event) => {
     previousVersion = null
   }
 
-  // Verify we're running in Docker
   try {
     const { access } = await import('node:fs/promises')
     await access('/.dockerenv')
@@ -55,22 +48,40 @@ export default defineEventHandler(async (event) => {
     } satisfies UpdateResult
   }
 
-  // Verify required commands are available
-  for (const cmd of ['git', 'docker'] as const) {
+  for (const cmd of ['git', 'docker', 'pg_dump'] as const) {
     try {
       await execFileAsync('which', [cmd], { timeout: 5_000 })
     }
     catch {
       return {
         success: false,
-        message: `The "${cmd}" command is not available inside this container. One-click updates require git and docker CLI to be installed in the container image, and the Docker socket to be mounted. Please update manually instead.`,
+        message: `The "${cmd}" command is not available inside this container. One-click updates require git, docker CLI, and pg_dump. Please update manually instead.`,
         previousVersion,
         steps: [],
       } satisfies UpdateResult
     }
   }
 
-  // Step 1: Pull latest changes
+  // Safety gate: never change application code until a durable backup exists.
+  try {
+    const backup = await createDurableDatabaseBackup(env.DATABASE_URL)
+    steps.push({
+      step: 'Create durable database backup',
+      status: 'success',
+      detail: `${backup.path} (${backup.sizeBytes} bytes)`,
+    })
+  }
+  catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    steps.push({ step: 'Create durable database backup', status: 'failed', detail: message })
+    return {
+      success: false,
+      message: 'Update aborted because a durable database backup could not be created. No code was pulled and no containers were rebuilt.',
+      previousVersion,
+      steps,
+    } satisfies UpdateResult
+  }
+
   try {
     const { stdout } = await execFileAsync('git', ['pull', 'origin', 'main'], {
       cwd: '/app',
@@ -87,19 +98,18 @@ export default defineEventHandler(async (event) => {
     steps.push({ step: 'Pull latest code', status: 'failed', detail: message })
     return {
       success: false,
-      message: 'Failed to pull latest code. Check your network connection and try again.',
+      message: 'Failed to pull latest code. The pre-update database backup remains available.',
       previousVersion,
       steps,
     } satisfies UpdateResult
   }
 
-  // Step 2: Rebuild and restart via Docker Compose
   try {
     const { stdout } = await execFileAsync(
       'docker', ['compose', 'up', '--build', '--detach', '--no-deps', 'app'],
       {
         cwd: '/app',
-        timeout: 600_000, // 10 minutes for build
+        timeout: 600_000,
       },
     )
     steps.push({
@@ -113,7 +123,7 @@ export default defineEventHandler(async (event) => {
     steps.push({ step: 'Rebuild & restart', status: 'failed', detail: message })
     return {
       success: false,
-      message: 'Failed to rebuild. Your current version is still running safely. Try running the update manually.',
+      message: 'Failed to rebuild. A pre-update database backup is available for recovery; restore must be an explicit operator action.',
       previousVersion,
       steps,
     } satisfies UpdateResult
@@ -121,7 +131,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     success: true,
-    message: 'Update started successfully. The application will restart momentarily. Refresh this page in about 30 seconds.',
+    message: 'Update started successfully after creating a durable database backup. The application will restart momentarily.',
     previousVersion,
     steps,
   } satisfies UpdateResult

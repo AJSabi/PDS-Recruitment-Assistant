@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { aiConfig } from '../../../database/schema'
 import { setAiConfigDefaultSchema } from '../../../utils/schemas/scoring'
+import { assertRecruitmentAdmin } from '../../../utils/recruitmentVisibility'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
 
@@ -18,6 +19,7 @@ const paramsSchema = z.object({ id: z.string().min(1) })
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { scoring: ['create'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, setAiConfigDefaultSchema.parse)
 

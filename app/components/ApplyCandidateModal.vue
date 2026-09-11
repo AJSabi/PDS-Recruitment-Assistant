@@ -1,133 +1,460 @@
 <script setup lang="ts">
-import { Search, X, UserPlus } from 'lucide-vue-next'
+import { CheckCircle2, FileText, Loader2, Search, ShieldCheck, Upload, UserPlus, UserRoundPlus, X } from '@lucide/vue'
 import { usePreviewReadOnly } from '~/composables/usePreviewReadOnly'
 
 const props = withDefaults(defineProps<{
   jobId: string
   teleportTarget?: string | HTMLElement
-}>(), {
-  teleportTarget: 'body',
-})
+}>(), { teleportTarget: 'body' })
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'created'): void
+  (e: 'created', payload?: { applicationId?: string; created?: boolean; resumeUploaded?: boolean }): void
 }>()
 
-// Search for candidates
+const toast = useToast()
+const localePath = useLocalePath()
+const mode = ref<'existing' | 'new'>('new')
 const searchInput = ref('')
 const debouncedSearch = ref<string | undefined>(undefined)
+const selectedExistingCandidateId = ref<string | null>(null)
+const resumeFile = ref<File | null>(null)
+const isParsingResume = ref(false)
+type IdentityConfidence = 'high' | 'medium' | 'low'
+type ParsedResumeIdentity = {
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  nameConfidence: IdentityConfidence
+  nameSource: 'label' | 'header' | 'filename' | 'unresolved'
+  emailConfidence: IdentityConfidence
+  emailSource: 'resume_text' | 'unresolved'
+  phoneConfidence: IdentityConfidence
+  phoneSource: 'label' | 'resume_text' | 'unresolved'
+  reviewRequired: boolean
+  reviewReasons: string[]
+}
+type CandidateIdentityConflictCheck = {
+  matched: boolean
+  matchBasis?: 'email' | 'phone'
+  requiresConfirmation?: boolean
+  conflicts?: Array<{ field: 'name' | 'email' | 'phone'; existing: string; incoming: string }>
+  candidate?: { id: string; firstName: string; lastName: string; email: string; phone: string | null }
+}
+const resumeIdentity = ref<ParsedResumeIdentity | null>(null)
+const identityReviewed = ref(false)
+const applyingParsedIdentity = ref(false)
+const identityConflictCheck = ref<CandidateIdentityConflictCheck | null>(null)
+const identityConflictConfirmed = ref(false)
+const identityUpdateFields = reactive({ name: false, email: false, phone: false })
 
+function confidenceLabel(confidence?: IdentityConfidence) {
+  if (confidence === 'high') return 'High confidence'
+  if (confidence === 'medium') return 'Review recommended'
+  return 'Manual review required'
+}
+
+function identitySourceLabel(source?: ParsedResumeIdentity['nameSource']) {
+  if (source === 'label') return 'Explicit resume name field'
+  if (source === 'header') return 'Resume header'
+  if (source === 'filename') return 'Filename/contact corroboration'
+  return 'Identity unresolved by parser'
+}
+
+function emailSourceLabel(source?: ParsedResumeIdentity['emailSource']) {
+  return source === 'resume_text' ? 'Detected in resume text' : 'Email not resolved by parser'
+}
+
+function phoneSourceLabel(source?: ParsedResumeIdentity['phoneSource']) {
+  if (source === 'label') return 'Explicit phone/mobile field'
+  if (source === 'resume_text') return 'Number detected in resume text'
+  return 'Phone not resolved by parser'
+}
+
+function emptyResumeIdentity(): ParsedResumeIdentity {
+  return {
+    firstName: '',
+    lastName: '',
+    email: null,
+    phone: null,
+    nameConfidence: 'low',
+    nameSource: 'unresolved',
+    emailConfidence: 'low',
+    emailSource: 'unresolved',
+    phoneConfidence: 'low',
+    phoneSource: 'unresolved',
+    reviewRequired: true,
+    reviewReasons: ['Automatic identity extraction was unavailable. Manually verify the candidate identity.'],
+  }
+}
+const source = ref('recruiter_sourcing')
+const sourceOptions = [
+  { value: 'recruiter_sourcing', label: 'Recruiter Sourcing' },
+  { value: 'employee_referral', label: 'Employee Referral' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'naukri', label: 'Naukri' },
+  { value: 'career_site', label: 'Career Site' },
+  { value: 'existing_database', label: 'Existing Database' },
+  { value: 'agency', label: 'Agency' },
+  { value: 'other', label: 'Other' },
+]
 let debounceTimer: ReturnType<typeof setTimeout>
+
 watch(searchInput, (val) => {
   clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    debouncedSearch.value = val.trim() || undefined
-  }, 300)
+  debounceTimer = setTimeout(() => { debouncedSearch.value = val.trim() || undefined }, 300)
+})
+watch(mode, (value) => {
+  selectedExistingCandidateId.value = null
+  resumeFile.value = null
+  resumeIdentity.value = null
+  identityReviewed.value = false
+  identityConflictCheck.value = null
+  identityConflictConfirmed.value = false
+  identityUpdateFields.name = false
+  identityUpdateFields.email = false
+  identityUpdateFields.phone = false
+  source.value = value === 'existing' ? 'existing_database' : 'recruiter_sourcing'
 })
 
 const { data: candidateData, status: searchStatus } = useFetch('/api/candidates', {
-  key: 'apply-candidate-search',
-  query: computed(() => ({
-    ...(debouncedSearch.value && { search: debouncedSearch.value }),
-    limit: 20,
-  })),
+  key: `apply-candidate-search-${props.jobId}`,
+  query: computed(() => ({ ...(debouncedSearch.value && { search: debouncedSearch.value }), limit: 20 })),
   headers: useRequestHeaders(['cookie']),
 })
-
 const candidates = computed(() => candidateData.value?.data ?? [])
+const selectedExistingCandidate = computed(() => candidates.value.find((c: any) => c.id === selectedExistingCandidateId.value) ?? null)
 const { handlePreviewReadOnlyError } = usePreviewReadOnly()
 const { formatCandidateName } = useOrgSettings()
 
-// Apply candidate
 const isApplying = ref(false)
 const applyError = ref('')
+const newCandidate = reactive({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
+watch(
+  () => [newCandidate.firstName, newCandidate.lastName, newCandidate.email, newCandidate.phone],
+  () => {
+    if (resumeFile.value && resumeIdentity.value && !applyingParsedIdentity.value) identityReviewed.value = false
+    identityConflictCheck.value = null
+    identityConflictConfirmed.value = false
+    identityUpdateFields.name = false
+    identityUpdateFields.email = false
+    identityUpdateFields.phone = false
+  },
+)
+const matchResult = ref<any | null>(null)
+const completedPayload = ref<{ applicationId?: string; created?: boolean; resumeUploaded?: boolean } | null>(null)
+function resetError() { applyError.value = '' }
 
-async function applyCandidate(candidateId: string) {
+async function parseResumeIdentity(file: File) {
+  isParsingResume.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const result: any = await $fetch(`/api/jobs/${props.jobId}/resume-identity`, { method: 'POST', body: form })
+    const identity = result?.identity as ParsedResumeIdentity | undefined
+    resumeIdentity.value = identity ?? emptyResumeIdentity()
+    identityReviewed.value = false
+    applyingParsedIdentity.value = true
+    try {
+      if (!newCandidate.firstName.trim() && identity?.firstName) newCandidate.firstName = identity.firstName
+      if (!newCandidate.lastName.trim() && identity?.lastName) newCandidate.lastName = identity.lastName
+      if (!newCandidate.email.trim() && identity?.email) newCandidate.email = identity.email
+      if (!newCandidate.phone.trim() && identity?.phone) newCandidate.phone = identity.phone
+    } finally {
+      applyingParsedIdentity.value = false
+    }
+    if (identity?.reviewRequired) toast.info('Resume read', 'Some candidate identity fields need recruiter verification. Review the extraction details before saving.')
+  } catch (err: any) {
+    resumeIdentity.value = emptyResumeIdentity()
+    identityReviewed.value = false
+    toast.warning('Resume selected', err?.data?.statusMessage ?? err?.message ?? 'The resume could not be parsed automatically. Enter the candidate details manually and confirm them before saving.')
+  } finally {
+    isParsingResume.value = false
+  }
+}
+
+async function onResumeSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  resumeFile.value = input.files?.[0] ?? null
+  resumeIdentity.value = null
+  identityReviewed.value = false
+  resetError()
+  if (mode.value === 'new' && resumeFile.value) await parseResumeIdentity(resumeFile.value)
+}
+
+async function uploadResume(candidateId: string) {
+  if (!resumeFile.value) return null
+  const form = new FormData()
+  form.append('file', resumeFile.value)
+  form.append('type', 'resume')
+  return await $fetch(`/api/candidates/${candidateId}/documents`, { method: 'POST', body: form }) as any
+}
+
+async function calculateImmediateMatch(applicationId: string) {
+  return await $fetch(`/api/applications/${applicationId}/quick-match`, { method: 'POST' }) as any
+}
+
+function finishAndClose() {
+  if (completedPayload.value) emit('created', completedPayload.value)
+  else emit('close')
+}
+
+async function openRecruiterScreening() {
+  const applicationId = completedPayload.value?.applicationId
+  if (!applicationId) return
+  await refreshNuxtData(`pipeline-apps-${props.jobId}`)
+  await navigateTo(localePath(`/dashboard/recruitment/${applicationId}#recruiter-screening`))
+}
+
+async function attachCandidate(body: Record<string, unknown>) {
   isApplying.value = true
   applyError.value = ''
+  matchResult.value = null
   try {
-    await $fetch('/api/applications', {
-      method: 'POST',
-      body: { candidateId, jobId: props.jobId },
-    })
-    emit('created')
+    const result: any = await $fetch(`/api/jobs/${props.jobId}/candidate-intake`, { method: 'POST', body })
+    const candidateId = result?.candidate?.id
+    let resumeUploaded = false
+    completedPayload.value = { applicationId: result.applicationId, created: result.created, resumeUploaded: false }
+
+    if (resumeFile.value) {
+      if (!candidateId) throw new Error('Candidate was linked, but the candidate record was not returned for resume upload.')
+      try {
+        const uploaded = await uploadResume(candidateId)
+        resumeUploaded = Boolean(uploaded?.id)
+        completedPayload.value.resumeUploaded = resumeUploaded
+      } catch (uploadErr: any) {
+        applyError.value = `Candidate is linked to this requirement, but the resume upload failed: ${uploadErr?.data?.statusMessage ?? uploadErr?.message ?? 'Unknown upload error'}`
+        return
+      }
+    }
+
+    try {
+      matchResult.value = await calculateImmediateMatch(result.applicationId)
+      toast.success(`AI Match: ${matchResult.value.score}%`, {
+        message: 'This is AI decision support only. The recruiter can validate or override the interpretation through Recruiter Screening.',
+      })
+    } catch (matchErr: any) {
+      const message = matchErr?.data?.statusMessage ?? matchErr?.message ?? 'AI matching could not be completed.'
+      matchResult.value = { unavailable: true, message }
+      toast.warning('Candidate added; match unavailable', `${message} The candidate remains saved and can still be reviewed manually.`)
+    }
   } catch (err: any) {
     if (handlePreviewReadOnlyError(err)) return
-    applyError.value = err.data?.statusMessage ?? 'Failed to apply candidate'
-  } finally {
-    isApplying.value = false
+    applyError.value = err?.data?.statusMessage ?? err?.message ?? 'Failed to add candidate to this requirement.'
+  } finally { isApplying.value = false }
+}
+
+async function applyExistingCandidate() {
+  if (!selectedExistingCandidateId.value) return void (applyError.value = 'Select a candidate from the Candidate Database.')
+  await attachCandidate({ candidateId: selectedExistingCandidateId.value, source: source.value })
+}
+
+async function createCandidate() {
+  const firstName = newCandidate.firstName.trim()
+  const lastName = newCandidate.lastName.trim()
+  const email = newCandidate.email.trim()
+  const phone = newCandidate.phone.trim() || undefined
+  if (!firstName || !email) return void (applyError.value = 'First name and email are required. Last name may be left blank for a genuine single-name candidate.')
+  if (resumeFile.value && !identityReviewed.value) return void (applyError.value = 'Review and confirm the candidate identity before creating the candidate.')
+
+  if (!identityConflictCheck.value) {
+    try {
+      identityConflictCheck.value = await ($fetch as any)(`/api/jobs/${props.jobId}/candidate-identity-check`, {
+        method: 'POST',
+        body: { firstName, lastName, email, phone },
+      }) as CandidateIdentityConflictCheck
+    } catch (err: any) {
+      applyError.value = err?.data?.statusMessage ?? err?.message ?? 'Candidate identity could not be checked against the Candidate Database.'
+      return
+    }
   }
+
+  if (identityConflictCheck.value.matched && identityConflictCheck.value.requiresConfirmation && !identityConflictConfirmed.value) {
+    applyError.value = 'A matching Candidate Database record has different identity details. Review the warning below and confirm before linking the existing record.'
+    return
+  }
+
+  if (identityConflictCheck.value.matched && identityConflictCheck.value.candidate?.id) {
+    const existingCandidateId = identityConflictCheck.value.candidate.id
+    const refreshedFields: Array<'name' | 'email' | 'phone'> = []
+    if (identityUpdateFields.name) refreshedFields.push('name')
+    if (identityUpdateFields.email) refreshedFields.push('email')
+    if (identityUpdateFields.phone) refreshedFields.push('phone')
+
+    const identityConflictResolution = identityConflictCheck.value.requiresConfirmation
+      ? {
+          confirmed: true,
+          refreshedFields,
+          reviewedIdentity: {
+            firstName,
+            lastName,
+            email,
+            phone: phone ?? null,
+          },
+        }
+      : undefined
+
+    await attachCandidate({
+      candidateId: existingCandidateId,
+      source: source.value,
+      ...(identityConflictResolution && { identityConflictResolution }),
+    })
+    if (refreshedFields.length) await refreshNuxtData('candidates')
+    return
+  }
+
+  await attachCandidate({
+    firstName,
+    lastName,
+    email,
+    phone,
+    notes: newCandidate.notes.trim() || undefined,
+    source: source.value,
+  })
 }
 </script>
 
 <template>
   <Teleport :to="teleportTarget">
-    <div class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="absolute inset-0 bg-black/50" @click="emit('close')" />
-      <div class="relative bg-white dark:bg-surface-900 rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-800">
-          <div class="flex items-center gap-2">
-            <UserPlus class="size-5 text-brand-600 dark:text-brand-400" />
-            <h3 class="text-lg font-semibold text-surface-900 dark:text-surface-50">Add Candidate</h3>
-          </div>
-          <button
-            class="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
-            @click="emit('close')"
-          >
-            <X class="size-5" />
-          </button>
+    <div class="fixed inset-0 z-[250] flex items-center justify-center">
+      <div class="absolute inset-0 bg-black/50" @click="finishAndClose" />
+      <div class="relative mx-4 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-surface-900">
+        <div class="flex items-center justify-between border-b border-surface-200 px-5 py-4 dark:border-surface-800">
+          <div class="flex items-center gap-2"><UserPlus class="size-5 text-brand-600" /><div><h3 class="text-lg font-semibold text-surface-900 dark:text-surface-50">Add Candidate to Requirement</h3><p class="mt-0.5 text-xs text-surface-500">Add the candidate and calculate an immediate AI match from the newest readable resume already on file or a newly uploaded resume.</p></div></div>
+          <button type="button" class="text-surface-400 hover:text-surface-600" @click="finishAndClose"><X class="size-5" /></button>
         </div>
 
-        <!-- Search -->
-        <div class="px-5 pt-4">
-          <div class="relative">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-surface-400" />
-            <input
-              v-model="searchInput"
-              type="text"
-              placeholder="Search candidates by name or email…"
-              class="w-full rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 pl-10 pr-3 py-2 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
-            />
+        <div v-if="matchResult" class="overflow-y-auto px-5 py-5">
+          <div v-if="!matchResult.unavailable" class="space-y-4">
+            <div class="rounded-2xl border border-[#CFE0ED] bg-[#F7FBFE] p-5">
+              <p class="text-xs font-bold uppercase tracking-wide text-[#1F6FA3]">AI Match against approved JD & Skill Matrix</p>
+              <div class="mt-3 flex items-end gap-3"><span class="text-5xl font-black text-[#102A43]">{{ matchResult.score }}%</span><span class="mb-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-[#16847F] shadow-sm">{{ matchResult.priority }}</span></div>
+              <p class="mt-3 text-sm text-surface-600">{{ matchResult.jdAlignment || matchResult.candidateSnapshot }}</p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-3">
+              <div class="rounded-xl bg-[#F1FAF8] p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#16847F]">Mandatory Match</p><p class="mt-1 text-sm font-semibold text-surface-800">{{ matchResult.mandatoryMatch || '—' }}</p></div>
+              <div class="rounded-xl bg-[#F7FBFE] p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#1F6FA3]">Key Strength</p><p class="mt-1 text-sm font-semibold text-surface-800">{{ matchResult.keyStrength || '—' }}</p></div>
+              <div class="rounded-xl bg-[#FFF9EC] p-3"><p class="text-[10px] font-bold uppercase tracking-wide text-[#976511]">Main Gap</p><p class="mt-1 text-sm font-semibold text-surface-800">{{ matchResult.mainGap || '—' }}</p></div>
+            </div>
+            <div class="rounded-xl border border-surface-200 p-4 text-sm text-surface-600">
+              <p class="font-semibold text-[#102A43]">Recruiter judgement remains authoritative</p>
+              <p class="mt-1">The percentage is AI decision support, not a rejection decision. If your assessment differs, open Recruiter Screening to validate the candidate through evidence and the live recruiter conversation.</p>
+              <p v-if="matchResult.score < matchResult.threshold" class="mt-2 text-xs font-medium text-[#976511]">This candidate is below the {{ matchResult.threshold }}% working-pool threshold, but remains available for manual recruiter validation and is not rejected.</p>
+            </div>
+          </div>
+          <div v-else class="rounded-xl border border-warning-200 bg-warning-50 p-4 text-sm text-warning-800">
+            <p class="font-semibold">AI match not available yet</p><p class="mt-1">{{ matchResult.message }}</p><p class="mt-2 text-xs">The candidate is saved. You can still open the Recruitment Workspace for manual review.</p>
+          </div>
+          <div class="mt-5 flex flex-wrap justify-end gap-2 border-t border-surface-100 pt-4">
+            <button type="button" class="rounded-lg border border-surface-300 px-4 py-2 text-sm font-medium" @click="finishAndClose">Done</button>
+            <button v-if="completedPayload?.applicationId" type="button" class="rounded-lg bg-[#16847F] px-4 py-2 text-sm font-semibold text-white" @click="openRecruiterScreening">Start Recruiter Screening</button>
           </div>
         </div>
 
-        <!-- Error -->
-        <div v-if="applyError" class="mx-5 mt-3 rounded-lg border border-danger-200 bg-danger-50 dark:bg-danger-950 p-3 text-sm text-danger-700 dark:text-danger-400">
-          {{ applyError }}
-        </div>
-
-        <!-- Candidate list -->
-        <div class="flex-1 overflow-y-auto px-5 py-3">
-          <div v-if="searchStatus === 'pending'" class="text-center py-6 text-surface-400 text-sm">
-            Searching…
+        <template v-else>
+          <div class="border-b border-surface-200 px-5 pt-4 dark:border-surface-800">
+            <div class="flex gap-1 rounded-xl bg-surface-100 p-1 dark:bg-surface-800">
+              <button type="button" class="flex-1 rounded-lg px-3 py-2 text-sm font-semibold" :class="mode === 'new' ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-900 dark:text-white' : 'text-surface-500'" @click="mode = 'new'; resetError()">New Candidate</button>
+              <button type="button" class="flex-1 rounded-lg px-3 py-2 text-sm font-semibold" :class="mode === 'existing' ? 'bg-white text-[#102A43] shadow-sm dark:bg-surface-900 dark:text-white' : 'text-surface-500'" @click="mode = 'existing'; resetError()">Existing Candidate</button>
+            </div>
           </div>
 
-          <div v-else-if="candidates.length === 0" class="text-center py-6 text-surface-400 text-sm">
-            {{ debouncedSearch ? 'No candidates found.' : 'No candidates in your org yet.' }}
-          </div>
+          <div v-if="applyError" class="mx-5 mt-4 rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{{ applyError }}</div>
 
-          <div v-else class="space-y-1">
-            <button
-              v-for="c in candidates"
-              :key="c.id"
-              :disabled="isApplying"
-              class="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors disabled:opacity-50"
-              @click="applyCandidate(c.id)"
-            >
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">
-                  {{ formatCandidateName(c) }}
-                </p>
-                <p class="text-xs text-surface-400 truncate">{{ c.email }}</p>
+          <div v-if="mode === 'new'" class="overflow-y-auto px-5 py-5">
+            <div class="mb-4 flex items-start gap-3 rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4"><UserRoundPlus class="mt-0.5 size-5 text-[#2E86C1]" /><div><p class="text-sm font-semibold text-[#102A43]">Create directly in this requirement</p><p class="mt-1 text-xs leading-5 text-surface-500">Resume parsing prefills detected name, email and phone. Once saved, one controlled AI assessment calculates this candidate's match percentage.</p></div></div>
+            <form class="space-y-4" @submit.prevent="createCandidate">
+              <label class="block rounded-xl border border-dashed border-[#9FC7DF] bg-[#F7FBFE] p-4 text-sm">
+                <span class="flex items-center gap-2 font-semibold text-[#102A43]"><Upload class="size-4 text-[#2E86C1]" />Resume <span class="font-normal text-surface-400">(recommended)</span></span>
+                <span class="mt-1 block text-xs text-surface-500">PDF, DOC or DOCX. Candidate identity is parsed locally and remains editable. Nothing is saved until you review the fields and add the candidate.</span>
+                <input :disabled="isApplying || isParsingResume" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="mt-3 block w-full text-xs" @change="onResumeSelected" />
+                <span v-if="isParsingResume" class="mt-2 flex items-center gap-1.5 text-xs text-brand-600"><Loader2 class="size-3.5 animate-spin" />Reading candidate details…</span>
+                <span v-else-if="resumeFile" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><FileText class="size-3.5" />{{ resumeFile.name }}</span>
+              </label>
+              <div v-if="resumeFile && resumeIdentity && !isParsingResume" data-testid="resume-identity-review" class="rounded-xl border border-[#CFE0ED] bg-[#F7FBFE] p-4">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="flex items-start gap-2">
+                    <ShieldCheck class="mt-0.5 size-4 text-[#2E86C1]" />
+                    <div>
+                      <p class="text-sm font-semibold text-[#102A43]">Review parsed candidate identity</p>
+                      <p class="mt-1 text-xs leading-5 text-surface-500">Check each extraction signal against the resume and correct the editable fields below. Only the values you confirm become Candidate Database identity.</p>
+                    </div>
+                  </div>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold shadow-sm" :class="resumeIdentity.reviewRequired ? 'text-[#976511]' : 'text-[#13756F]'">{{ resumeIdentity.reviewRequired ? 'Verification required' : 'Extraction looks consistent' }}</span>
+                </div>
+                <div data-testid="resume-field-confidence" class="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Name</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.nameConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ identitySourceLabel(resumeIdentity.nameSource) }}</p>
+                    <p class="mt-1 font-medium text-surface-700">{{ [resumeIdentity.firstName, resumeIdentity.lastName].filter(Boolean).join(' ') || 'Not resolved' }}</p>
+                  </div>
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Email</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.emailConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ emailSourceLabel(resumeIdentity.emailSource) }}</p>
+                    <p class="mt-1 break-all font-medium text-surface-700">{{ resumeIdentity.email || 'Not resolved' }}</p>
+                  </div>
+                  <div class="rounded-lg bg-white/90 p-3 text-xs">
+                    <div class="flex items-center justify-between gap-2"><span class="font-semibold text-[#102A43]">Phone</span><span class="text-[10px] font-semibold text-surface-500">{{ confidenceLabel(resumeIdentity.phoneConfidence) }}</span></div>
+                    <p class="mt-1 text-surface-500">{{ phoneSourceLabel(resumeIdentity.phoneSource) }}</p>
+                    <p class="mt-1 font-medium text-surface-700">{{ resumeIdentity.phone || 'Not detected (optional)' }}</p>
+                  </div>
+                </div>
+                <div v-if="resumeIdentity.reviewReasons.length" data-testid="resume-review-reasons" class="mt-3 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-900">
+                  <p class="font-semibold">Recruiter verification required for:</p>
+                  <ul class="mt-1 list-disc space-y-1 pl-4"><li v-for="reason in resumeIdentity.reviewReasons" :key="reason">{{ reason }}</li></ul>
+                </div>
+                <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-surface-200 bg-white p-3 text-xs text-surface-700">
+                  <input v-model="identityReviewed" data-testid="resume-identity-confirm" type="checkbox" class="mt-0.5 size-4" />
+                  <span><strong>I reviewed the candidate identity.</strong> I compared the extracted name, email and phone with the resume and confirm the final editable values below are correct before this candidate is created or linked.</span>
+                </label>
+                <p v-if="identityReviewed" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#13756F]"><CheckCircle2 class="size-3.5" />Identity reviewed. Editing an identity field will require confirmation again.</p>
               </div>
-              <span class="text-xs text-brand-600 dark:text-brand-400 font-medium shrink-0 ml-2">
-                Apply
-              </span>
-            </button>
+              <div v-if="identityConflictCheck?.matched && identityConflictCheck.requiresConfirmation" data-testid="candidate-identity-conflict" class="rounded-xl border border-warning-300 bg-warning-50 p-4 text-sm text-warning-900">
+                <p class="font-semibold">Possible duplicate identity conflict</p>
+                <p class="mt-1 text-xs leading-5">A Candidate Database record already matches this {{ identityConflictCheck.matchBasis }}. This may be the same person returning with a newer resume. The existing record will be reused rather than creating a duplicate.</p>
+                <div class="mt-3 rounded-lg border border-[#CFE0ED] bg-[#F7FBFE] px-3 py-2 text-xs text-[#1F6FA3]">
+                  <strong>Document history:</strong> if a resume is attached, it will be added as a new document on the existing candidate profile. Older resumes remain available in Documents for history and comparison.
+                </div>
+                <div class="mt-3 space-y-2">
+                  <label v-for="conflict in identityConflictCheck.conflicts" :key="conflict.field" class="flex items-start gap-2 rounded-lg bg-white/80 px-3 py-2 text-xs">
+                    <input v-model="identityUpdateFields[conflict.field]" type="checkbox" class="mt-0.5 size-4" />
+                    <span><span class="font-semibold capitalize">{{ conflict.field }}</span>: existing "{{ conflict.existing }}" → newer "{{ conflict.incoming }}"<br><span class="text-surface-500">Select to update this field on the existing Candidate Database profile.</span></span>
+                  </label>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <NuxtLink v-if="identityConflictCheck.candidate?.id" :to="localePath(`/dashboard/candidates/${identityConflictCheck.candidate.id}`)" target="_blank" class="rounded-lg border border-warning-300 bg-white px-3 py-2 text-xs font-semibold text-warning-900 no-underline">Open existing candidate profile / documents</NuxtLink>
+                </div>
+                <label class="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-warning-200 bg-white p-3 text-xs">
+                  <input v-model="identityConflictConfirmed" data-testid="candidate-identity-conflict-confirm" type="checkbox" class="mt-0.5 size-4" />
+                  <span><strong>Use this existing Candidate Database record.</strong> I reviewed the differences, selected any fields that should be refreshed, and confirm the newer resume belongs to this person.</span>
+                </label>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <label class="text-sm font-medium">First name <span class="text-danger-500">*</span><input v-model="newCandidate.firstName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+                <label class="text-sm font-medium">Last name <span class="font-normal text-surface-400">(optional for single-name candidates)</span><input v-model="newCandidate.lastName" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              </div>
+              <label class="block text-sm font-medium">Email <span class="text-danger-500">*</span><input v-model="newCandidate.email" :disabled="isApplying" type="email" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              <label class="block text-sm font-medium">Phone<input v-model="newCandidate.phone" :disabled="isApplying" type="tel" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              <label class="block text-sm font-medium">Candidate source <span class="text-danger-500">*</span><select v-model="source" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm"><option v-for="option in sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+              <label class="block text-sm font-medium">Recruiter note <span class="font-normal text-surface-400">(optional)</span><textarea v-model="newCandidate.notes" :disabled="isApplying" rows="2" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm" /></label>
+              <button :disabled="isApplying || isParsingResume" type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
+            </form>
           </div>
-        </div>
+
+          <div v-else class="overflow-y-auto px-5 py-5">
+            <div class="mb-4 rounded-xl border border-[#D7E9E7] bg-[#F4FBFA] p-4 text-sm"><p class="font-semibold text-[#102A43]">Attach an existing Candidate Database record</p><p class="mt-1 text-xs leading-5 text-surface-500">The newest readable stored resume is used automatically for the immediate match. Upload a newer resume when available; it is added to Documents while previous resumes remain preserved.</p></div>
+            <div class="flex items-center rounded-lg border border-surface-300 px-3"><Search class="size-4 text-surface-400" /><input v-model="searchInput" class="w-full px-2 py-2.5 text-sm outline-none" placeholder="Search by name or email" /></div>
+            <div class="mt-3 max-h-56 overflow-y-auto rounded-lg border border-surface-200">
+              <button v-for="candidate in candidates" :key="candidate.id" type="button" class="flex w-full items-start justify-between gap-3 border-b border-surface-100 px-3 py-3 text-left last:border-0" :class="selectedExistingCandidateId === candidate.id ? 'bg-brand-50' : 'hover:bg-surface-50'" @click="selectedExistingCandidateId = candidate.id"><div><p class="text-sm font-semibold">{{ formatCandidateName(candidate) }}</p><p class="text-xs text-surface-500">{{ candidate.email }}</p></div><span v-if="selectedExistingCandidateId === candidate.id" class="text-xs font-semibold text-brand-600">Selected</span></button>
+              <div v-if="searchStatus === 'pending'" class="p-4 text-center text-xs text-surface-400">Searching…</div>
+              <div v-else-if="!candidates.length" class="p-4 text-center text-xs text-surface-400">No candidates found.</div>
+            </div>
+            <label class="mt-4 block text-sm font-medium">Candidate source <span class="text-danger-500">*</span><select v-model="source" :disabled="isApplying" class="mt-1.5 w-full rounded-lg border border-surface-300 px-3 py-2.5 text-sm"><option v-for="option in sourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
+            <label class="mt-4 block rounded-xl border border-dashed border-surface-300 p-4 text-sm"><span class="font-semibold">Optional newer resume</span><span class="mt-1 block text-xs text-surface-500">Added as a new resume document; earlier resumes are retained.</span><input :disabled="isApplying" type="file" accept=".pdf,.doc,.docx" class="mt-2 block w-full text-xs" @change="onResumeSelected" /></label>
+            <button :disabled="isApplying || !selectedExistingCandidate" type="button" class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2E86C1] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" @click="applyExistingCandidate"><Loader2 v-if="isApplying" class="size-4 animate-spin" /><UserPlus v-else class="size-4" />{{ isApplying ? 'Adding & matching…' : 'Add & Calculate Match' }}</button>
+          </div>
+        </template>
       </div>
     </div>
   </Teleport>

@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, Copy, Clock,
   ExternalLink, AlertCircle, CalendarDays,
   Hash, Tag, Layers, Pencil, X, ChevronDown,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 definePageMeta({
   layout: 'dashboard',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Filter, Plus, X } from 'lucide-vue-next'
+import { Filter, Plus, X } from '@lucide/vue'
 import {
   PROPERTY_COLOR_CLASSES,
   type PropertyDefinition,

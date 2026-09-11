@@ -9,7 +9,7 @@
  *     showing a star.
  *   - "Manage agents…" opens the manager modal via emit('manage').
  */
-import { Sparkles, Star, Check, ChevronUp } from 'lucide-vue-next'
+import { Sparkles, Star, Check, ChevronUp } from '@lucide/vue'
 
 const { agents, selectedAgentId } = useChatbot()
 const emit = defineEmits<{ manage: [] }>()

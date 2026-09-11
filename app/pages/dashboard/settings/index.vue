@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, Save, AlertTriangle, Trash2, Loader2 } from 'lucide-vue-next'
+import { Building2, Save, AlertTriangle, Trash2, Loader2 } from '@lucide/vue'
 
 definePageMeta({})
 

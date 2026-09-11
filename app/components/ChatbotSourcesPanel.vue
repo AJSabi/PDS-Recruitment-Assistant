@@ -10,7 +10,7 @@
  * The panel intentionally stays purely presentational — it never mutates
  * the source list, and silently disappears when there are no citations.
  */
-import { Briefcase, User, FileText, ClipboardList, X, BookOpen } from 'lucide-vue-next'
+import { Briefcase, User, FileText, ClipboardList, X, BookOpen } from '@lucide/vue'
 import type { ChatbotSource, ChatbotSourceKind } from '~~/shared/chatbot'
 
 defineProps<{ open: boolean }>()

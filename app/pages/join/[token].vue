@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, UserPlus, Shield, ShieldCheck, Loader2, AlertTriangle, Check } from 'lucide-vue-next'
+import { Building2, UserPlus, Shield, ShieldCheck, Loader2, AlertTriangle, Check } from '@lucide/vue'
 
 definePageMeta({
   layout: 'auth',

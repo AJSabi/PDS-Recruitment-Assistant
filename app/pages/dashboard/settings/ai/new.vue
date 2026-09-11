@@ -5,7 +5,7 @@
  * Full-page form for adding a new AI configuration. Replaces the old modal
  * for a calmer, less dense experience.
  */
-import { Loader2, AlertTriangle } from 'lucide-vue-next'
+import { Loader2, AlertTriangle } from '@lucide/vue'
 
 definePageMeta({})
 

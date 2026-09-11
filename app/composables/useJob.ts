@@ -2,7 +2,8 @@ import type { MaybeRefOrGetter } from 'vue'
 
 /**
  * Composable for a single job detail with update and delete mutations.
- * Wraps `useFetch('/api/jobs/:id')` with a reactive key.
+ * Requirement detail is intentionally fetched fresh: the endpoint is lightweight and
+ * the Active JD must never be held behind a stale Nuxt payload when recruiters edit it.
  */
 export function useJob(id: MaybeRefOrGetter<string>) {
   const localePath = useLocalePath()
@@ -16,6 +17,17 @@ export function useJob(id: MaybeRefOrGetter<string>) {
       headers: useRequestHeaders(['cookie']),
     },
   )
+
+  async function refreshRequirementCaches() {
+    await refreshNuxtData([
+      'jobs:all',
+      'jobs:draft',
+      'jobs:open',
+      'jobs:closed',
+      'jobs:archived',
+      'pds-topbar-jobs',
+    ])
+  }
 
   /** Update job fields (partial) and refresh both detail and list caches */
   async function updateJob(payload: Partial<{
@@ -43,7 +55,7 @@ export function useJob(id: MaybeRefOrGetter<string>) {
         body: payload,
       })
       await refresh()
-      await refreshNuxtData('jobs')
+      await refreshRequirementCaches()
       return updated
     } catch (error) {
       handlePreviewReadOnlyError(error)
@@ -59,7 +71,7 @@ export function useJob(id: MaybeRefOrGetter<string>) {
       handlePreviewReadOnlyError(error)
       throw error
     }
-    await refreshNuxtData('jobs')
+    await refreshRequirementCaches()
     await navigateTo(localePath('/dashboard/jobs'))
   }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   Building2, Users, UserCircle, ChevronLeft, Settings, Plug, Brain, ShieldCheck, Globe, ShieldAlert,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 const route = useRoute()
 const localePath = useLocalePath()

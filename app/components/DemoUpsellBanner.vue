@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cloud, Server, ArrowRight, Sparkles } from 'lucide-vue-next'
+import { Cloud, Server, ArrowRight, Sparkles } from '@lucide/vue'
 
 const localePath = useLocalePath()
 const isLoading = ref(false)

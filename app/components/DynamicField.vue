@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Upload, X } from 'lucide-vue-next'
+import { Upload, X } from '@lucide/vue'
 
 /**
  * Renders a custom question as the appropriate form field based on its type.

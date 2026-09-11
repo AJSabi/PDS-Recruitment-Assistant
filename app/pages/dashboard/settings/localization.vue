@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Globe, Save, Check, Loader2 } from 'lucide-vue-next'
+import { Globe, Save, Check, Loader2 } from '@lucide/vue'
 
 definePageMeta({})
 

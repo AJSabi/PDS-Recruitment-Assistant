@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bug, Lightbulb, X, ExternalLink, Send, MessageSquarePlus, ImagePlus, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Bug, Lightbulb, X, ExternalLink, Send, MessageSquarePlus, ImagePlus, ChevronDown, ChevronRight } from '@lucide/vue'
 
 const emit = defineEmits<{
   (e: 'close'): void

@@ -1,20 +1,12 @@
-/**
- * GET /api/admin/retention/review
- *
- * Upcoming-deletion review for the active org: candidates that are expiring
- * soon, already expired (awaiting the next sweep), or in the recoverable
- * quarantine window. Drives the retention review UI in settings.
- *
- * Returns candidate PII (name/email) — this is an authenticated in-app admin
- * view, distinct from the privacy-safe `retention_audit` log.
- */
-import { eq, and, max } from 'drizzle-orm'
+import { eq, max } from 'drizzle-orm'
 import { candidate, application, orgSettings } from '../../../database/schema'
 import { computeRetentionState } from '../../../utils/retention'
+import { assertRecruitmentAdmin } from '../../../utils/recruitmentVisibility'
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { candidate: ['delete'] })
   const orgId = session.session.activeOrganizationId
+  await assertRecruitmentAdmin(orgId, session.user.id)
 
   const settings = await db.query.orgSettings.findFirst({
     where: eq(orgSettings.organizationId, orgId),
@@ -33,8 +25,7 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  const latestRows = await db
-    .select({ candidateId: application.candidateId, latest: max(application.updatedAt) })
+  const latestRows = await db.select({ candidateId: application.candidateId, latest: max(application.updatedAt) })
     .from(application)
     .where(eq(application.organizationId, orgId))
     .groupBy(application.candidateId)
@@ -51,7 +42,6 @@ export default defineEventHandler(async (event) => {
       exemptUntil: c.retentionExemptUntil,
       now,
     })
-    // Quarantined rows always surface regardless of computed status.
     const effectiveStatus = c.quarantinedAt ? 'quarantined' as const : status
     return {
       id: c.id,
@@ -64,9 +54,7 @@ export default defineEventHandler(async (event) => {
       exemptUntil: c.retentionExemptUntil,
       exemptReason: c.retentionExemptReason,
     }
-  })
-  // Only show things needing attention: expiring / expired / quarantined / exempt.
-  .filter(i => i.status !== 'active')
+  }).filter(i => i.status !== 'active')
 
   return {
     cleanupEnabled: env.GDPR_CLEANUP_ENABLED,
