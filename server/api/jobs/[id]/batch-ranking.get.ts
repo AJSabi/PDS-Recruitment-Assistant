@@ -4,8 +4,6 @@ import { assertRequirementAccess } from '../../../utils/recruitmentVisibility'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.string().min(1) })
-const priorityOrder: Record<string, number> = { P1: 1, P2: 2, P3: 3, P4: 4 }
-const MIN_VISIBLE_MATCH = 50
 
 export default defineEventHandler(async (event) => {
   const session = await requirePermission(event, { application: ['read'] })
@@ -28,7 +26,16 @@ export default defineEventHandler(async (event) => {
     .innerJoin(candidate, eq(candidate.id, application.candidateId))
     .where(and(eq(application.organizationId, orgId), eq(application.jobId, jobId)))
 
-  if (!apps.length) return { jobId, requirementRevision, minimumVisibleMatch: MIN_VISIBLE_MATCH, ranking: [] }
+  if (!apps.length) {
+    return {
+      jobId,
+      requirementRevision,
+      minimumVisibleMatch: null,
+      ranking: [],
+      advisoryOnly: true,
+      note: 'AI assessment is advisory. No candidate is hidden, ranked or excluded by an AI score.',
+    }
+  }
   const appIds = apps.map(a => a.applicationId)
 
   const profiles = await db.select().from(recruitmentApplicationProfile)
@@ -39,6 +46,8 @@ export default defineEventHandler(async (event) => {
   const profileMap = new Map(profiles.map(p => [p.applicationId, p]))
   const assessmentMap = new Map(assessments.map(a => [a.applicationId, a]))
 
+  // Keep the legacy response key for compatibility, but return a neutral candidate list.
+  // Ordering is alphabetical only; AI score/priority never controls visibility or order.
   const ranking = apps.map((app) => {
     const profile = profileMap.get(app.applicationId)
     const assessment = assessmentMap.get(app.applicationId)
@@ -46,6 +55,7 @@ export default defineEventHandler(async (event) => {
     const needsReassessment = assessedRevision > 0 && assessedRevision < requirementRevision
 
     return {
+      rank: null,
       applicationId: app.applicationId,
       candidateId: app.candidateId,
       candidate: `${app.firstName} ${app.lastName}`.trim(),
@@ -66,14 +76,14 @@ export default defineEventHandler(async (event) => {
       requirementRevision,
       needsReassessment,
     }
-  }).filter(item => item.provisionalFitScore != null && item.provisionalFitScore >= MIN_VISIBLE_MATCH)
-    .sort((a, b) => {
-      if (a.needsReassessment !== b.needsReassessment) return a.needsReassessment ? 1 : -1
-      const pa = a.priority ? priorityOrder[a.priority] ?? 99 : 99
-      const pb = b.priority ? priorityOrder[b.priority] ?? 99 : 99
-      if (pa !== pb) return pa - pb
-      return (b.provisionalFitScore ?? -1) - (a.provisionalFitScore ?? -1)
-    }).map((item, index) => ({ rank: index + 1, ...item }))
+  }).sort((a, b) => a.candidate.localeCompare(b.candidate) || a.applicationId.localeCompare(b.applicationId))
 
-  return { jobId, requirementRevision, minimumVisibleMatch: MIN_VISIBLE_MATCH, ranking }
+  return {
+    jobId,
+    requirementRevision,
+    minimumVisibleMatch: null,
+    ranking,
+    advisoryOnly: true,
+    note: 'AI assessment is advisory. No candidate is hidden, ranked or excluded by an AI score.',
+  }
 })
